@@ -349,7 +349,7 @@ Size estimates (embeddings and head at 16-bit):
 - **Phases 2 and 3:** each gets its own plan once phase 1 lands.
 
 ## Project conventions (user instructions)
-- **Ruflo ("Rufus" in the user's message, assumed to mean Ruflo):**
+- **Ruflo (name confirmed by the user):**
   - Initialize it as the first implementation step (`hooks_init`, `memory_store`, then `swarm_init` and `agent_spawn` for multi-file work). This is deferred until plan mode ends.
   - Use it throughout the project:
     - route tasks with `hooks_route`
