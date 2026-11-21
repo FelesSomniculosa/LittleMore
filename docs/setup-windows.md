@@ -29,6 +29,23 @@ Some installers ask for administrator approval (UAC); accept it.
 Windows already ships `vulkaninfo` (runtime only); the SDK adds `glslc`, the
 shader compiler needed to build the Vulkan backend.
 
+### CUDA 12.9 vs 13.x
+
+This project targets CUDA 12.x. Unpinned `winget install Nvidia.CUDA`
+installs 13.x, and CUDA versions install side by side, so a machine may have
+both (check `C:\Program Files\NVIDIA GPU Computing Toolkit\CUDA`). The newest
+one is usually first on `PATH`. `check_env.py` prefers a `v12.*` nvcc and
+prints a WARNING if only a non-12 nvcc exists. When configuring CMake, point
+at 12.9 explicitly:
+
+```powershell
+cmake -G Ninja -B build -DGGML_CUDA=ON `
+  -DCUDAToolkit_ROOT="C:\Program Files\NVIDIA GPU Computing Toolkit\CUDA\v12.9"
+```
+
+To remove 13.x: Settings > Apps > Installed apps, uninstall the
+"NVIDIA CUDA ... 13.x" entries (Toolkit, Runtime, Development, etc.).
+
 ## 3. Python environment
 
 From the repo root:
@@ -41,7 +58,8 @@ python -m venv .venv
 ```
 
 `cu128` is the CUDA 12.8 PyTorch wheel index; it supports Python 3.13 and
-Ada GPUs (sm_89). Use the venv's python for tests:
+Ada GPUs (sm_89). Commands use the explicit `.venv\Scripts\python.exe`, so
+no activation is needed. Use the venv's python for tests:
 `.venv\Scripts\python.exe -m pytest`.
 
 ## 4. Verify
@@ -59,5 +77,6 @@ exit code is 0. Any `[MISSING]` line says what to install; the exit code is 1.
 - **`nvcc`/`cmake` not found right after install**: open a new terminal.
 - **`torch ... CUDA unavailable`**: you installed the CPU wheel. Reinstall with
   the `--index-url` above and check that `nvidia-smi` works.
-- **`Failed to resolve download.pytorch.org`**: a DNS problem on your network;
-  try another DNS server or network, then rerun the pip command.
+- **pip cannot fetch the torch wheel** (for example `Failed to resolve
+  download.pytorch.org`): a network or DNS problem; try another network or DNS
+  server, then rerun the pip command.

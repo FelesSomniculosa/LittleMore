@@ -35,6 +35,7 @@ EXTRA_DIRS = {
     "ninja": [r"%LOCALAPPDATA%\Microsoft\WinGet\Packages\Ninja-build.Ninja*",
               r"C:\Program Files\Ninja", r"C:\ProgramData\chocolatey\bin"],
     "vulkaninfo": [r"C:\VulkanSDK\*\Bin", r"C:\Windows\System32"],
+    "glslc": [r"%VULKAN_SDK%\Bin", r"C:\VulkanSDK\*\Bin"],
 }
 VSWHERE = r"C:\Program Files (x86)\Microsoft Visual Studio\Installer\vswhere.exe"
 
@@ -42,8 +43,16 @@ VSWHERE = r"C:\Program Files (x86)\Microsoft Visual Studio\Installer\vswhere.exe
 def find_tool(name: str) -> Optional[str]:
     """Return the full path of executable `name`, or None if not found.
 
-    Looks on PATH first, then in the well-known install directories.
+    Looks on PATH first (except nvcc, see below), then in standard install dirs.
     """
+    # Why: nvcc prefers a CUDA 12.x install dir over PATH order, because a
+    # machine may also have CUDA 13.x first on PATH and the project targets 12.
+    if name == "nvcc":
+        for pattern in EXTRA_DIRS["nvcc"][:1]:
+            for d in sorted(glob.glob(os.path.expandvars(pattern)), reverse=True):
+                found = shutil.which(name, path=d)
+                if found:
+                    return found
     found = shutil.which(name)
     if found:
         return found
@@ -80,7 +89,12 @@ def check_nvcc() -> tuple[bool, str]:
         return False, f"{path}: could not read version"
     if int(ver.split(".")[0]) < 12:
         return False, f"nvcc {ver} is too old, need >= 12 ({path})"
-    return True, f"nvcc {ver} ({path})"
+    note = ""
+    if int(ver.split(".")[0]) != 12:
+        note = (" WARNING: not CUDA 12.x; the project targets 12.x. Install it "
+                "(winget install -e --id Nvidia.CUDA --version 12.9) and pass "
+                "-DCUDAToolkit_ROOT to CMake.")
+    return True, f"nvcc {ver} ({path}){note}"
 
 
 def check_cmake() -> tuple[bool, str]:
@@ -88,7 +102,8 @@ def check_cmake() -> tuple[bool, str]:
     path = find_tool("cmake")
     if not path:
         return False, "cmake not found (winget install Kitware.CMake)"
-    return True, f"cmake {first_match(r'version (\S+)', run([path, '--version']))} ({path})"
+    ver = first_match(r"version (\S+)", run([path, "--version"]))
+    return True, f"cmake {ver or '?'} ({path})"
 
 
 def check_ninja() -> tuple[bool, str]:
@@ -109,23 +124,11 @@ def check_vulkaninfo() -> tuple[bool, str]:
     path = find_tool("vulkaninfo")
     if not path:
         return False, "vulkaninfo not found (install Vulkan SDK)"
-    glslc = find_tool_sdk("glslc")
+    glslc = find_tool("glslc")
     if not glslc:
         return False, f"vulkaninfo found ({path}) but Vulkan SDK (glslc) missing"
     ver = first_match(r"Vulkan Instance Version:\s*(\S+)", run([path, "--summary"]))
     return True, f"vulkaninfo, instance {ver or '?'} ({path}); glslc ({glslc})"
-
-
-def find_tool_sdk(name: str) -> Optional[str]:
-    """Locate an executable from the Vulkan SDK (PATH, then C:/VulkanSDK/*/Bin)."""
-    found = shutil.which(name)
-    if found:
-        return found
-    for d in sorted(glob.glob(r"C:\VulkanSDK\*\Bin"), reverse=True):
-        found = shutil.which(name, path=d)
-        if found:
-            return found
-    return None
 
 
 def check_vs() -> tuple[bool, str]:
@@ -137,8 +140,9 @@ def check_vs() -> tuple[bool, str]:
                "-property", "installationPath"]).strip()
     if not out:
         return False, "VS Build Tools with C++ x64 tools not found"
-    ver = run([VSWHERE, "-products", "*", "-latest", "-property",
-               "installationVersion"]).strip()
+    ver = run([VSWHERE, "-products", "*", "-latest",
+               "-requires", "Microsoft.VisualStudio.Component.VC.Tools.x86.x64",
+               "-property", "installationVersion"]).strip()
     return True, f"VS Build Tools {ver} ({out})"
 
 
