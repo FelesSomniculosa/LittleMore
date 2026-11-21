@@ -7,8 +7,8 @@ so a second run only pays for the llama.cpp invocations.
 Layout:
     .cache/models/Qwen3-0.6B/                      base HF model (download command: docs/development.md)
     .cache/ckpt/qwen3-0.6b-lb2-0.55/               init-only LittleBit-2 checkpoint (tools/dev/make_lb2_init.py)
-    .cache/gguf/qwen3-0.6b-base-f32.gguf           plain F32 GGUF; lb_to_gguf copies embeddings/metadata from it
-    .cache/gguf/qwen3-0.6b-lb2-0.55-q1_0.gguf      the LittleBit GGUF under test
+    .cache/gguf/qwen3-0.6b-lb2-0.55-b1.gguf        the LittleBit GGUF (B1 signs) made by tools/convert/lb_to_gguf.py
+    .cache/gguf/qwen3-0.6b-lb2-0.55-q1_0.gguf      slow-path baseline: the same file with the signs re-encoded as Q1_0
     .cache/logits/                                 llama-debug --save-logits output
 """
 from __future__ import annotations
@@ -35,8 +35,8 @@ CUDA_BIN = Path(r"C:/Program Files/NVIDIA GPU Computing Toolkit/CUDA/v12.9/bin")
 
 MODEL_DIR = CACHE / "models" / "Qwen3-0.6B"
 CKPT_DIR = CACHE / "ckpt" / "qwen3-0.6b-lb2-0.55"
-BASE_GGUF = CACHE / "gguf" / "qwen3-0.6b-base-f32.gguf"
-LB_GGUF = CACHE / "gguf" / "qwen3-0.6b-lb2-0.55-q1_0.gguf"
+B1_GGUF = CACHE / "gguf" / "qwen3-0.6b-lb2-0.55-b1.gguf"
+LB_GGUF = CACHE / "gguf" / "qwen3-0.6b-lb2-0.55-q1_0.gguf"   # the Q1_0 slow-path baseline
 LOGITS_DIR = CACHE / "logits"
 BPW = 0.55
 
@@ -60,8 +60,6 @@ def missing_assets() -> str | None:
     for tool in ("llama-cli", "llama-completion", "llama-debug"):
         if not (BIN / (tool + EXE)).exists():
             return f"engine binary {tool} not built in {BIN} (see docs/engine-changes.md)"
-    if not (ENGINE / "tools" / "littlebit" / "lb_to_gguf.py").exists():
-        return "engine/tools/littlebit/lb_to_gguf.py missing"
     return None
 
 
@@ -109,8 +107,60 @@ def _commit(tmp: Path, target: Path, key: str) -> None:
     target.with_name(target.name + ".key").write_text(key)
 
 
-def ensure_gguf() -> Path:
-    """Build (if absent or stale) checkpoint -> base GGUF -> LittleBit Q1_0 GGUF; return the last."""
+def copy_gguf(src: Path, dst: Path, replace=None, extra=()) -> None:
+    """Write `dst` = a copy of GGUF `src` with metadata and tensors unchanged, except:
+
+    `replace(tensor)` may return `(array, raw_dtype)` to swap one tensor's data (None keeps it);
+    `extra` is a list of `(name, array, raw_dtype)` tensors appended.  Used to derive test variants.
+    """
+    _add_path(ENGINE / "gguf-py")
+    import gguf
+    reader = gguf.GGUFReader(str(src))
+    writer = gguf.GGUFWriter(str(dst), reader.get_field("general.architecture").contents())
+    skip = ("GGUF.", "general.architecture", "general.alignment")
+    for key, field in reader.fields.items():
+        if not key.startswith(skip):
+            writer.add_key_value(key, field.contents(), field.types[0],
+                                 field.types[-1] if field.types[0] == gguf.GGUFValueType.ARRAY else None)
+    for t in reader.tensors:
+        new = replace(t) if replace else None
+        data, dtype = new if new else (np.asarray(t.data), t.tensor_type)
+        writer.add_tensor(t.name, data, raw_dtype=dtype)
+    for name, data, dtype in extra:
+        writer.add_tensor(name, data, raw_dtype=dtype)
+    writer.write_header_to_file()
+    writer.write_kv_data_to_file()
+    writer.write_tensors_to_file(progress=False)
+    writer.close()
+
+
+def b1_to_q1_0_gguf(src: Path, dst: Path) -> None:
+    """Write `dst` = `src` with every B1 sign tensor re-encoded as Q1_0 (the slow-path baseline).
+
+    The engine's slow path (the op chain in build_lb_path) takes Q1_0 factors.  Our converter only
+    writes B1, so the baseline file is derived from it: B1 -> +-1.0 floats -> gguf-py's Q1_0
+    quantizer.  Every block is then exactly "scale 1.0, same sign bits", so the baseline computes the
+    same linear as the B1 file up to the Q8_0 activation noise of the Q1_0 kernels.  F16 tensors (the
+    embedding / output head) are widened to F32, which is lossless and keeps the baseline as exact as the
+    original M0 file (whose head came from an F32 base GGUF).  Everything else is copied unchanged.
+    """
+    _add_path(ENGINE / "gguf-py")
+    import gguf
+    from gguf.quants import dequantize, quantize
+    B1, Q1_0 = gguf.GGMLQuantizationType.B1, gguf.GGMLQuantizationType.Q1_0
+    F16, F32 = gguf.GGMLQuantizationType.F16, gguf.GGMLQuantizationType.F32
+
+    def convert(t):
+        if t.tensor_type == B1:
+            return quantize(dequantize(np.asarray(t.data), B1), Q1_0), Q1_0
+        if t.tensor_type == F16:   # embedding/head: widen (lossless) so the CUDA head matmul is exact, as in M0
+            return np.asarray(t.data).astype(np.float32), F32
+        return None
+    copy_gguf(src, dst, convert)
+
+
+def ensure_b1_gguf() -> Path:
+    """Build (if absent or stale) checkpoint -> B1 GGUF with tools/convert/lb_to_gguf.py; return it."""
     maker = ROOT / "tools" / "dev" / "make_lb2_init.py"
     ck_key = _digest(maker, MODEL_DIR / "model.safetensors", BPW, True, True, 0)
     if not _stamp_ok(CKPT_DIR, ck_key):
@@ -121,24 +171,31 @@ def ensure_gguf() -> Path:
         shutil.rmtree(tmp, ignore_errors=True)
         make_checkpoint(str(MODEL_DIR), tmp, BPW, use_itq=True, residual=True)
         _commit(tmp, CKPT_DIR, ck_key)
-    base_key = _digest(ENGINE / "convert_hf_to_gguf.py", ENGINE / "conversion", MODEL_DIR / "model.safetensors")
-    if not _stamp_ok(BASE_GGUF, base_key):
-        # F32 keeps embeddings exact so they do not add error to the logit comparison.
-        # Needs the `sentencepiece` package: the Qwen converter imports it eagerly.
-        BASE_GGUF.parent.mkdir(parents=True, exist_ok=True)
-        tmp = BASE_GGUF.with_name(BASE_GGUF.name + ".tmp")
-        r = _run([sys.executable, ENGINE / "convert_hf_to_gguf.py", MODEL_DIR,
-                  "--outtype", "f32", "--outfile", tmp])
-        assert r.returncode == 0, r.stdout[-2000:]
-        _commit(tmp, BASE_GGUF, base_key)
-    lb_key = _digest(ENGINE / "tools" / "littlebit" / "lb_to_gguf.py", ck_key, base_key)
-    if not _stamp_ok(LB_GGUF, lb_key):
+    conv_key = _digest(ROOT / "tools" / "convert", ck_key)
+    if not _stamp_ok(B1_GGUF, conv_key):
+        _add_path(ROOT)
+        from tools.convert import lb_to_gguf
+        B1_GGUF.parent.mkdir(parents=True, exist_ok=True)
+        tmp = B1_GGUF.with_name(B1_GGUF.name + ".tmp")
+        lb_to_gguf.convert(CKPT_DIR, tmp)
+        _commit(tmp, B1_GGUF, conv_key)
+    return B1_GGUF
+
+
+def ensure_gguf() -> Path:
+    """Return the Q1_0 slow-path baseline GGUF, derived from the B1 GGUF (see `b1_to_q1_0_gguf`)."""
+    b1 = ensure_b1_gguf()
+    key = _digest(b1, Path(__file__), _stamp_text(b1))
+    if not _stamp_ok(LB_GGUF, key):
         tmp = LB_GGUF.with_name(LB_GGUF.name + ".tmp")
-        r = _run([sys.executable, ENGINE / "tools" / "littlebit" / "lb_to_gguf.py",
-                  CKPT_DIR, MODEL_DIR, BASE_GGUF, tmp])
-        assert r.returncode == 0, r.stdout[-2000:]
-        _commit(tmp, LB_GGUF, lb_key)
+        b1_to_q1_0_gguf(b1, tmp)
+        _commit(tmp, LB_GGUF, key)
     return LB_GGUF
+
+
+def _stamp_text(target: Path) -> str:
+    """The build key of a cached artifact, so derived files rebuild when their source does."""
+    return target.with_name(target.name + ".key").read_text()
 
 
 def run_llama_cli(gguf: Path, prompt: str, n_predict: int, ngl: int) -> subprocess.CompletedProcess:
@@ -160,15 +217,25 @@ def count_generated_tokens(gguf: Path, prompt: str, n_predict: int, ngl: int) ->
     return int(m.group(1))
 
 
-def engine_logits(gguf: Path, prompt: str, ngl: int) -> tuple[np.ndarray, list[int]]:
-    """Last-position logits and token ids from `llama-debug --save-logits` (no engine changes)."""
-    out = LOGITS_DIR / f"ngl{ngl}"
+def engine_logits(gguf: Path, prompt: str, ngl: int, extra_args: tuple = (),
+                  out_dir: Path | None = None) -> tuple[np.ndarray, list[int]]:
+    """Last-position logits and token ids from `llama-debug --save-logits` (no engine changes).
+
+    `extra_args` are appended to the command line (e.g. `("-ctk", "f32")`); `out_dir` overrides the
+    default `.cache/logits/ngl<N>` (the file name inside it is derived from the GGUF's stem).
+    """
+    out = out_dir or LOGITS_DIR / f"ngl{ngl}"
+    # llama-debug names its files after the model's `general.name`, not the file; start from an empty
+    # directory so the files found afterwards are this run's.
+    out.mkdir(parents=True, exist_ok=True)   # llama-debug creates only the last path component
+    for old in out.glob("llamacpp-*.bin"):
+        old.unlink()
     r = _run([BIN / ("llama-debug" + EXE), "-m", gguf, "-p", prompt, "-ngl", ngl,
-              "--save-logits", "--logits-output-dir", out])
+              "--save-logits", "--logits-output-dir", out, *extra_args])
     assert r.returncode == 0, r.stdout[-2000:]
-    stem = "llamacpp-" + gguf.stem
-    logits = np.fromfile(out / f"{stem}.bin", dtype=np.float32)
-    tokens = np.fromfile(out / f"{stem}-tokens.bin", dtype=np.int32).tolist()
+    (tok_file,) = out.glob("llamacpp-*-tokens.bin")
+    logits = np.fromfile(tok_file.with_name(tok_file.name.removesuffix("-tokens.bin") + ".bin"), dtype=np.float32)
+    tokens = np.fromfile(tok_file, dtype=np.int32).tolist()
     return logits, tokens
 
 

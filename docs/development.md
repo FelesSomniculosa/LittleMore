@@ -87,7 +87,7 @@ Everything generated lives under `.cache/` (ignored by git, safe to delete):
 |---|---|
 | `.cache/models/Qwen3-0.6B/` | the downloaded base model |
 | `.cache/ckpt/qwen3-0.6b-lb2-0.55/` | init-only LittleBit-2 checkpoint at 0.55 bits per weight |
-| `.cache/gguf/` | the plain F32 GGUF and the LittleBit (Q1_0) GGUF |
+| `.cache/gguf/` | the LittleBit B1 GGUF (made by `tools/convert/lb_to_gguf.py`) and the Q1_0 slow-path baseline derived from it |
 | `.cache/logits/` | logits saved by `llama-debug` |
 
 Each generated file has a `.key` stamp; it is rebuilt automatically when the
@@ -128,10 +128,22 @@ explanation; pass `--assume-no-littlebit-config` to skip only the residual
 cross-check against that file. Gemma 3 is tested on the generic path only
 (identity permutations); Llama and Qwen3.5 exercise real permutations.
 
-Until the engine loader for `B1` exists (Task 8) these GGUFs cannot be run in
-llama.cpp; correctness is checked numerically by the validator. The converter
+These GGUFs run in the engine (fused `ggml_littlebit` op, CPU kernel; the LittleBit
+weights stay in host memory even with `-ngl 99`). The converter
 tests build tiny random models offline; the Qwen families need the cached
 Qwen3-0.6B tokenizer (they skip without it), Llama and Gemma 3 need nothing.
+
+## 7. Engine tests
+
+```powershell
+.venv\Scripts\python.exe -m pytest tests/engine -m engine_run -q -s     # fused graph per model family + Qwen3-0.6B
+.venv\Scripts\python.exe -m pytest tests/smoke -m smoke -q -W error     # M0 slow-path baseline (Q1_0 chain)
+```
+
+`engine_run` tests build tiny random models of Qwen3, Llama, Gemma 3 and Qwen3.5, convert them, run
+`llama-debug` and compare the last-position logits with `reference.py`; the Qwen3-0.6B file does the same on the real
+init-only checkpoint at `-ngl 0` and `-ngl 99`. The engine's own tests: from `engine/build`,
+`ctest -R "test-b1|test-gguf|test-alloc|test-littlebit"` (needs the MSVC environment on `PATH`).
 
 ## Glossary
 

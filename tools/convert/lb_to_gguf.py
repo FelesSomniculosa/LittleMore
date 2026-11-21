@@ -15,7 +15,8 @@ Why
 
 Starting point and licence
     The structure of this file (probe mechanism, scale folding, rank padding, naming) is
-    derived from `engine/tools/littlebit/lb_to_gguf.py` by Cybertiron
+    derived from `tools/littlebit/lb_to_gguf.py` by Cybertiron (briefly vendored in engine/, removed there when this
+    converter replaced it)
     (https://github.com/Cybertiron/llama.cpp-littlebit, "Architecture-generic LittleBit ->
     GGUF converter"), which wrote Q1_0 tensors from a base GGUF.  That file carries no
     copyright line of its own; it is part of the llama.cpp fork whose LICENSE reads
