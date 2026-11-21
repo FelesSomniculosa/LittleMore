@@ -95,7 +95,11 @@ def _rank1_abs(M: Tensor) -> tuple[Tensor, Tensor]:
     return a * s, b * s
 
 
-def _dual_svid_parts(U: Tensor, V: Tensor):
+def _dual_svid_parts(U: Tensor, V: Tensor) -> tuple[Tensor, Tensor, Tensor, Tensor, Tensor, Tensor]:
+    """Dual-SVID keeping the two rank-space scales separate (as stored in the checkpoint).
+
+    Returns (Ub (out,r), Vb (r,in), h (out), g (in), urk (r), vrk (r)).
+    """
     Ub = _sign(U.float())
     Vb = _sign(V.float()).T.contiguous()
     h, urk = _rank1_abs(U)
@@ -196,9 +200,9 @@ def make_checkpoint(hf_id: str, out_dir: Path, bpw: float, use_itq: bool = True,
                     dense, t = _path(w, r, use_itq, seed)
                     _emit(tensors, name, t, "")
                     if residual:
-                        w -= dense  # residual of the dequantised primary path
+                        # New tensor: `w` is our own fp32 copy, but keep it for clarity.
+                        _, t2 = _path(w - dense, r, use_itq, seed)
                         del dense
-                        _, t2 = _path(w, r, use_itq, seed)
                         _emit(tensors, name, t2, "_R")
                     del w, t
                 else:
