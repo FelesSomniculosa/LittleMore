@@ -6,3 +6,4 @@ __pycache__/
 *.safetensors
 .claude-flow/
 .swarm/
+.cache/
