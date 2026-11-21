@@ -12,7 +12,7 @@ The engine is upstream llama.cpp plus these additions (details in the sections b
 | Addition | Where it is described |
 |---|---|
 | `GGML_TYPE_B1`: a ggml type that stores +1/-1 signs at exactly 1 bit each | [GGML_TYPE_B1](#ggml_type_b1-pure-1-bit-sign-weights) |
-| `GGML_OP_LITTLEBIT`: one fused op that computes a whole LittleBit linear (CPU kernel only so far) | [GGML_OP_LITTLEBIT](#ggml_op_littlebit-fused-littlebit-linear-cpu-reference) |
+| `GGML_OP_LITTLEBIT`: one fused op that computes a whole LittleBit linear (CPU kernel; CUDA kernel for 1..8 tokens) | [GGML_OP_LITTLEBIT](#ggml_op_littlebit-fused-littlebit-linear-cpu-reference), [CUDA backend](#cuda-backend-of-ggml_op_littlebit-decode-18-tokens) |
 | Loader and graph hook: a linear whose `weight` is missing but whose `lb_v` factors exist is loaded as a LittleBit linear, and `build_lora_mm` builds the fused op for it | [LittleBit in the graph](#littlebit-in-the-graph) |
 | Per-backend rules: no backend may claim a B1 tensor except for the fused op; the LittleBit tensors are pinned to the CPU | the "Rule" bullet and the `supports_op` audit under GGML_TYPE_B1; "Loader" under LittleBit in the graph |
 | Test coverage and measured accuracy, including the GPU noise floor | the end of "LittleBit in the graph", then "GPU offload error" |
@@ -131,9 +131,10 @@ because of its fp16 scale; LittleBit keeps all scales in separate F32 vectors).
   and record the new number here (files written with the old number would be misread).
 - CPU: `to_float` only. There is **no `vec_dot`** and no `from_float`.
 - **Rule: no backend may claim B1 for MUL_MAT / MUL_MAT_ID / GET_ROWS / CPY / SET_ROWS
-  (or any other op) until a kernel exists; the fused LITTLEBIT op (CPU kernel today,
-  GPU kernels later) consumes B1 directly** and must add its own explicit exception in each backend's
-  `supports_op`. A GPU kernel for the fused op must not claim B1 mul_mat.
+  (or any other op) until a kernel exists; the fused LITTLEBIT op (CPU kernel, CUDA kernel for 1..8 tokens)
+  consumes B1 directly** and must add its own explicit exception in each backend's
+  `supports_op`. A GPU kernel for the fused op must not claim B1 mul_mat (the CUDA one does not: its exception
+  covers `GGML_OP_LITTLEBIT` only).
 - Audit of `supports_op` (checked by reading code and by running
   `ggml_backend_dev_supports_op` on CPU, CUDA0, Vulkan0, Vulkan1 in `test-b1`):
   - CPU: MUL_MAT_ID / CPY / SET_ROWS (B1 destination) / OUT_PROD / FLASH_ATTN_EXT
@@ -187,14 +188,96 @@ Added in the engine (`littlebit` work on branch `littlemore`); the graph builder
   stored in GGUF files.
 - **How backends opt in:** answer true for `GGML_OP_LITTLEBIT` in `supports_op`. Every backend already
   refuses any op with a B1 source (the guard described above), so each needs an explicit exception placed before that
-  guard. Today only the CPU backend has one (`ggml-cpu.cpp`); CUDA and Vulkan still answer false, and
-  the scheduler then runs the op on the CPU backend. Asserted in `tests/test-littlebit-ref.cpp`.
+  guard. The CPU backend (`ggml-cpu.cpp`) takes any batch; CUDA takes 1..8 tokens (see "CUDA backend" below) and
+  answers false for larger batches; Vulkan still answers false. Where the answer is false the scheduler runs the op
+  on the CPU backend. Asserted per device and batch size in `tests/test-littlebit-ref.cpp`.
 - **Tests:** `test-backend-ops test -o LITTLEBIT` (each backend vs CPU, plus the CPU result vs an
   independent double-precision reference in `tests/littlebit-ref.h`, tolerance 1e-4 of max|y|; also with `-b CPU`, 332 cases); both it and `test-littlebit-ref` include
   ragged `d_out` (1, 4, 16, 37, 100; `d_in` stays a multiple of 128) with and without residual, n in {1, 9, 512}, and thread counts 1/3/4/8
   (worst relative error 1.8e-5 over 438 reference cases, 6e-7 for the ragged-by-thread cases, bit-identical across thread counts);
   `tests/test-littlebit-ref.cpp` (ctest `test-littlebit-ref`: reference grid, mutation checks,
   thread determinism, supports_op).
+
+## CUDA backend of GGML_OP_LITTLEBIT (decode, 1..8 tokens)
+
+`ggml/src/ggml-cuda/littlebit.cu` (+ `littlebit.cuh`), registered in `ggml-cuda.cu` (dispatch in
+`ggml_cuda_compute_forward`, a `supports_op` case). The file header documents the math, the bit order and the kernels.
+
+- **Supported:** `x` F32 contiguous with 1..8 tokens (`ne[1]*ne[2]*ne[3]`), `V`/`U` (and `Vr`/`Ur`) B1 contiguous 2-D,
+  all scales F32 contiguous, `d_in`, `r`, `r2` multiples of 128, any `d_out`. Anything else (in particular more than 8
+  tokens) answers false in `supports_op`, and the scheduler runs the op on the CPU. **Models do not use it yet:** the
+  loader still pins the LittleBit tensors to the CPU (`TENSOR_PIN_CPU`), so `-ngl 99` runs every LittleBit linear on
+  the CPU exactly as before (operations go to the backend that holds their weights, and CUDA's `offload_op` only
+  takes batches of 32 tokens or more, which the kernel refuses).
+- **Structure:** two launches per call, mirroring the CPU kernel's two stages. V stage: one row index space for the
+  latent units of both paths `[0, r + r2)`, result `t` (F32 `[n][r + r2]`) in a scratch buffer from the CUDA context
+  pool (no allocation and no host synchronization per call, CUDA-graph safe). U stage: each output row sums its
+  primary and residual segment and applies `s_u1` / `s_u1r`. A warp owns R output rows and all tokens (R x n
+  accumulators in registers, so each weight bit is read once per call and each activation load feeds R rows); its 32
+  lanes split the summed dimension in 32-bit (V) or 8-bit (U) chunks with coalesced loads; the activation (`x * s_v2`
+  in the V stage) is staged per block in shared memory with 4 floats of padding per 32 columns, which makes the
+  16-byte loads conflict-free; lane partial sums are added by a warp butterfly. Signs are applied with one LOP3
+  instruction that flips the float sign bit (one token) or builds +-1.0f for an FMA (several tokens), exact in both
+  cases. Deterministic (no atomics; bit-identical repeated runs, asserted).
+- **Accuracy:** float32 throughout, in a different summation order than the CPU kernel. Against the independent double
+  reference: worst 9.1e-7 relative to the output scale over 324 cases (the CPU kernel: 1.8e-5 over 438 cases).
+  Against the CPU kernel: NMSE median 1.9e-13, max 1.5e-12 over 1075 harness case runs (bound 1e-10). ggml-cuda is
+  built with `-use_fast_math`, so subnormal intermediate values are flushed to zero (the CPU keeps them).
+- **Tests:** `test-backend-ops test -o LITTLEBIT -b CUDA0`: the 215 cases with n in {1, 4, 8} (ragged `d_out`
+  1/4/16/37/100, with and without residual, equal and different residual ranks) pass, each compared with the CPU
+  backend AND with the double reference (new harness hook `check_output`), plus a determinism check; the 181 cases
+  with n in {9, 32, 512} report "not supported". The NMSE of the op output is normalized by max(sum y^2, sum E[y^2])
+  (`lb_expected_sq` in `tests/littlebit-ref.h`; the reference checks use the same scale): with one output element the
+  plain NMSE is the squared relative error of a single sum that may cancel to almost 0 by chance (measured up to 4e-11,
+  against 5e-13 at the 90th percentile), which would make any fixed bound fail at random. `test-littlebit-ref` checks
+  per device which batch sizes are accepted, requires that at least one CUDA device was checked, and runs a CUDA grid
+  against the reference. Mutations of the kernel (V polarity flipped, residual path dropped, `s_mid` skipped,
+  MSB-first bit order) each fail every affected harness case (smallest NMSE 5.6e-3, for a dropped rank-8 residual
+  path; medians 0.46 to 4) and fail `test-littlebit-ref`.
+
+### Measured performance (RTX 4050 Laptop GPU, sm_89, 20 SMs, 24 MB L2, 192 GB/s)
+
+Ranks at about 0.55 bits per weight (the `test-backend-ops perf` cases). "harness" = `test-backend-ops perf`: the same
+op repeated in one graph, so its small weights stay in the 24 MB L2. "cold" = one graph of many ops with their own
+weights (96 MB or more per graph, like the layers of a model), measured with a small benchmark program on the public
+ggml API. Bandwidth = weight bytes (signs + scales) / time. The F16 mat-vec is `MUL_MAT` with F16 weights of the same
+shape on the same GPU (cold; the harness gives the same within 5% from 4096 x 4096 up). CPU = the scalar reference
+kernel in the harness.
+
+| d_in x d_out | r + r2 (padded) | n | weights | LittleBit harness | cold | cold GB/s | F16 mat-vec | speed-up | CPU kernel |
+|---|---|---|---|---|---|---|---|---|---|
+| 1024 x 1024 | 256 + 128 | 1 | 0.12 MB | 6.7 us | 7.8 us | 15 | 14.3 us | 1.8x | 295 us |
+| 1024 x 1024 | 256 + 128 | 8 | 0.12 MB | 15.3 us | 15.2 us | 8 | 13.7 us | 0.9x | 888 us |
+| 2048 x 2048 | 384 + 256 | 1 | 0.36 MB | 9.6 us | 10.3 us | 35 | 47.6 us | 4.6x | 989 us |
+| 2048 x 2048 | 384 + 256 | 8 | 0.36 MB | 28.3 us | 29.9 us | 12 | 50.0 us | 1.7x | 2.9 ms |
+| 4096 x 4096 | 640 + 512 | 1 | 1.25 MB | 16.7 us | 20.5 us | 61 | 184 us | 9.0x | 3.6 ms |
+| 4096 x 4096 | 640 + 512 | 8 | 1.25 MB | 70.2 us | 75.7 us | 17 | 191 us | 2.5x | 11.3 ms |
+| 5120 x 5120 | 768 + 640 | 1 | 1.89 MB | 22.8 us | 27.9 us | 68 | 289 us | 10.3x | 5.5 ms |
+| 5120 x 5120 | 768 + 640 | 8 | 1.89 MB | 102 us | 111 us | 17 | 292 us | 2.6x | 20.4 ms |
+| 5120 x 13824 | 1152 + 1024 | 1 | 5.31 MB | 54.1 us | 71.1 us | 75 | 809 us | 11.4x | 15.3 ms |
+| 5120 x 13824 | 1152 + 1024 | 8 | 5.31 MB | 261 us | 290 us | 18 | 800 us | 2.8x | 52.8 ms |
+| 13824 x 5120 | 1152 + 1024 | 1 | 5.31 MB | 54.4 us | 72.5 us | 73 | 808 us | 11.2x | 15.7 ms |
+| 13824 x 5120 | 1152 + 1024 | 8 | 5.31 MB | 237 us | 263 us | 20 | 827 us | 3.1x | 88.6 ms |
+
+What bounds it (micro-benchmarks on the same GPU): DRAM read 187 GB/s, L2 about 600 GB/s. The kernels are bound by
+their instruction stream, not by memory: the inner loop alone (signs in registers, activations in shared memory, no
+memory traffic) reaches about 120 GB/s of sign bits with one token (3 instructions per weight bit: shift, LOP3, add),
+84 with 2, 59 with 4 and 33 with 8 tokens (one FMA per bit and token). The large one-token shapes run at 75 to 98 GB/s
+in the harness, close to that ceiling once the fixed cost of the two dependent launches (about 3 us each: staging,
+first loads and the final reduction are a latency chain) is taken off; the smallest shape is almost only that fixed
+cost. Tensor cores do not help on this GPU: measured 3.6 G `mma.m16n8k16` (f16/bf16 inputs, f32 accumulate) per
+second, which with the activations split into bf16 parts for float32-exact results is no faster than the CUDA cores.
+With 8 tokens the 1024 x 1024 case is slower than the F16 mat-vec, which then runs on tensor cores.
+
+Reproduce (from `engine/build`, CUDA 12.9 `bin` on `PATH`):
+
+```
+bin\test-backend-ops.exe test -o LITTLEBIT -b CUDA0
+bin\test-littlebit-ref.exe
+bin\test-backend-ops.exe perf -o LITTLEBIT -b CUDA0
+bin\test-backend-ops.exe perf -o LITTLEBIT -b CPU
+bin\test-backend-ops.exe perf -o MUL_MAT -b CUDA0 -p "type_a=f16,type_b=f32,m=(1024|2048|4096|5120|13824),n=(1|8),k=(1024|2048|4096|5120|13824),bs=\[1,1\],nr=\[1,1\],per=\[0,1,2,3\],k_v=0,o=1"
+```
 
 ## LittleBit in the graph
 
@@ -357,4 +440,6 @@ Regression guards in `tests/engine/test_fused_graph_qwen3_06b.py`: LittleBit-vs-
 - [x] The Hadamard input transform / precision policy: not applicable (metadata driven), fails loudly if metadata names a LittleBit linear.
 - [ ] Split-mode / tensor-split regexes do not match `lb_*` tensor names (moot while the LittleBit tensors are pinned to the CPU).
 - [x] `lb_to_gguf.py` silently skipped unknown linears: the engine copy is deleted; `tools/convert/lb_to_gguf.py` validates every linear.
-- [ ] GPU kernels for `GGML_OP_LITTLEBIT` (not written yet): remove `TENSOR_PIN_CPU`, handle ragged `d_out`.
+- [x] CUDA kernel for `GGML_OP_LITTLEBIT`, 1..8 tokens, ragged `d_out` handled (see "CUDA backend").
+- [ ] Use it in models: remove `TENSOR_PIN_CPU` for the CUDA backend (today a model still runs every LittleBit linear
+  on the CPU), and a CUDA kernel for batches above 8 tokens (prompt processing). Vulkan kernel.
