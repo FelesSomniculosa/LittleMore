@@ -99,6 +99,26 @@ cmake --build build -j 6
 plugins (`ggml-cuda.dll`, `ggml-vulkan.dll`, `ggml-cpu-*.dll`) land in
 `engine/build/bin`.
 
+## GGML_TYPE_B1 (pure 1-bit sign weights)
+
+Added in the engine (`littlemore` branch): a new ggml type for the +/-1 LittleBit
+factors, exactly 1.0 bits per weight with **no scale** (Q1_0 costs 1.125 bpw
+because of its fp16 scale; LittleBit keeps all scales in separate F32 vectors).
+
+- `block_b1 { uint8_t qs[16]; }`, `QK_B1 = 128`. Element `i` lives in byte `i/8`,
+  bit `i%8` (LSB first). **bit 1 = +1, bit 0 = -1** - the opposite polarity of
+  Samsung's checkpoint packing, so the converter flips the bits.
+- `quantize_row_b1_ref` (x >= 0 gives +1, so 0.0 is +1) and `dequantize_row_b1`.
+- Enum value **`GGML_TYPE_B1 = 44`**, `GGML_TYPE_COUNT = 45`; mirrored in gguf-py
+  (`GGMLQuantizationType.B1`, `GGML_QUANT_SIZES`, `quants.B1`).
+- **Rebase hazard:** upstream's last type is `F8_E4M3 = 43`. If a future upstream
+  claims 44, renumber `GGML_TYPE_B1` in `ggml.h` and `gguf-py/gguf/constants.py`
+  and record the new number here (files written with the old number would be misread).
+- CPU: `to_float` only. There is **no `vec_dot`** and the CPU backend's
+  `supports_op` returns false for `MUL_MAT` with a B1 weight, so it can never be
+  used as an ordinary mul_mat weight; only the LittleBit op / kernels read it.
+- Tests: `engine/tests/test-b1.cpp` (ctest `test-b1`), `tests/engine/test_gguf_b1.py`.
+
 ## Known gaps / TODO
 
 - [ ] LoRA adapters are bypassed on LittleBit linears (`build_lora_mm` returns early).
