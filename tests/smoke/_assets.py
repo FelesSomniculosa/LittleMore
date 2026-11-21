@@ -49,6 +49,10 @@ def _add_path(p: Path) -> None:
 PROMPT = "The capital of France is"
 PROMPT_LONG = "In 1969, the first humans landed on the Moon and said"
 PROMPT_ONE = "Hello"           # single token (9707): position 0, RoPE/attention trivial
+# 40+ tokens: one prompt batch above the 32-token chunk limit of the CUDA LittleBit op for every Qwen3-0.6B linear
+# (all below 8 Mi signs), i.e. the prefill (dequantize + cuBLAS GEMM) path of ggml-cuda/littlebit.cu
+PROMPT_PREFILL = ("In 1969, the first humans landed on the Moon. Neil Armstrong stepped onto the surface and said that "
+                  "it was one small step for a man and one giant leap for mankind, while millions watched on television")
 # Token ids of PROMPT for Qwen3 (no BOS); asserted against the engine's tokenizer.
 PROMPT_IDS = [785, 6722, 315, 9625, 374]
 
@@ -107,12 +111,13 @@ def _commit(tmp: Path, target: Path, key: str) -> None:
     target.with_name(target.name + ".key").write_text(key)
 
 
-def copy_gguf(src: Path, dst: Path, replace=None, extra=(), extra_kv=()) -> None:
+def copy_gguf(src: Path, dst: Path, replace=None, extra=(), extra_kv=(), drop=None) -> None:
     """Write `dst` = a copy of GGUF `src` with metadata and tensors unchanged, except:
 
     `replace(tensor)` may return `(array, raw_dtype)` to swap one tensor's data (None keeps it);
     `extra` is a list of `(name, array, raw_dtype)` tensors appended; `extra_kv` a list of
-    `(key, value, value_type[, sub_type])` metadata entries added.  Used to derive test variants.
+    `(key, value, value_type[, sub_type])` metadata entries added; `drop(name)` returning True leaves that tensor
+    out.  Used to derive test variants.
     """
     _add_path(ENGINE / "gguf-py")
     import gguf
@@ -126,6 +131,8 @@ def copy_gguf(src: Path, dst: Path, replace=None, extra=(), extra_kv=()) -> None
     for kv in extra_kv:
         writer.add_key_value(*kv)
     for t in reader.tensors:
+        if drop is not None and drop(t.name):
+            continue
         new = replace(t) if replace else None
         data, dtype = new if new else (np.asarray(t.data), t.tensor_type)
         writer.add_tensor(t.name, data, raw_dtype=dtype)

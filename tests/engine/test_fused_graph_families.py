@@ -126,6 +126,53 @@ def ref_logits(c: Case, ids: list[int], **mutations) -> np.ndarray:
     return E.last_logits(c.model, ids)
 
 
+def test_old_format_without_packed_scales_is_bit_identical(case):
+    """A file without `lb_s_pkr` (written by older converters) gives bit-identical logits to the packed file.
+
+    Without `lb_s_pkr` the loader reads the three residual scale vectors and the graph packs them with two CONCAT nodes
+    per call (12-argument ggml_littlebit); with it, the graph calls ggml_littlebit_packed on the stored copy.  Both feed
+    the same bytes to the same kernel, so the logits must be identical, on the CPU and on CUDA.  Teeth: a packed file
+    whose `lb_s_pkr` has its last segment (s_u1r) doubled must give DIFFERENT logits, i.e. the engine really reads the
+    packed tensor (otherwise the identity above would hold trivially).
+
+    The CPU run uses `--no-op-offload`.  Why (diagnosed with GGML_SCHED_DEBUG and llama-debug's tensor dump on the tiny
+    Llama model, whose prompt is 37 tokens): with a GPU present, llama.cpp's op offload sends prompt batches of 32 tokens
+    or more of CPU-layer ops to CUDA0, and the scheduler then grows its CUDA splits over neighbouring nodes.  The CPU
+    CONCAT nodes of the old format cut those splits differently, so layer 0's FLASH_ATTN_EXT ran on CUDA0 for the packed
+    file and on the CPU for the old one; that node is the first whose output differs (every LITTLEBIT before it was
+    identical), and the logits then differed by 2.8e-4 (Gemma 3, same prompt text: 6.7e-4, not traced node by node;
+    it passes with the same switch).  With op offload off (or `-dev none`)
+    both files run every node on the CPU and are bit-identical, as they are at -ngl 99 (everything on CUDA0).
+    """
+    import gguf  # the engine's gguf-py, on sys.path through the converter import
+    names = [t.name for t in gguf.GGUFReader(str(case.gguf)).tensors]
+    assert any(n.endswith(".lb_s_pkr") for n in names)
+    old = case.tmp / f"{case.family}-nopk.gguf"
+    A.copy_gguf(case.gguf, old, drop=lambda n: n.endswith(".lb_s_pkr"))
+    assert not any(t.name.endswith(".lb_s_pkr") for t in gguf.GGUFReader(str(old)).tensors)
+
+    def corrupt(t):
+        if not t.name.endswith(".lb_s_pkr"):
+            return None
+        a = np.array(t.data, dtype=np.float32).reshape(-1)
+        base = t.name.removesuffix(".lb_s_pkr")
+        n_out = next(int(x.shape[0]) for x in gguf.GGUFReader(str(case.gguf)).tensors if x.name == base + ".lb_s_u1r")
+        a[-n_out:] *= 2.0
+        return a, gguf.GGMLQuantizationType.F32
+    bad = case.tmp / f"{case.family}-badpk.gguf"
+    A.copy_gguf(case.gguf, bad, replace=corrupt)
+    for ngl in (0, 99):
+        extra = ("--no-op-offload",) if ngl == 0 else ()
+        new, ids = engine(case, ngl=ngl, extra=extra)
+        prev, ids_old = engine(case, old, ngl=ngl, extra=extra)
+        wrong, _ = engine(case, bad, ngl=ngl, extra=extra)
+        assert ids == ids_old
+        assert np.array_equal(new.view(np.uint32), prev.view(np.uint32)), f"ngl {ngl}: max diff {np.abs(new - prev).max()}"
+        assert np.abs(wrong - new).max() > 1e-3, f"ngl {ngl}: corrupted lb_s_pkr changed nothing"
+        print(f"{case.family} ngl {ngl}: packed == unpacked bit for bit; corrupted packed scales move the logits by "
+              f"{np.abs(wrong - new).max():.2e}")
+
+
 def metrics(a: np.ndarray, b: np.ndarray) -> dict:
     """Compare logits `a` against reference `b`: max-abs and rms difference, correlation, same top-1 token, logit rms."""
     d = a - b

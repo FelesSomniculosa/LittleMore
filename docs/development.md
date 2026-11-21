@@ -102,6 +102,7 @@ tool sources that produced it change.
 | `make_lb2_init.py` | makes an init-only LittleBit-2 checkpoint from any Hugging Face causal language model (no training) |
 | `dense_floor.py` | runs the dense Qwen3-0.6B and the LittleBit file through llama.cpp (CPU / GPU, default / exact) against their fp32 references and prints the noise-floor table of docs/engine-changes.md |
 | `emulate_q8_slow_path.py` | the reference plus the int8 activation noise that llama.cpp adds, so engine and reference can be compared fairly |
+| `dequant_gguf_to_hf.py` | rebuilds a Hugging Face directory from a quantized Qwen3 GGUF (dequantized weights): a "proxy" base model with the right shapes for SPEED measurements when the original weights are not downloaded (not for accuracy) |
 
 Example, making a checkpoint by hand:
 
@@ -118,8 +119,15 @@ Example, making a checkpoint by hand:
 
 ```powershell
 .venv\Scripts\python.exe -m tools.convert.lb_to_gguf .cache/ckpt/qwen3-0.6b-lb2-0.55 -o out/model.gguf
+.venv\Scripts\python.exe -m tools.convert.lb_to_gguf .cache/ckpt/qwen3-0.6b-lb2-0.55 -o out/model-q8.gguf --head-type q8_0
 .venv\Scripts\python.exe -m pytest tests/convert -q
 ```
+
+`--head-type f16|q8_0|q6_k` (default `f16`) sets the type of the token embedding and the output head, the largest
+tensors of a small model; Q8_0 / Q6_K shrink them 1.9x / 2.4x and make generation faster (measured in
+[bench/results/phase1.md](../bench/results/phase1.md), with the perplexity change). Everything else in the file is
+unchanged; correctness is measured with the F16 head. The Q6_K quantizer is a port of ggml's C reference quantizer into
+the engine's gguf-py, bit-identical to it (`tests/convert/test_head_type.py`).
 
 Input widths (hidden size, intermediate size) must be multiples of 128, because
 a `B1` row is whole 128-sign blocks; the converter refuses anything else. The
@@ -152,6 +160,17 @@ init-only checkpoint at `-ngl 0` and `-ngl 99`. The engine's own tests: from `en
 bit-identical), and `test-backend-ops test -o LITTLEBIT -b CPU` does the same through the test harness; see "CPU: AVX2
 kernel" in [engine-changes.md](engine-changes.md#cpu-avx2-kernel-of-ggml_op_littlebit) for the CPU speed measurements and
 `engine/tools/littlebit-bench/cpu_bench.cpp` for the benchmark program.
+
+## 8. Speed benchmarks and the speed gate
+
+```powershell
+.venv\Scripts\python.exe -m pytest tests/bench -q                                   # the gate rule (pure logic)
+.venv\Scripts\python.exe -m bench.run_bench --plan bench/plans/phase1.json --rounds 3 --out bench/results/phase1.json
+```
+
+`bench/run_bench.py` wraps `llama-bench` (warm-up, repetitions, interleaved rounds, GPU memory and clock); the gate is
+"LittleBit 0.55 bpw generates faster than bf16 on CUDA for Qwen3-0.6B and Qwen3-1.7B". See [bench/README.md](../bench/README.md)
+and the results in [bench/results/phase1.md](../bench/results/phase1.md).
 
 ## Glossary
 

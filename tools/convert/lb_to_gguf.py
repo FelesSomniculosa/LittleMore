@@ -82,13 +82,23 @@ linears, biases): they come from the same checkpoint directory (the maker stores
 bf16) and go through llama.cpp's real converter class for the architecture, with
 `--outtype f16` semantics: 2-D+ weights (token embeddings, output head, any small dense
 linear) are written as F16, 1-D tensors (norms, biases, scale-like vectors) as F32.
-`head_type` is the hook for Q8_0/Q6_K heads, which are not implemented yet.  Terms (LittleBit, GGUF, rank, RoPE,
-GQA) are defined in docs/development.md (glossary).
+
+Head type (`--head-type f16|q8_0|q6_k`, default f16): the precision of the token embedding and the output head
+(`token_embd.weight`, plus `output.weight` when the head is not tied to the embedding).  These are the largest single
+tensors of a small model (Qwen3-0.6B: 311 MB of a 636 MB file at F16) and the head is read once per generated token,
+so a Q8_0 (8.5 bits per value) or Q6_K (6.56 bits) head cuts those bytes 1.9x or 2.4x.  The quantizers are gguf-py's
+Q8_0 and Q6_K, both bit-identical to ggml's C reference quantizers (tests/convert/test_head_type.py); the source values
+are the checkpoint's, widened to float32 first (never F16-rounded before quantization).  Nothing else in the file
+changes.  Correctness of the LittleBit linears is measured with the default F16 head; a quantized head adds its own
+(small, measured: bench/results/phase1.md) error.  A head whose row length the type cannot take (Q8_0: multiples of
+32, Q6_K: multiples of 256) is refused with a ConversionError instead of being written as F16.
+
+Terms (LittleBit, GGUF, rank, RoPE, GQA) are defined in docs/development.md (glossary).
 
 Note on history: Cybertiron's file was briefly vendored under engine/ and removed there once
 this converter replaced it.
 
-Usage: python -m tools.convert.lb_to_gguf <ckpt_dir> -o <out.gguf> [--head-type f16] [--no-validate] [--assume-no-littlebit-config]
+Usage: python -m tools.convert.lb_to_gguf <ckpt_dir> -o <out.gguf> [--head-type f16|q8_0|q6_k] [--no-validate] [--assume-no-littlebit-config]
 """
 from __future__ import annotations
 
@@ -129,6 +139,11 @@ logger = logging.getLogger("littlemore.convert")
 
 QK = 128  # signs per B1 block (16 bytes); the rank and the input width must be multiples of it
 _HEAD_TYPES = ("f16", "q8_0", "q6_k")
+# ggml type of the embedding / output head per head_type
+_HEAD_QTYPE = {"f16": gguf.GGMLQuantizationType.F16, "q8_0": gguf.GGMLQuantizationType.Q8_0,
+               "q6_k": gguf.GGMLQuantizationType.Q6_K}
+# GGUF names of the head tensors (the output head exists only when it is not tied to the embedding)
+_HEAD_TENSORS = ("token_embd.weight", "output.weight")
 # Names the maker / Samsung tooling use for the scale tensors of a path; used to recognise
 # which checkpoint keys belong to LittleBit linears (everything else is a plain tensor).
 _LB_KEY = ref._KEY
@@ -165,6 +180,7 @@ class ConversionReport:
     arch: str = ""
     config_check_skipped: bool = False      # littlebit_config.json cross-check skipped (override flag)
     lb_bytes: int = 0                       # bytes of the B1 sign matrices written
+    head_type: str = "f16"                  # precision of token_embd / output (see "Head type" above)
 
 
 def pad_to(n: int, m: int = QK) -> int:
@@ -330,8 +346,6 @@ def _check_inputs(ckpt: Path, head_type: str, assume_no_littlebit_config: bool =
     """
     if head_type not in _HEAD_TYPES:
         raise ConversionError(f"unknown head_type {head_type!r}; expected one of {_HEAD_TYPES}")
-    if head_type != "f16":
-        raise NotImplementedError(f"head_type {head_type!r} is not implemented yet; use 'f16'")
     if not ckpt.is_dir():
         raise ConversionError(f"checkpoint directory not found: {ckpt}")
     if not (ckpt / "config.json").is_file():
@@ -428,12 +442,17 @@ def _memory_preflight(ckpt: Path) -> None:
                               f"but only {avail / 2**30:.2f} GiB are available; free memory or use a machine with more RAM")
 
 
-def _make_converter(ckpt: Path, tmp_out: Path) -> ModelBase:
+def _make_converter(ckpt: Path, tmp_out: Path, head_type: str = "f16") -> ModelBase:
     """llama.cpp's converter class for the checkpoint's HF architecture, in F16 mode.
 
     `_SHARED_INPUT_MERGES = ()` switches off the merging of tensors that share an input
     (Qwen3.5 fuses in_proj_qkv+in_proj_z and in_proj_b+in_proj_a): a merged linear cannot be
     factored, so each linear stays its own GGUF tensor (the loader accepts both layouts).
+
+    `head_type` other than f16: the converter's per-tensor type hook (`tensor_force_quant`, consulted for every
+    tensor before the file-type default) returns Q8_0 / Q6_K for the token embedding and the output head, so the
+    converter quantizes them from the float32-widened source values with gguf-py's quantizers; every other tensor
+    keeps the F16 / F32 choice of the file type.
     """
     try:
         hparams = ModelBase.load_hparams(ckpt, False)
@@ -457,7 +476,19 @@ def _make_converter(ckpt: Path, tmp_out: Path) -> ModelBase:
     except Exception as e:
         raise ConversionError(f"cannot set up llama.cpp's converter for {ckpt} ({type(e).__name__}: {e})") from e
     conv._SHARED_INPUT_MERGES = ()
-    logger.info("converter class %s (arch %s)", cls.__name__, conv.model_arch.name)
+    if head_type != "f16":
+        qtype = _HEAD_QTYPE[head_type]
+        base_force = conv.tensor_force_quant
+        head_keys = (gguf.MODEL_TENSOR.TOKEN_EMBD, gguf.MODEL_TENSOR.OUTPUT)
+
+        def force_head(name: str, new_name: str, bid: int | None, n_dims: int):
+            """Q8_0 / Q6_K for the embedding and the output head, the converter's own choice for everything else."""
+            if n_dims >= 2 and any(conv.match_model_tensor_name(new_name, k, bid) for k in head_keys):
+                return qtype
+            return base_force(name, new_name, bid, n_dims)
+
+        conv.tensor_force_quant = force_head
+    logger.info("converter class %s (arch %s), head type %s", cls.__name__, conv.model_arch.name, head_type)
     return conv
 
 
@@ -495,7 +526,7 @@ def convert_checkpoint(ckpt_dir: Path, out: Path, head_type: str = "f16", valida
     os.close(fd)
     tmp = Path(tmp_name)
     try:
-        report = _build(ckpt_dir, params, tmp, validate)
+        report = _build(ckpt_dir, params, tmp, validate, head_type)
         report.config_check_skipped = bool(assume_no_littlebit_config)
         gc.collect()  # drop any memory map of `tmp` before renaming it (Windows refuses otherwise)
         os.replace(tmp, out)
@@ -510,10 +541,11 @@ def convert_checkpoint(ckpt_dir: Path, out: Path, head_type: str = "f16", valida
             logger.warning("could not remove temporary file %s (%s)", tmp, e)
 
 
-def _build(ckpt: Path, params: dict[str, ref.LBLinearParams], tmp: Path, validate: bool) -> ConversionReport:
+def _build(ckpt: Path, params: dict[str, ref.LBLinearParams], tmp: Path, validate: bool,
+           head_type: str = "f16") -> ConversionReport:
     """Everything between 'inputs checked' and 'rename': build the GGUF in `tmp` and validate it."""
-    report = ConversionReport(n_linears=len(params))
-    conv = _make_converter(ckpt, tmp)
+    report = ConversionReport(n_linears=len(params), head_type=head_type)
+    conv = _make_converter(ckpt, tmp, head_type)
     report.arch = conv.model_arch.name.lower()
 
     # (3) Drop the LittleBit tensors from the converter's index so it only handles plain ones.
@@ -659,6 +691,14 @@ def _verify(path: Path, params: dict[str, ref.LBLinearParams], report: Conversio
     """The checks of `_check_written`; returns None when fine, else the error message."""
     reader = gguf.GGUFReader(str(path))
     by_name = {t.name: t for t in reader.tensors}
+    # the head tensors must have the requested type: llama.cpp's converter falls back to F16 with only a warning when
+    # a type cannot take the row length (e.g. Q6_K and a hidden size that is not a multiple of 256)
+    want = _HEAD_QTYPE[report.head_type]
+    for hname in _HEAD_TENSORS:
+        t = by_name.get(hname)
+        if t is not None and t.tensor_type != want:
+            return (f"{hname} was written as {t.tensor_type.name}, not {want.name} as --head-type {report.head_type} "
+                    f"asks (row length {int(t.shape[0])}: Q8_0 needs a multiple of 32, Q6_K of 256)")
     n_lb_v = sum(1 for n in by_name if n.endswith(".lb_v"))
     expected = sum(len(v) for v in report.probes.values())
     if n_lb_v != expected or set(report.probes) != set(params):
@@ -729,8 +769,8 @@ def convert(ckpt_dir: Path, out: Path, head_type: str = "f16", validate: bool = 
             assume_no_littlebit_config: bool = False) -> None:
     """Convert the Samsung-format LittleBit checkpoint in `ckpt_dir` to a B1 GGUF at `out`.
 
-    `head_type`: precision of the embedding / output head; only "f16" is implemented
-    ("q8_0" / "q6_k" are not implemented yet and raise NotImplementedError).  With `validate=True` (default)
+    `head_type`: precision of the embedding / output head, "f16" (default), "q8_0" or "q6_k" (see "Head type" in the
+    module docstring; a row length the type cannot take is a ConversionError).  With `validate=True` (default)
     every LittleBit linear is read back from the written file and compared with the PyTorch
     reference; any error above tolerance, a missing/skipped linear or a bad input raises
     `ConversionError` and leaves no file at `out` (the file is written to a temp name and
@@ -746,7 +786,8 @@ def main(argv: list[str] | None = None) -> int:
     ap = argparse.ArgumentParser(description="Convert a Samsung-format LittleBit checkpoint to a B1 GGUF.")
     ap.add_argument("ckpt", type=Path, help="checkpoint directory (safetensors + config.json + tokenizer + littlebit_config.json)")
     ap.add_argument("-o", "--out", type=Path, required=True, help="output .gguf path")
-    ap.add_argument("--head-type", default="f16", choices=_HEAD_TYPES, help="embedding/output precision (only f16 for now)")
+    ap.add_argument("--head-type", default="f16", choices=_HEAD_TYPES,
+                    help="precision of the token embedding / output head (default f16; q8_0 and q6_k shrink it)")
     ap.add_argument("--assume-no-littlebit-config", action="store_true",
                     help="accept a checkpoint without littlebit_config.json (skips only the residual cross-check)")
     ap.add_argument("--no-validate", action="store_true", help="skip the per-layer read-back validation (not recommended)")
@@ -760,7 +801,7 @@ def main(argv: list[str] | None = None) -> int:
         return 1
     print(f"wrote {args.out}: {args.out.stat().st_size / 2**20:.1f} MiB, {report.n_linears} LittleBit linears "
           f"({report.lb_bytes / 2**20:.1f} MiB of B1 signs), validated {report.n_validated}, "
-          f"max rel err {report.max_rel_err:.2e} (tolerance {report.tolerance:.2e})"
+          f"max rel err {report.max_rel_err:.2e} (tolerance {report.tolerance:.2e}), head {report.head_type}"
           + (f"; WARNING {len(report.biases)} bias tensors on LittleBit linears carried over" if report.biases else ""))
     return 0
 

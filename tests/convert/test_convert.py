@@ -477,11 +477,8 @@ def test_family_converts_and_validates(family, arch, tmp_path):
     assert emb.tensor_type == gguf.GGMLQuantizationType.F16
 
 
-def test_head_type_other_than_f16_not_yet():
-    """q8_0 / q6_k heads are not implemented yet; asking for one must fail with a clear NotImplementedError (not convert silently as f16)."""
-    for h in ("q8_0", "q6_k"):
-        with pytest.raises(NotImplementedError, match="not implemented yet"):
-            lb.convert(Path("nonexistent"), Path("x.gguf"), head_type=h)
+def test_head_type_unknown_is_refused():
+    """An unknown head type fails with a ConversionError naming the option (q8_0 / q6_k: tests/convert/test_head_type.py)."""
     with pytest.raises(lb.ConversionError, match="head_type"):
         lb.convert(Path("nonexistent"), Path("x.gguf"), head_type="bogus")
 

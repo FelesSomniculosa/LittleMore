@@ -34,7 +34,9 @@ Where the GPU error comes from (numbers from `python tools/dev/dense_floor.py`, 
 """
 from __future__ import annotations
 
+import os
 import re
+import subprocess
 
 import numpy as np
 import pytest
@@ -96,6 +98,10 @@ def test_fused_matches_reference_and_beats_slow_path(ggufs, prompt, ngl):
 # LittleBit-vs-reference / dense-vs-dense-reference at the same settings, 16 tokens, -ngl 99: measured 1.25 (default)
 # and 1.43 (-fa off, f32 KV) with the LittleBit op on CUDA (1.46 / 1.56 when it ran on the CPU); limit 2.0.
 GPU_OVER_DENSE_FLOOR_MAX = 2.0
+# Prefill (44 tokens) at -ngl 99, exact config: measured 1.58 x the dense floor (limit above, 2.0).  Default config:
+# LittleBit on the GPU / the same model on the pure CPU in the same config, measured 1.40 (3.09e-2 / 2.20e-2); limit
+# 2.0 (see test_gpu_error_is_within_dense_floor_factor for why the dense factor does not apply there).
+GPU_OVER_CPU_DEFAULT_MAX = 2.0
 # One token, -ngl 99, -fa off, f32 KV: with the F16 head 4.8e-3 (limit 1e-2); with an F32 head 2.6e-5 with the op on
 # CUDA (1.1e-4 when it ran on the CPU), limit 2.5e-4 (about 10x; was 1e-3).
 GPU_1TOK_F16_HEAD_MAX_ABS = 1e-2
@@ -103,18 +109,42 @@ GPU_1TOK_F32_HEAD_MAX_ABS = 2.5e-4
 
 
 @pytest.mark.parametrize("cfg", ["default", "exact"])
-def test_gpu_error_is_within_dense_floor_factor(ggufs, cfg):
-    """16 tokens at -ngl 99: LittleBit's error stays within GPU_OVER_DENSE_FLOOR_MAX x the DENSE model's CUDA floor."""
+@pytest.mark.parametrize("prompt", [A.PROMPT_LONG, A.PROMPT_PREFILL], ids=["16tok", "prefill"])
+def test_gpu_error_is_within_dense_floor_factor(ggufs, cfg, prompt):
+    """-ngl 99: LittleBit's error stays within GPU_OVER_DENSE_FLOOR_MAX x the DENSE model's CUDA floor.
+
+    16 tokens: the chunked decode kernels of the CUDA op.  The PROMPT_PREFILL prompt (44 tokens) is above the chunk limit
+    of every Qwen3-0.6B linear (16 tokens), so every LittleBit linear of the prompt batch runs the prefill path
+    (dequantized sign tiles + float32 cuBLAS GEMMs).
+
+    Prefill, default configuration (flash attention + f16 KV): the dense factor does NOT apply, and the bound is
+    instead GPU_OVER_CPU_DEFAULT_MAX x the same LittleBit model's error on the pure CPU (`-dev none`) in the same
+    configuration.  Diagnosis (measured, 44 tokens, max-abs against the respective fp32 reference): on the pure CPU,
+    with no GPU involved, LittleBit 2.20e-2 vs dense 8.31e-3, i.e. 2.65x already: the init-only LittleBit model is more
+    sensitive to flash attention's f16 path than the dense model (exact config on the pure CPU: 1.29e-4, the op itself
+    is exact).  On the GPU: 3.09e-2 vs dense 1.49e-2 (2.08x).  The LittleBit prefill path is not the carrier: with the
+    CUDA op forced onto the chunked decode kernels (temporary build) the same run gives 2.52e-2 (default) and 2.91e-2
+    (exact) against 3.09e-2 and 1.94e-2 with the prefill path, i.e. the two float32 paths land on the same error level
+    in different order.  In the exact configuration the dense factor holds (1.58).
+    """
     b1, _ = ggufs
     dense = A.ensure_dense_floor_gguf()
     extra = () if cfg == "default" else EXACT_ARGS
-    lb, ids = A.engine_logits(b1, A.PROMPT_LONG, 99, extra)
-    dn, ids_d = A.engine_logits(dense, A.PROMPT_LONG, 99, extra)
+    lb, ids = A.engine_logits(b1, prompt, 99, extra)
+    dn, ids_d = A.engine_logits(dense, prompt, 99, extra)
     assert ids == ids_d
+    if prompt is A.PROMPT_PREFILL:
+        assert len(ids) > 32, len(ids)   # above the chunk limit of every Qwen3-0.6B linear
     e_lb = metrics(lb, A.reference_logits(ids))["max_abs"]
     e_dense = metrics(dn, A.dense_reference_logits(ids))["max_abs"]
-    print(f"gpu {cfg}: LittleBit {e_lb:.2e}, dense floor {e_dense:.2e}, ratio {e_lb / e_dense:.2f}")
-    assert e_lb <= GPU_OVER_DENSE_FLOOR_MAX * e_dense
+    print(f"gpu {cfg} {len(ids)} tokens: LittleBit {e_lb:.2e}, dense floor {e_dense:.2e}, ratio {e_lb / e_dense:.2f}")
+    if prompt is A.PROMPT_PREFILL and cfg == "default":
+        cpu, _ = A.engine_logits(b1, prompt, 0, ("-dev", "none"))
+        e_cpu = metrics(cpu, A.reference_logits(ids))["max_abs"]
+        print(f"gpu default {len(ids)} tokens: LittleBit on the pure CPU {e_cpu:.2e}, GPU / CPU {e_lb / e_cpu:.2f}")
+        assert e_lb <= GPU_OVER_CPU_DEFAULT_MAX * e_cpu
+    else:
+        assert e_lb <= GPU_OVER_DENSE_FLOOR_MAX * e_dense
 
 
 def test_gpu_one_token_error_is_the_f16_head(ggufs):
@@ -127,6 +157,50 @@ def test_gpu_one_token_error_is_the_f16_head(ggufs):
     e16, e32 = metrics(lg16, want)["max_abs"], metrics(lg32, want)["max_abs"]
     print(f"1 token gpu exact: F16 head {e16:.2e}, F32 head {e32:.2e}")
     assert e16 <= GPU_1TOK_F16_HEAD_MAX_ABS and e32 <= GPU_1TOK_F32_HEAD_MAX_ABS
+
+
+def littlebit_placement(gguf, ngl: int, extra: tuple = ()) -> list[tuple[str, str, list[tuple[str, str]]]]:
+    """Every LITTLEBIT node the scheduler assigned in a short llama-completion run, parsed from GGML_SCHED_DEBUG=2.
+
+    Returns (node name, backend of the node, [(source name, backend of the source), ...]) per LITTLEBIT node of every
+    graph the scheduler printed.  A source name with a `#` (e.g. `CUDA0#blk.0.attn_q.lb_v`) is a per-call copy of a
+    tensor that lives elsewhere; a weight source on the node's own backend means the weight is stored there.
+    """
+    env = A._env()
+    env["GGML_SCHED_DEBUG"] = "2"
+    r = subprocess.run([str(A.BIN / ("llama-completion" + A.EXE)), "-m", str(gguf), "-p", "Hello", "-n", "1",
+                        "-ngl", str(ngl), "-no-cnv", "-v", *extra], cwd=A.ROOT, env=env, text=True, encoding="utf-8",
+                       errors="replace", stdin=subprocess.DEVNULL, stdout=subprocess.PIPE, stderr=subprocess.STDOUT,
+                       timeout=600)
+    assert r.returncode == 0, r.stdout[-2000:]
+    text = re.sub(r"\d+\.\d+\.\d+\.\d+ [DIWE] ", "", r.stdout)   # drop the log timestamps
+    nodes = []
+    for chunk in text.split("node #")[1:]:
+        m = re.match(r"\s*\d+ \(\s*LITTLEBIT\):\s*(\S+) \([^)]*\) \[\s*(\S+)\s*\]", chunk)
+        if not m:
+            continue
+        body = chunk[m.end():].split("## SPLIT")[0]
+        srcs = re.findall(r"(\S+) \(\s*\d+[KMG]\) \[\s*(\S+)\s*\]", body)   # sizes are printed in K, M or G
+        nodes.append((m.group(1), m.group(2), srcs))
+    return nodes
+
+
+def test_littlebit_nodes_and_weights_on_cuda_at_ngl99(ggufs):
+    """-ngl 99: every LITTLEBIT node runs on CUDA0 and every one of its sources (activation and weights) lives there,
+    with no per-call weight copy (Task 11's placement by capability).  Teeth: the same check on a run with the Vulkan
+    device (no LittleBit kernel there, so nodes and weights stay on the CPU) flags every node."""
+    b1, _ = ggufs
+
+    def off_cuda(nodes):
+        return [(n, d, s) for n, d, s in nodes if d != "CUDA0" or any(sd != "CUDA0" or "#" in sn for sn, sd in s)]
+
+    gpu = littlebit_placement(b1, 99)
+    assert gpu and len(gpu) % 196 == 0, len(gpu)     # 28 layers x 7 linears per printed graph
+    assert not off_cuda(gpu), off_cuda(gpu)[:3]
+    assert all(len(s) >= 9 for _, _, s in gpu)       # x + 8 weight tensors (packed residual scales) per node
+    # wrong placement must be detected: on Vulkan (no LittleBit kernel) the nodes and weights stay on the CPU
+    vk = littlebit_placement(b1, 99, ("-dev", "Vulkan0"))
+    assert vk and len(off_cuda(vk)) == len(vk) and any(d == "CPU" for _, d, _ in vk), vk[:3]
 
 
 @pytest.mark.parametrize("ngl", [0, 99], ids=["cpu", "gpu"])
