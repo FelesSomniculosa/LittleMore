@@ -134,6 +134,48 @@ because of its fp16 scale; LittleBit keeps all scales in separate F32 vectors).
     backends' `supports_op`.
 - Tests: `engine/tests/test-b1.cpp` (ctest `test-b1`), `tests/engine/test_gguf_b1.py`.
 
+## GGML_OP_LITTLEBIT (fused LittleBit linear, CPU reference)
+
+One op that computes a whole LittleBit linear straight from the B1 sign matrices and F32
+activations (no activation quantization, unlike the 11-op slow path in `build_lb_path`).
+Added in the engine (`littlebit` work on branch `littlemore`); the graph builder does not use it yet.
+
+- **API:** `ggml_littlebit(ctx, x, V, U, s_v2, s_mid, s_u1, Vr, Ur, s_v2r, s_midr, s_u1r)`; the five
+  residual arguments are all NULL (single-path) or all set. Also `ggml_littlebit_packed(...)` taking
+  the residual scales pre-packed (see below).
+- **Shapes** (ggml order, `ne[0]` innermost): `x` F32 `[d_in, n]`; `V` B1 `[d_in, r]` (row j = signs of
+  latent unit j); `U` B1 `[r, d_out]` (row i = signs of output i); `s_v2` `[d_in]`; `s_mid` `[r]`;
+  `s_u1` `[d_out]`; result F32 `[d_out, n]`. The residual path has its own rank `r2`.
+- **Padding rule:** `d_in` and `d_out` are multiples of 128; the ranks `r`, `r2` are padded up to a
+  multiple of 128. Padded latent units carry `s_mid = 0` (the converter guarantees it) so they add
+  exactly nothing; their V rows / U columns may hold arbitrary +-1. The kernels do not special-case padding.
+- **Math** per token and path: `xs = x*s_v2`; `t_j = s_mid_j * sum_k sgn(V[j,k]) xs_k`;
+  `y_i = s_u1_i * sum_j sgn(U[i,j]) t_j`; result = primary + residual. `sgn(bit 1) = +1`,
+  `sgn(bit 0) = -1`, as in `dequantize_row_b1`.
+- **Accumulation (CPU reference):** float32; stage 1 sums k ascending, stage 2 sums j ascending over all
+  padded units, then primary + residual. Each output element is computed by one thread in a fixed order,
+  so results are bit-identical for any thread count. Other backends agree to float rounding only.
+- **Two-stage structure:** stage 1 writes `t` (`r + r2` floats per token, in the CPU work buffer), a
+  barrier, stage 2 reads it. GPU kernels mirror this; the CPU kernel is the reference they are tested against.
+- **`GGML_MAX_SRC` decision:** it is 10 and the 12-argument form needs 11 source tensors. The three
+  residual scale vectors are therefore packed into one F32 tensor `[s_v2r | s_midr | s_u1r]` (length
+  `d_in + r2 + d_out`), built inside `ggml_littlebit` with two `GGML_OP_CONCAT` nodes. Raising
+  `GGML_MAX_SRC` was rejected: it is used by about 30 files (RPC wire format, backend-meta, CUDA graph
+  caches, Hexagon/ET/CANN structs) and changes `sizeof(ggml_tensor)`. A loader that packs the scales
+  once at load time can call `ggml_littlebit_packed` and avoid the per-call concats. Source slots:
+  `0 x, 1 V, 2 U, 3 s_v2, 4 s_mid, 5 s_u1, 6 Vr, 7 Ur, 8 s_pack_r`.
+- **Op number / rebase hazard:** `GGML_OP_LITTLEBIT` is the last entry before `GGML_OP_COUNT`
+  (`GGML_OP_COUNT` 100 -> 101; the two static_asserts in `ggml.c` were bumped). The op number is not
+  stored in GGUF files.
+- **How backends opt in:** answer true for `GGML_OP_LITTLEBIT` in `supports_op`. Every backend already
+  refuses any op with a B1 source (Task 6 guard), so each needs an explicit exception placed before that
+  guard. Today only the CPU backend has one (`ggml-cpu.cpp`); CUDA and Vulkan still answer false, and
+  the scheduler then runs the op on the CPU backend. Asserted in `tests/test-littlebit-ref.cpp`.
+- **Tests:** `test-backend-ops test -o LITTLEBIT` (each backend vs CPU, plus the CPU result vs an
+  independent double-precision reference in `tests/littlebit-ref.h`, tolerance 1e-4 of max|y|);
+  `tests/test-littlebit-ref.cpp` (ctest `test-littlebit-ref`: reference grid, mutation checks,
+  thread determinism, supports_op).
+
 ## Known gaps / TODO
 
 - [ ] LoRA adapters are bypassed on LittleBit linears (`build_lora_mm` returns early).
