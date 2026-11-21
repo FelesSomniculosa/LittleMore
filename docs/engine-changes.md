@@ -191,12 +191,15 @@ Added in the engine (`littlebit` work on branch `littlemore`); the graph builder
   guard. The CPU backend (`ggml-cpu.cpp`) takes any batch; CUDA takes 1..8 tokens (see "CUDA backend" below) and
   answers false for larger batches; Vulkan still answers false. Where the answer is false the scheduler runs the op
   on the CPU backend. Asserted per device and batch size in `tests/test-littlebit-ref.cpp`.
-- **Tests:** `test-backend-ops test -o LITTLEBIT` (each backend vs CPU, plus the CPU result vs an
-  independent double-precision reference in `tests/littlebit-ref.h`, tolerance 1e-4 of max|y|; also with `-b CPU`, 332 cases); both it and `test-littlebit-ref` include
-  ragged `d_out` (1, 4, 16, 37, 100; `d_in` stays a multiple of 128) with and without residual, n in {1, 9, 512}, and thread counts 1/3/4/8
-  (worst relative error 1.8e-5 over 438 reference cases, 6e-7 for the ragged-by-thread cases, bit-identical across thread counts);
-  `tests/test-littlebit-ref.cpp` (ctest `test-littlebit-ref`: reference grid, mutation checks,
-  thread determinism, supports_op).
+- **Tests:** `test-backend-ops test -o LITTLEBIT` (422 cases with `-b CPU`): each backend against the CPU (NMSE, see
+  the CUDA section for the normalization), the backend output and, once per case, the CPU kernel against an
+  independent double-precision reference in `tests/littlebit-ref.h` (tolerance 1e-4 relative to max(max|y|, the expected
+  output scale)), and a determinism check. The grid has ragged `d_out` (1, 4, 16, 37, 100; `d_in` stays a multiple of
+  128) with and without residual, equal and different residual ranks, n in {1, 4, 8, 9, 32, 512}, every n from 1 to 8
+  on shapes that take the multi-tile paths of the CUDA kernel, and d_in up to 10368. `tests/test-littlebit-ref.cpp`
+  (ctest `test-littlebit-ref`): CPU reference grid (worst relative error 1.8e-5 over 438 cases), mutation checks of the
+  reference, thread counts 1/3/4/8 (bit-identical; 6e-7 for the ragged-by-thread cases), supports_op per device and
+  batch size, the CUDA grid (see the CUDA section).
 
 ## CUDA backend of GGML_OP_LITTLEBIT (decode, 1..8 tokens)
 
@@ -220,27 +223,35 @@ Added in the engine (`littlebit` work on branch `littlemore`); the graph builder
   instruction that flips the float sign bit (one token) or builds +-1.0f for an FMA (several tokens), exact in both
   cases. Deterministic (no atomics; bit-identical repeated runs, asserted).
 - **Accuracy:** float32 throughout, in a different summation order than the CPU kernel. Against the independent double
-  reference: worst 9.1e-7 relative to the output scale over 324 cases (the CPU kernel: 1.8e-5 over 438 cases).
+  reference: worst 9.1e-7 relative to the output scale over 350 cases (the CPU kernel: 1.8e-5 over 438 cases).
   Against the CPU kernel: NMSE median 1.9e-13, max 1.5e-12 over 1075 harness case runs (bound 1e-10). ggml-cuda is
   built with `-use_fast_math`, so subnormal intermediate values are flushed to zero (the CPU keeps them).
-- **Tests:** `test-backend-ops test -o LITTLEBIT -b CUDA0`: the 215 cases with n in {1, 4, 8} (ragged `d_out`
-  1/4/16/37/100, with and without residual, equal and different residual ranks) pass, each compared with the CPU
-  backend AND with the double reference (new harness hook `check_output`), plus a determinism check; the 181 cases
-  with n in {9, 32, 512} report "not supported". The NMSE of the op output is normalized by max(sum y^2, sum E[y^2])
+- **Tests:** `test-backend-ops test -o LITTLEBIT -b CUDA0`: the 241 cases with n from 1 to 8 pass (ragged `d_out`
+  1/4/16/37/100, with and without residual, equal and different residual ranks, every batch size 1..8 on shapes that
+  take the multi-tile paths: a V stage with a short last activation tile (`d_in` 1152 from 6 tokens, 5248 from 2,
+  10368 with 1), a U stage with several tiles (r 1408, r2 1792 from 6 tokens)), each compared with the CPU backend AND
+  with the double reference (harness hook `check_output`), plus a determinism check; the 181 cases with n in
+  {9, 32, 512} report "not supported". The NMSE of the op output is normalized by max(sum y^2, sum E[y^2])
   (`lb_expected_sq` in `tests/littlebit-ref.h`; the reference checks use the same scale): with one output element the
   plain NMSE is the squared relative error of a single sum that may cancel to almost 0 by chance (measured up to 4e-11,
   against 5e-13 at the 90th percentile), which would make any fixed bound fail at random. `test-littlebit-ref` checks
-  per device which batch sizes are accepted, requires that at least one CUDA device was checked, and runs a CUDA grid
-  against the reference. Mutations of the kernel (V polarity flipped, residual path dropped, `s_mid` skipped,
-  MSB-first bit order) each fail every affected harness case (smallest NMSE 5.6e-3, for a dropped rank-8 residual
-  path; medians 0.46 to 4) and fail `test-littlebit-ref`.
+  per device which batch sizes are accepted, requires that at least one CUDA device was checked, runs a CUDA grid of
+  350 cases (the shapes above, n = 1..8) against the reference, and 6 cases with `x`, `s_v2` and the packed residual
+  scales as views at a 4-byte offset (asserted misaligned after allocation), which makes the kernel stage them with
+  scalar instead of 16-byte loads. Mutations of the kernel, each failing every case it affects and `test-littlebit-ref`:
+  V polarity flipped, residual path dropped, `s_mid` skipped, MSB-first bit order (all 215 then-existing n <= 8 cases or,
+  for the dropped residual, all 134 cases with a residual; smallest NMSE 5.6e-3, medians 0.46 to 4); the short last
+  activation tile skipped (exactly the 15 multi-tile cases with a short last tile fail, NMSE 4.8e-3 .. 0.34); outputs
+  of tokens permuted for n >= 5 (all 85 cases with n >= 5 fail, NMSE 0.77 .. 2.7); the column scale dropped in the
+  scalar staging path (only the 6 misaligned cases of `test-littlebit-ref` exercise it; all 6 fail, relative error
+  about 1).
 
 ### Measured performance (RTX 4050 Laptop GPU, sm_89, 20 SMs, 24 MB L2, 192 GB/s)
 
 Ranks at about 0.55 bits per weight (the `test-backend-ops perf` cases). "harness" = `test-backend-ops perf`: the same
 op repeated in one graph, so its small weights stay in the 24 MB L2. "cold" = one graph of many ops with their own
-weights (96 MB or more per graph, like the layers of a model), measured with a small benchmark program on the public
-ggml API. Bandwidth = weight bytes (signs + scales) / time. The F16 mat-vec is `MUL_MAT` with F16 weights of the same
+weights (96 MB or more per graph, like the layers of a model), `engine/tools/littlebit-bench/cold_bench.cpp` on the
+public ggml API. Bandwidth = weight bytes (signs + scales) / time. The F16 mat-vec is `MUL_MAT` with F16 weights of the same
 shape on the same GPU (cold; the harness gives the same within 5% from 4096 x 4096 up). CPU = the scalar reference
 kernel in the harness.
 
@@ -259,15 +270,30 @@ kernel in the harness.
 | 13824 x 5120 | 1152 + 1024 | 1 | 5.31 MB | 54.4 us | 72.5 us | 73 | 808 us | 11.2x | 15.7 ms |
 | 13824 x 5120 | 1152 + 1024 | 8 | 5.31 MB | 237 us | 263 us | 20 | 827 us | 3.1x | 88.6 ms |
 
-What bounds it (micro-benchmarks on the same GPU): DRAM read 187 GB/s, L2 about 600 GB/s. The kernels are bound by
-their instruction stream, not by memory: the inner loop alone (signs in registers, activations in shared memory, no
-memory traffic) reaches about 120 GB/s of sign bits with one token (3 instructions per weight bit: shift, LOP3, add),
-84 with 2, 59 with 4 and 33 with 8 tokens (one FMA per bit and token). The large one-token shapes run at 75 to 98 GB/s
-in the harness, close to that ceiling once the fixed cost of the two dependent launches (about 3 us each: staging,
-first loads and the final reduction are a latency chain) is taken off; the smallest shape is almost only that fixed
-cost. Tensor cores do not help on this GPU: measured 3.6 G `mma.m16n8k16` (f16/bf16 inputs, f32 accumulate) per
-second, which with the activations split into bf16 parts for float32-exact results is no faster than the CUDA cores.
-With 8 tokens the 1024 x 1024 case is slower than the F16 mat-vec, which then runs on tensor cores.
+What bounds it (micro-benchmarks on the same GPU, programs in `engine/tools/littlebit-bench`, see its README; at the
+sustained boost clock, 2040-2340 MHz on this laptop GPU, which idles at 1605 MHz: the CUDA programs warm the GPU up for
+3 s first, without that they report about 1.6x lower compute ceilings; all these numbers depend on the GPU, its clock
+and power limit):
+
+| quantity | value | program |
+|---|---|---|
+| DRAM read bandwidth | up to 187 GB/s (128 to 188 between runs) | `read_bandwidth.cu` |
+| L2 read bandwidth (16 MB buffer) | about 800 to 890 GB/s | `read_bandwidth.cu` |
+| inner-loop ceiling, signs and activations on chip | 180 / 127 / 89 / 50 GB/s of sign bits for 1 / 2 / 4 / 8 tokens | `inner_ceiling.cu` |
+| sign trick (shift, LOP3, add) vs predicated add with `2A - S`, 1 token | 188 vs 296 GB/s of sign bits | `sign_variants.cu` |
+| tensor cores: `mma.m16n8k16` f16 / bf16, f32 accumulate | 5.4 G per second | `mma_rate.cu` |
+| cold-cache op times (table above) | | `cold_bench.cpp` |
+
+So with one token neither ceiling is reached: the large shapes run at 75 to 98 GB/s, about half of both the DRAM
+bandwidth and the instruction ceiling. Part of the gap is the measured fixed latency of the two dependent launches
+(about 3 us each; the smallest shape is almost only that); the rest is not attributed yet (likely latency inside the
+kernel: the staging barrier per activation tile with 8 to 16 warps per SM), so the kernel has room left. With 8 tokens
+the op runs at about 20 GB/s against an instruction ceiling of 50 GB/s. The `2A - S` form would raise the one-token
+ceiling to about 296 GB/s but changes the numerics (cancellation when |t| is much smaller than the sum of the
+activations), so it is not used. Tensor cores: float32-exact results need 3 bf16 MMAs per tile, about 58 GB/s-equivalent
+with 8 tokens at the measured rate before building the sign fragments, not clearly better than the CUDA cores, and with
+one token 7/8 of each MMA would be wasted. With 8 tokens the 1024 x 1024 case is slower than the F16 mat-vec, which
+then runs on tensor cores.
 
 Reproduce (from `engine/build`, CUDA 12.9 `bin` on `PATH`):
 
@@ -278,6 +304,11 @@ bin\test-backend-ops.exe perf -o LITTLEBIT -b CUDA0
 bin\test-backend-ops.exe perf -o LITTLEBIT -b CPU
 bin\test-backend-ops.exe perf -o MUL_MAT -b CUDA0 -p "type_a=f16,type_b=f32,m=(1024|2048|4096|5120|13824),n=(1|8),k=(1024|2048|4096|5120|13824),bs=\[1,1\],nr=\[1,1\],per=\[0,1,2,3\],k_v=0,o=1"
 ```
+
+The "cold" column and the ceilings: build and run the programs in `engine/tools/littlebit-bench` as its README says
+(`cold_bench.exe CUDA0 96` from `build/bin` for the cold column and the F16 mat-vec column; `read_bandwidth.exe`,
+`inner_ceiling.exe`, `sign_variants.exe`, `mma_rate.exe` for the table above). Re-run on 2026-11-21 after committing:
+cold 5120 x 13824 one token 69.7 us (76 GB/s) against 803 us for F16, the other LittleBit rows within 2% and the F16 rows within 6% of the table.
 
 ## LittleBit in the graph
 
