@@ -1,7 +1,7 @@
 """Tests for the Samsung-format LittleBit checkpoint -> GGUF (B1) converter.
 
 Run with `pytest tests/convert`.  All models are tiny random HF models built offline
-(see _tiny.py); no network.  Terms (LittleBit, GGUF, GQA, RoPE, "teeth") are defined
+(see _tiny.py); no network.  Terms (LittleBit, GGUF, GQA, RoPE) are defined
 in the glossary of docs/development.md.  B1 is the engine's pure 1-bit sign type.
 """
 from __future__ import annotations
@@ -49,6 +49,7 @@ def qwen3_ckpt(tmp_path_factory):
 
 @pytest.fixture(scope="module")
 def qwen3_converted(qwen3_ckpt, tmp_path_factory):
+    """Convert the tiny Qwen3 checkpoint once; returns (checkpoint dir, output GGUF path, conversion report)."""
     out = tmp_path_factory.mktemp("q3out") / "q3.gguf"
     report = lb.convert_checkpoint(qwen3_ckpt, out)
     return qwen3_ckpt, out, report
@@ -233,6 +234,7 @@ def test_corrupting_writer_is_caught_and_named(qwen3_ckpt, tmp_path, monkeypatch
     real = lb.signs_to_b1
 
     def bad(signs):
+        """The real packer, but with the first sign of the first row flipped."""
         out = real(signs)
         out[0, 0] ^= 0x01  # flip the first sign of the first row
         return out
@@ -288,10 +290,11 @@ def test_polarity_flip_known_pattern():
 
 
 def test_pad_to():
+    """Ranks and widths round up to the next multiple of 128 (one B1 block); exact multiples stay put."""
     assert [lb.pad_to(n) for n in (1, 128, 129, 136, 256)] == [128, 128, 256, 256, 256]
 
 
-# --------------------------------------------------------------------------- validator teeth
+# --------------------------------------------------------------------------- the validator must catch corruption
 
 @needs_qwen_tok
 def test_validator_catches_corruption(qwen3_converted):
@@ -305,6 +308,7 @@ def test_validator_catches_corruption(qwen3_converted):
     assert val.validate_layer(p, good) < tol
 
     def mutated(key, fn):
+        """Copy of the good tensors where tensor `key` has had `fn` applied to a copy of its data."""
         d = dict(good)
         data = np.array(d[key].data, copy=True)
         fn(data)
@@ -312,9 +316,11 @@ def test_validator_catches_corruption(qwen3_converted):
         return d
 
     def flip_sign(a):
+        """Corruption: flip one sign bit (B1 bytes)."""
         a[3, 5] ^= 0x04  # one sign bit inside the logical rank
 
     def bump_scale(a):
+        """Corruption: double one scale entry (F32 vector)."""
         a[7] *= 2.0  # one scale entry doubled
 
     for key, fn in (("lb_v", flip_sign), ("lb_u", flip_sign), ("lb_vr", flip_sign),
@@ -403,9 +409,9 @@ def test_family_converts_and_validates(family, arch, tmp_path):
 
 
 def test_head_type_other_than_f16_not_yet():
-    """q8_0 / q6_k are Task 13; the parameter exists so the signature is final."""
+    """q8_0 / q6_k heads are not implemented yet; asking for one must fail with a clear NotImplementedError (not convert silently as f16)."""
     for h in ("q8_0", "q6_k"):
-        with pytest.raises(NotImplementedError, match="Task 13"):
+        with pytest.raises(NotImplementedError, match="not implemented yet"):
             lb.convert(Path("nonexistent"), Path("x.gguf"), head_type=h)
     with pytest.raises(lb.ConversionError, match="head_type"):
         lb.convert(Path("nonexistent"), Path("x.gguf"), head_type="bogus")

@@ -15,8 +15,7 @@ Why
 
 Starting point and licence
     The structure of this file (probe mechanism, scale folding, rank padding, naming) is
-    derived from `tools/littlebit/lb_to_gguf.py` by Cybertiron (briefly vendored in engine/, removed there when this
-    converter replaced it)
+    derived from `tools/littlebit/lb_to_gguf.py` by Cybertiron
     (https://github.com/Cybertiron/llama.cpp-littlebit, "Architecture-generic LittleBit ->
     GGUF converter"), which wrote Q1_0 tensors from a base GGUF.  That file carries no
     copyright line of its own; it is part of the llama.cpp fork whose LICENSE reads
@@ -59,12 +58,11 @@ reads whole blocks; the converter rejects anything else with a ConversionError r
 padding (padding the input would change the activation the engine feeds in).  The RANK has
 no such restriction: any logical rank >= 1 is padded up (see `_build_path`).
 
-Limitation (until Task 8)
-    The engine-side loader/graph that consumes B1 factors lands in Task 8.  Until then a
-    B1 GGUF cannot be RUN in llama.cpp (the old slow path multiplies with mul_mat, which
-    refuses B1).  Correctness is therefore established numerically here: every linear is
-    read back from the written file and compared with the PyTorch reference
-    (`validate.py`).  This module does not modify the engine.
+Running the result and checking it
+    The engine runs these B1 GGUFs through its fused LittleBit op.  Validation here does
+    not depend on the engine: every linear is read back from the written file and compared
+    with the PyTorch reference (`validate.py`), so a converter bug cannot be hidden by a
+    matching engine bug.  This module does not modify the engine.
 
 Naming map (checkpoint -> GGUF); the product v1*u2 is folded because nothing sits between
 the two rank-space scales (same table as reference.py):
@@ -80,8 +78,11 @@ linears, biases): they come from the same checkpoint directory (the maker stores
 bf16) and go through llama.cpp's real converter class for the architecture, with
 `--outtype f16` semantics: 2-D+ weights (token embeddings, output head, any small dense
 linear) are written as F16, 1-D tensors (norms, biases, scale-like vectors) as F32.
-`head_type` is the hook for Q8_0/Q6_K heads (Task 13).  Terms (LittleBit, GGUF, rank, RoPE,
+`head_type` is the hook for Q8_0/Q6_K heads, which are not implemented yet.  Terms (LittleBit, GGUF, rank, RoPE,
 GQA) are defined in docs/development.md (glossary).
+
+Note on history: Cybertiron's file was briefly vendored under engine/ and removed there once
+this converter replaced it.
 
 Usage: python -m tools.convert.lb_to_gguf <ckpt_dir> -o <out.gguf> [--head-type f16] [--no-validate] [--assume-no-littlebit-config]
 """
@@ -316,7 +317,7 @@ def _check_inputs(ckpt: Path, head_type: str, assume_no_littlebit_config: bool =
     if head_type not in _HEAD_TYPES:
         raise ConversionError(f"unknown head_type {head_type!r}; expected one of {_HEAD_TYPES}")
     if head_type != "f16":
-        raise NotImplementedError(f"head_type={head_type!r}: Task 13")
+        raise NotImplementedError(f"head_type {head_type!r} is not implemented yet; use 'f16'")
     if not ckpt.is_dir():
         raise ConversionError(f"checkpoint directory not found: {ckpt}")
     if not (ckpt / "config.json").is_file():
@@ -360,6 +361,7 @@ def _available_memory() -> int | None:
             import ctypes
 
             class _MemStatus(ctypes.Structure):
+                # Layout of the Win32 MEMORYSTATUSEX struct filled in by GlobalMemoryStatusEx.
                 _fields_ = [("dwLength", ctypes.c_ulong), ("dwMemoryLoad", ctypes.c_ulong),
                             ("ullTotalPhys", ctypes.c_ulonglong), ("ullAvailPhys", ctypes.c_ulonglong),
                             ("ullTotalPageFile", ctypes.c_ulonglong), ("ullAvailPageFile", ctypes.c_ulonglong),
@@ -593,7 +595,7 @@ def _write_gemma3_swa_pattern(conv: ModelBase) -> None:
     with any other `layer_types` (a custom or tiny model) would run silently wrong.  The engine does read
     the array key `gemma3.attention.sliding_window_pattern` (bool per layer, true = sliding window) when present, so it is
     written here from `layer_types`.  Without `layer_types` (older configs) the key is left out and the engine default (the
-    real 5:1 layout) applies; an integer `sliding_window_pattern` other than 6 is written as the integer.
+    real 5:1 layout) applies; an integer `sliding_window_pattern` other than 1 or 6 is written as the integer (6 is the engine default; 1 is left out too).
     An unknown layer type or a wrong list length is refused: guessing would give wrong logits.
     """
     if conv.model_arch != gguf.MODEL_ARCH.GEMMA3:
@@ -684,7 +686,7 @@ def convert(ckpt_dir: Path, out: Path, head_type: str = "f16", validate: bool = 
     """Convert the Samsung-format LittleBit checkpoint in `ckpt_dir` to a B1 GGUF at `out`.
 
     `head_type`: precision of the embedding / output head; only "f16" is implemented
-    ("q8_0" / "q6_k" raise NotImplementedError, Task 13).  With `validate=True` (default)
+    ("q8_0" / "q6_k" are not implemented yet and raise NotImplementedError).  With `validate=True` (default)
     every LittleBit linear is read back from the written file and compared with the PyTorch
     reference; any error above tolerance, a missing/skipped linear or a bad input raises
     `ConversionError` and leaves no file at `out` (the file is written to a temp name and

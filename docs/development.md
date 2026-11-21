@@ -138,7 +138,7 @@ Qwen3-0.6B tokenizer (they skip without it), Llama and Gemma 3 need nothing.
 
 ```powershell
 .venv\Scripts\python.exe -m pytest tests/engine -m engine_run -q -s     # fused graph per model family + Qwen3-0.6B
-.venv\Scripts\python.exe -m pytest tests/smoke -m smoke -q -W error     # M0 slow-path baseline (Q1_0 chain)
+.venv\Scripts\python.exe -m pytest tests/smoke -m smoke -q -W error     # slow-path baseline (Q1_0 chain)
 ```
 
 `engine_run` tests build tiny random models of Qwen3, Llama, Gemma 3 and Qwen3.5, convert them, run
@@ -177,3 +177,50 @@ init-only checkpoint at `-ngl 0` and `-ngl 99`. The engine's own tests: from `en
   test detects it.
 - **smoke test**: a slow end-to-end test that checks the whole chain works,
   not every detail.
+- **init-only**: a checkpoint made with no QAT at all (only the SVD / ITQ / SVID
+  initialisation), so it is exact for testing but produces gibberish text.
+- **Samsung-format checkpoint**: the file layout of the original LittleBit
+  release: bit-packed sign matrices (`*_packed`, where a 0 bit means +1) plus
+  scale vectors. This project converts it to GGUF.
+- **B1**: the engine's own ggml storage type for a sign matrix: 128 signs in 16
+  bytes, exactly 1 bit per sign and no scale (a 1 bit means +1).
+- **Q1_0**: an upstream ggml type that also stores 1 bit per sign but adds a
+  16-bit scale per 128 signs (1.125 bits per weight).
+- **Q8_0**: a ggml type with 8-bit integers and one scale per block of 32 values;
+  llama.cpp also uses it to quantize activations before an integer dot product.
+- **slow path**: the older way of running a LittleBit linear: a chain of five
+  ordinary ops per path (multiply by a scale, matrix-multiply, ...) on Q1_0
+  weights. It rounds the activations to Q8_0, so it is noisy, and it is kept as a
+  baseline to compare the fused op with.
+- **fused op**: `GGML_OP_LITTLEBIT`, one op that computes a whole LittleBit
+  linear from the B1 signs and the scales, in float32, with no activation
+  rounding.
+- **residual path**: the second, smaller pair of sign matrices of LittleBit-2,
+  which approximates what the first pair got wrong; its output is added to the
+  first one.
+- **latent unit**: one of the `r` inner rows between the two sign matrices (an
+  index of the rank dimension); the scale vector `s_mid` has one entry per unit.
+- **`s_mid`**: the scale applied between the two sign matrices. The checkpoint
+  stores two scales there (`v1` and `u2`); the converter multiplies them into one
+  vector (`s_mid = v1 * u2`) because nothing sits between them.
+- **backend**: a part of ggml that runs ops on one kind of hardware (CPU, CUDA,
+  Vulkan).
+- **`supports_op`**: the function through which each backend tells the scheduler
+  whether it can run a given op; the scheduler sends refused ops to another backend.
+- **`-ngl` / GPU offload**: the llama.cpp option `-ngl N` puts N layers (99 =
+  all) on the GPU. LittleBit weights stay on the CPU even then.
+- **flash attention** (`-fa`): a fused attention implementation; it keeps
+  intermediate values in f16, so switching it off (`-fa off`) removes that
+  rounding.
+- **KV cache** (f16 KV): the stored keys and values of earlier tokens; by default
+  stored as 16-bit floats, `-ctk f32 -ctv f32` stores them as 32-bit.
+- **`llama-debug`**: an engine program that loads a model, runs a prompt and
+  prints/saves the logits; the tests use it to get the engine's numbers.
+- **ctest**: CMake's test runner, used for the engine's own C++ tests.
+- **MSVC**: the Microsoft C++ compiler used to build the engine on Windows.
+- **NMSE** (normalised mean squared error): the squared error divided by the
+  squared size of the reference; a scale-free measure of how far two outputs are.
+- **DeltaNet**: a linear-attention (recurrent) layer type used by Qwen3.5 next to
+  ordinary attention layers.
+- **sliding-window attention**: attention in which a token only looks at the
+  most recent N tokens; Gemma 3 uses it in 5 of every 6 layers.

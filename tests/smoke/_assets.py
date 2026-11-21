@@ -1,4 +1,4 @@
-"""Asset and subprocess helpers for the M0 smoke test.
+"""Asset and subprocess helpers for the smoke and engine-run tests.
 
 Everything here is cached under `<repo>/.cache/` (git-ignored; never commit
 weights or GGUFs).  Each `ensure_*` function is a no-op when its output exists,
@@ -145,7 +145,7 @@ def b1_to_q1_0_gguf(src: Path, dst: Path) -> None:
     quantizer.  Every block is then exactly "scale 1.0, same sign bits", so the baseline computes the
     same linear as the B1 file up to the Q8_0 activation noise of the Q1_0 kernels.  F16 tensors (the
     embedding / output head) are widened to F32, which is lossless and keeps the baseline as exact as the
-    original M0 file (whose head came from an F32 base GGUF).  Everything else is copied unchanged.
+    original slow-path file (whose head came from an F32 base GGUF).  Everything else is copied unchanged.
     """
     _add_path(ENGINE / "gguf-py")
     import gguf
@@ -154,9 +154,10 @@ def b1_to_q1_0_gguf(src: Path, dst: Path) -> None:
     F16, F32 = gguf.GGMLQuantizationType.F16, gguf.GGMLQuantizationType.F32
 
     def convert(t):
+        """Per-tensor rewrite for copy_gguf: B1 -> Q1_0, F16 -> F32, None = copy the tensor unchanged."""
         if t.tensor_type == B1:
             return quantize(dequantize(np.asarray(t.data), B1), Q1_0), Q1_0
-        if t.tensor_type == F16:   # embedding/head: widen (lossless) so the CUDA head matmul is exact, as in M0
+        if t.tensor_type == F16:   # embedding/head: widen (lossless) so the CUDA head matmul is exact, as in the original slow-path file
             return np.asarray(t.data).astype(np.float32), F32
         return None
     copy_gguf(src, dst, convert)

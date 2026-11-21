@@ -1,4 +1,4 @@
-"""M0 smoke test: first light for the whole slow-path chain.
+"""Smoke test: first light for the whole slow-path chain.
 
     Qwen3-0.6B (HF) -> make_lb2_init (init-only LittleBit-2, 0.55 bpw)
                     -> engine lb_to_gguf.py (Q1_0 path) -> llama.cpp fork
@@ -103,7 +103,7 @@ def test_single_token_matches_emulation_exactly(gguf_path, ngl):
     assert d_emu <= SINGLE_TOKEN_MAX_ABS
     assert int(engine.argmax()) == int(emu.argmax()) == int(fp.argmax())
     assert d_fp > 100 * max(d_emu, 1e-6), "fp32 reference should be far worse than the emulation"
-    # Teeth: dropping the residual path must be clearly detected.
+    # Dropping the residual path must be clearly detected (a test that fails when the code is wrong).
     no_res = A.reference_logits(tokens, drop_residual=True)
     assert float(np.abs(engine - no_res).max()) > 1.0
 

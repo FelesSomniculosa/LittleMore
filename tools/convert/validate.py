@@ -61,7 +61,8 @@ def tolerance(params: ref.LBLinearParams) -> float:
 
         tol = 16 * sqrt(d_in + r_primary_padded + r_residual_padded) * 2**-24
 
-    (about 3e-5 for a 256-wide layer, 1.5e-4 for an 8B-sized one).  Measured errors on the
+    (for d_in = 256 with both ranks padded to 128 this is 16 * sqrt(512) * 2**-24 = 2.2e-5; for
+    d_in = 4096 with both ranks padded to 1024 it is 7.5e-5).  Measured errors on the
     tiny test models are ~1e-7, i.e. 100x below this; a single flipped sign or a 2x wrong
     scale is 100-1000x above it (tests/convert/test_convert.py, test_validator_catches_corruption).
     """

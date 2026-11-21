@@ -1,4 +1,4 @@
-"""Real-checkpoint compatibility: the cached M0 Qwen3-0.6B init-only checkpoint -> B1 GGUF.
+"""Real-checkpoint compatibility: the cached Qwen3-0.6B init-only checkpoint -> B1 GGUF.
 
 Marked `smoke` (slow-ish, needs cached assets; skipped when absent).  Checks that the
 converter handles a real-size Samsung-format checkpoint (28 layers, 196 LittleBit linears,
@@ -33,8 +33,10 @@ def _sign_tensor_stats(path):
 
 
 def test_m0_checkpoint_converts_validates_and_is_one_bit(tmp_path):
+    """The real Qwen3-0.6B checkpoint converts, every one of its 196 linears validates, and the sign
+    tensors take exactly 1 bit per sign (a layout or padding mistake would change the byte count)."""
     if not (A.CKPT_DIR / "model.safetensors").exists():
-        pytest.skip(f"M0 checkpoint not cached at {A.CKPT_DIR} (built by tests/smoke/_assets.ensure_gguf)")
+        pytest.skip(f"Qwen3-0.6B LittleBit checkpoint not cached at {A.CKPT_DIR} (built by tests/smoke/_assets.ensure_gguf)")
     if not _tiny.qwen_tokenizer_available():
         pytest.skip("Qwen3-0.6B tokenizer files missing")
     out = tmp_path / "m0-b1.gguf"

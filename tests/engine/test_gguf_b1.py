@@ -22,6 +22,7 @@ B1 = GGMLQuantizationType.B1
 
 
 def _signs(pattern: dict) -> np.ndarray:
+    """One 128-element block of -1.0 with +1.0 at the indices in `pattern`."""
     x = -np.ones(128, dtype=np.float32)
     for i in pattern:
         x[i] = 1.0
@@ -29,6 +30,8 @@ def _signs(pattern: dict) -> np.ndarray:
 
 
 def test_enum_and_sizes():
+    """B1 is type number 44 and a block is 128 signs in 16 bytes; the engine C code and the file format both
+    rely on these numbers, so changing either breaks every B1 file."""
     assert int(B1) == 44
     assert gguf.GGML_QUANT_SIZES[B1] == (128, 16)
 
@@ -44,6 +47,8 @@ def test_enum_and_sizes():
     ],
 )
 def test_known_patterns(plus, expected):
+    """Bit layout of the quantizer: a +1 at element i sets bit (i % 8) of byte (i // 8) (least significant bit first),
+    and -1 is a 0 bit.  If the polarity or bit order were swapped, the engine would read every sign wrong."""
     x = _signs(list(plus))
     q = quantize(x.reshape(1, 128), B1)
     assert q.shape == (1, 16) and q.dtype == np.uint8
@@ -52,11 +57,13 @@ def test_known_patterns(plus, expected):
 
 
 def test_zero_is_plus_one():
+    """A value of exactly 0.0 maps to +1 (the `>= 0` rule), so all-zero input gives all-ones bytes."""
     q = quantize(np.zeros((1, 128), dtype=np.float32), B1)
     assert q.tolist() == [[0xFF] * 16]
 
 
 def test_roundtrip_random():
+    """Random +-1 data survives quantize then dequantize unchanged, for several rows of several blocks."""
     rng = np.random.default_rng(0)
     x = np.where(rng.integers(0, 2, size=(5, 384)) == 1, 1.0, -1.0).astype(np.float32)
     q = quantize(x, B1)
@@ -65,6 +72,7 @@ def test_roundtrip_random():
 
 
 def test_gguf_write_read_roundtrip():
+    """A B1 tensor written to a GGUF file and read back keeps its type, shape ([ne0, ne1] order) and bytes."""
     rng = np.random.default_rng(1)
     x = np.where(rng.integers(0, 2, size=(4, 256)) == 1, 1.0, -1.0).astype(np.float32)
     q = quantize(x, B1)

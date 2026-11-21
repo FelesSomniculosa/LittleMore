@@ -1,10 +1,13 @@
-"""Task 8, real model: init-only LittleBit-2 Qwen3-0.6B through the fused op, on CPU and with GPU offload.
+"""Real model: init-only LittleBit-2 Qwen3-0.6B through the fused op, on CPU and with GPU offload.
 
 The checkpoint and the B1 GGUF come from tests/smoke/_assets.py (cached under .cache/, built on first use with
 tools/convert/lb_to_gguf.py); the Q1_0 slow-path baseline is derived from the B1 file (`b1_to_q1_0_gguf`).
 Compared with `reference.py` (fp32, CPU) on the engine's own token ids: one token ("Hello") and a 16-token prompt.
 
-Measured max-abs over 151936 logits against the fp32 reference (logit rms 2.5 / 2.9):
+Measured max-abs over 151936 logits against the fp32 reference (logit rms 2.5 / 2.9).  These numbers are the values
+printed (`pytest -s`) by test_fused_matches_reference_and_beats_slow_path and the two GPU tests below, recorded when
+the tests were written; the thresholds further down are set from them.  The "50x to 100x" is the slow-path
+error divided by the fused default-config error on the same prompt (0.73 / 1.35e-2 = 54, 1.36 / 1.34e-2 = 101):
 
   config                              1 token      16 tokens
   CPU, default (flash attn, f16 KV)   1.35e-2      1.34e-2     <- the f16 attention path of flash attention
@@ -14,7 +17,7 @@ Measured max-abs over 151936 logits against the fp32 reference (logit rms 2.5 / 
   GPU, -fa off, f32 KV, F32 head      1.1e-4       6.1e-2      <- control: B1 GGUF with the F16 head widened to F32
   slow path (Q1_0 chain), CPU         7.3e-1       1.36        <- 50x to 100x worse
 
-Where the GPU error comes from (review item 3; numbers from tools/dev/dense_floor.py, table in docs/engine-changes.md):
+Where the GPU error comes from (numbers from `python tools/dev/dense_floor.py`, table in docs/engine-changes.md):
   * 1 token: the 4.9e-3 is the F16 output head on CUDA. With the head widened to F32 the same run is 1.1e-4.
   * 16 tokens: NOT the LittleBit op. The DENSE Qwen3-0.6B (no LittleBit at all, F32 weights) run through the same CUDA
     path against its own fp32 HF reference is 2.5e-2 (default) and 3.9e-2 (-fa off, f32 KV); LittleBit is 3.7e-2 and
@@ -47,6 +50,7 @@ SLOW_MIN_RATIO = 10.0
 
 @pytest.fixture(scope="module")
 def ggufs():
+    """(B1 GGUF, Q1_0 slow-path GGUF) of the cached Qwen3-0.6B LittleBit model; skips if the assets are missing."""
     reason = A.missing_assets()
     if reason:
         pytest.skip(reason)
@@ -56,6 +60,10 @@ def ggufs():
 @pytest.mark.parametrize("ngl", [0, 99], ids=["cpu", "gpu"])
 @pytest.mark.parametrize("prompt", [A.PROMPT_ONE, A.PROMPT_LONG], ids=["1tok", "16tok"])
 def test_fused_matches_reference_and_beats_slow_path(ggufs, prompt, ngl):
+    """The fused op's logits stay within the per-configuration limit of the fp32 reference and keep the same top-1
+    token, and the old Q1_0 slow path is at least SLOW_MIN_RATIO x farther away.  On CPU with `-fa off` and f32 KV
+    it must be near exact (the op itself), and a reference without the residual path must be far off (so the
+    comparison can detect a missing residual).  Fails if the fused kernel, the loader or the graph is wrong."""
     b1, q1 = ggufs
     fused, ids = A.engine_logits(b1, prompt, ngl)
     slow, ids_slow = A.engine_logits(q1, prompt, ngl)
@@ -71,7 +79,7 @@ def test_fused_matches_reference_and_beats_slow_path(ggufs, prompt, ngl):
         me = metrics(exact, want)
         print(f"ngl=0 {len(ids)}tok fused, -fa off f32 KV: {fmt(me)}")
         assert me["max_abs"] <= CPU_EXACT_MAX_ABS and me["top1"]
-        # teeth: the same engine logits against a reference without the residual path
+        # The same engine logits against a reference without the residual path
         nores = metrics(exact, A.reference_logits(ids, drop_residual=True, quantize=False, kv_f16=False))
         assert nores["max_abs"] >= 100 * me["max_abs"]
 
@@ -122,6 +130,7 @@ def test_generation_exits_zero(ggufs, ngl):
 
 
 def _tokens_per_second(gguf, ngl: int = 0, n: int = 32) -> float:
+    """Generation speed (tokens/s) of `n` tokens of "Hello", read from llama-completion's timing line."""
     r = A._run([A.BIN / ("llama-completion" + A.EXE), "-m", gguf, "-p", "Hello", "-n", n, "-ngl", ngl, "-no-cnv"])
     assert r.returncode == 0, r.stdout[-1500:]
     m = re.search(r"(?<!prompt )eval time =.*?([\d.]+) tokens per second", r.stdout.replace("prompt eval time", "PE"))

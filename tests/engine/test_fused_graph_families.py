@@ -1,4 +1,4 @@
-"""Task 8: the fused-op graph, per model family, against the PyTorch reference.
+"""The fused-op graph, per model family, against the PyTorch reference.
 
 For each of the four target families (Qwen3 dense, Llama, Gemma 3, Qwen3.5 hybrid DeltaNet) the test builds
 a tiny random model, makes an init-only LittleBit-2 checkpoint, converts it with tools/convert/lb_to_gguf.py
@@ -9,7 +9,7 @@ tokenization is not part of the comparison).
 What is checked (see the constants below for the measured values the thresholds come from):
   * fused logits match the reference: max-abs below FUSED_MAX_ABS, same top-1 token;
   * the fused path is clearly closer to the reference than the old Q1_0 slow path is;
-  * mutation checks give the comparison teeth: against a reference whose residual path is zeroed, or whose
+  * the comparison is shown to be able to fail: against a reference whose residual path is zeroed, or whose
     q/k rows are permuted (a RoPE-layout error), the same engine logits are far away;
   * biases of the converted linears are applied (random biases, every family that can carry them);
   * a bias the graph would ignore, and a converted linear nobody asks for, make the load FAIL with a clear
@@ -64,6 +64,7 @@ FAMILY_OVERRIDES = {"gemma3": dict(num_hidden_layers=6, layer_types=["sliding_at
 
 
 def _skip_reason(family: str) -> str | None:
+    """Why this family cannot run here (engine binary or tokenizer missing), or None when it can."""
     if not (A.BIN / ("llama-debug" + A.EXE)).exists():
         return f"engine binary llama-debug not built in {A.BIN} (see docs/engine-changes.md)"
     if family in ("qwen3", "qwen35") and not _tiny.qwen_tokenizer_available():
@@ -73,6 +74,7 @@ def _skip_reason(family: str) -> str | None:
 
 @dataclass
 class Case:
+    """One tiny converted model: its HF dir, LittleBit checkpoint, B1 GGUF, prompt and scratch dir."""
     family: str
     hf: Path
     ckpt: Path
@@ -90,6 +92,7 @@ class Case:
 
     @property
     def head_dim(self) -> int:
+        """Attention head size of the tiny test models (all families use 64)."""
         return 64
 
 
@@ -107,6 +110,7 @@ def make_case(family: str, tmp: Path, **over) -> Case:
 
 @pytest.fixture(scope="module", params=FAMILIES)
 def case(request, tmp_path_factory) -> Case:
+    """A converted tiny model per family, built once per module."""
     return make_case(request.param, tmp_path_factory.mktemp(request.param))
 
 
@@ -123,6 +127,7 @@ def ref_logits(c: Case, ids: list[int], **mutations) -> np.ndarray:
 
 
 def metrics(a: np.ndarray, b: np.ndarray) -> dict:
+    """Compare logits `a` against reference `b`: max-abs and rms difference, correlation, same top-1 token, logit rms."""
     d = a - b
     return dict(max_abs=float(np.abs(d).max()), rms=float(np.sqrt(np.mean(d * d))),
                 corr=float(np.corrcoef(a, b)[0, 1]), top1=bool(a.argmax() == b.argmax()),
@@ -130,6 +135,7 @@ def metrics(a: np.ndarray, b: np.ndarray) -> dict:
 
 
 def fmt(m: dict) -> str:
+    """One-line text of `metrics()` output for assertion messages."""
     return (f"max-abs={m['max_abs']:.3e} rms={m['rms']:.3e} corr={m['corr']:.8f} "
             f"top1={'same' if m['top1'] else 'DIFF'} (logit rms {m['scale']:.3f})")
 
@@ -160,7 +166,7 @@ def test_fused_closer_than_slow_path(case):
 
 
 def test_mutations_are_detected(case):
-    """The comparison has teeth: a reference without the residual path, or with permuted q/k rows, is far away."""
+    """The comparison can fail: a reference without the residual path, or with permuted q/k rows, is far away."""
     logits, ids = engine(case)
     good = metrics(logits, ref_logits(case, ids))["max_abs"]
     for name, kw in (("no-residual", dict(drop_residual=True)), ("permuted-qk", dict(permute_qk=True))):
@@ -205,6 +211,7 @@ class _Biased(nn.Module):
         self.inner, self.bias = inner, bias
 
     def forward(self, x):
+        """Run the wrapped LittleBit linear, then add the bias."""
         return self.inner(x) + self.bias.to(x.dtype)
 
 
@@ -265,7 +272,7 @@ def test_biases_are_applied(family, tmp_path):
     m = metrics(logits, want)
     print(f"[{family}] {n} biases: fused vs reference-with-biases: {fmt(m)}")
     assert m["max_abs"] <= FUSED_MAX_ABS and m["top1"]
-    # teeth: the same engine output against a reference that ignores the biases
+    # the same engine output against a reference that ignores the biases must be far away
     for name in names:
         parent_name, _, child = name[: -len(".bias")].rpartition(".")
         parent = model.get_submodule(parent_name)
@@ -279,6 +286,7 @@ def test_biases_are_applied(family, tmp_path):
 
 @pytest.fixture(scope="module")
 def llama_case(tmp_path_factory) -> Case:
+    """A converted tiny Llama shared by the load-failure and LoRA tests."""
     return make_case("llama", tmp_path_factory.mktemp("llama_fail"))
 
 

@@ -5,6 +5,20 @@ The engine lives in `engine/`, which is its **own git repository** (a plain
 local clone of upstream) and is listed in the outer repo's `.gitignore`, so the
 outer repo does not track it. The pin is recorded here instead.
 
+## What this fork adds and where to find it
+
+The engine is upstream llama.cpp plus these additions (details in the sections below):
+
+| Addition | Where it is described |
+|---|---|
+| `GGML_TYPE_B1`: a ggml type that stores +1/-1 signs at exactly 1 bit each | [GGML_TYPE_B1](#ggml_type_b1-pure-1-bit-sign-weights) |
+| `GGML_OP_LITTLEBIT`: one fused op that computes a whole LittleBit linear (CPU kernel only so far) | [GGML_OP_LITTLEBIT](#ggml_op_littlebit-fused-littlebit-linear-cpu-reference) |
+| Loader and graph hook: a linear whose `weight` is missing but whose `lb_v` factors exist is loaded as a LittleBit linear, and `build_lora_mm` builds the fused op for it | [LittleBit in the graph](#littlebit-in-the-graph) |
+| Per-backend rules: no backend may claim a B1 tensor except for the fused op; the LittleBit tensors are pinned to the CPU | the "Rule" bullet and the `supports_op` audit under GGML_TYPE_B1; "Loader" under LittleBit in the graph |
+| Test coverage and measured accuracy, including the GPU noise floor | the end of "LittleBit in the graph", then "GPU offload error" |
+
+The rest of this file records how the fork was made (pin, cherry-pick) and what was measured.
+
 ## What is LittleBit
 
 LittleBit stores each weight matrix of a language model as two matrices of
@@ -68,7 +82,7 @@ What it adds:
 - `src/llama-graph.cpp`: `build_lb_path` computes
   `mul -> mul_mat -> mul -> mul_mat -> mul`; `build_lora_mm` uses it for
   registered linears, so any architecture going through `build_lora_mm` works.
-- `tools/littlebit/lb_to_gguf.py` (+ README): checkpoint-to-GGUF converter. **Removed again in Task 8**:
+- `tools/littlebit/lb_to_gguf.py` (+ README): checkpoint-to-GGUF converter. **Since removed**:
   `tools/convert/lb_to_gguf.py` in the outer repo replaces it (B1 output, validation).
 
 Local edits on top of the cherry-pick:
@@ -117,9 +131,9 @@ because of its fp16 scale; LittleBit keeps all scales in separate F32 vectors).
   and record the new number here (files written with the old number would be misread).
 - CPU: `to_float` only. There is **no `vec_dot`** and no `from_float`.
 - **Rule: no backend may claim B1 for MUL_MAT / MUL_MAT_ID / GET_ROWS / CPY / SET_ROWS
-  (or any other op) until a kernel exists; the fused LITTLEBIT op (Tasks 7, 10-12)
-  consumes B1 directly** and must add its own explicit exception in each backend's
-  `supports_op`. Tasks 10/11 must not claim B1 mul_mat.
+  (or any other op) until a kernel exists; the fused LITTLEBIT op (CPU kernel today,
+  GPU kernels later) consumes B1 directly** and must add its own explicit exception in each backend's
+  `supports_op`. A GPU kernel for the fused op must not claim B1 mul_mat.
 - Audit of `supports_op` (checked by reading code and by running
   `ggml_backend_dev_supports_op` on CPU, CUDA0, Vulkan0, Vulkan1 in `test-b1`):
   - CPU: MUL_MAT_ID / CPY / SET_ROWS (B1 destination) / OUT_PROD / FLASH_ATTN_EXT
@@ -139,7 +153,7 @@ because of its fp16 scale; LittleBit keeps all scales in separate F32 vectors).
 
 One op that computes a whole LittleBit linear straight from the B1 sign matrices and F32
 activations (no activation quantization, unlike the slow path, a chain of 5 ops per path in `build_lb_path`).
-Added in the engine (`littlebit` work on branch `littlemore`); the graph builder uses it for B1 linears since Task 8
+Added in the engine (`littlebit` work on branch `littlemore`); the graph builder uses it for B1 linears
 (see "LittleBit in the graph" below).
 
 - **API:** `ggml_littlebit(ctx, x, V, U, s_v2, s_mid, s_u1, Vr, Ur, s_v2r, s_midr, s_u1r)`; the five
@@ -148,9 +162,9 @@ Added in the engine (`littlebit` work on branch `littlemore`); the graph builder
 - **Shapes** (ggml order, `ne[0]` innermost): `x` F32 `[d_in, n]`; `V` B1 `[d_in, r]` (row j = signs of
   latent unit j); `U` B1 `[r, d_out]` (row i = signs of output i); `s_v2` `[d_in]`; `s_mid` `[r]`;
   `s_u1` `[d_out]`; result F32 `[d_out, n]`. The residual path has its own rank `r2`.
-- **Padding rule:** `d_in` is a multiple of 128 and `d_out` any positive number (relaxed in Task 8: the
+- **Padding rule:** `d_in` is a multiple of 128 and `d_out` any positive number (relaxed when the op was wired into the graph: the
   Qwen3.5 DeltaNet gate projections `in_proj_a/b` have `d_out` = number of value heads, e.g. 16; the CPU kernel
-  never needed it, **the GPU kernels of Tasks 10-12 must handle a ragged `d_out`**); the ranks `r`, `r2` are padded up to a
+  never needed it, **future GPU kernels must handle a ragged `d_out`**); the ranks `r`, `r2` are padded up to a
   multiple of 128. Padded latent units carry `s_mid = 0` (the converter guarantees it) so they add
   exactly nothing; their V rows / U columns may hold arbitrary +-1. The kernels do not special-case padding.
 - **Math** per token and path: `xs = x*s_v2`; `t_j = s_mid_j * sum_k sgn(V[j,k]) xs_k`;
@@ -172,23 +186,23 @@ Added in the engine (`littlebit` work on branch `littlemore`); the graph builder
   (`GGML_OP_COUNT` 100 -> 101; the two static_asserts in `ggml.c` were bumped). The op number is not
   stored in GGUF files.
 - **How backends opt in:** answer true for `GGML_OP_LITTLEBIT` in `supports_op`. Every backend already
-  refuses any op with a B1 source (Task 6 guard), so each needs an explicit exception placed before that
+  refuses any op with a B1 source (the guard described above), so each needs an explicit exception placed before that
   guard. Today only the CPU backend has one (`ggml-cpu.cpp`); CUDA and Vulkan still answer false, and
   the scheduler then runs the op on the CPU backend. Asserted in `tests/test-littlebit-ref.cpp`.
 - **Tests:** `test-backend-ops test -o LITTLEBIT` (each backend vs CPU, plus the CPU result vs an
-  independent double-precision reference in `tests/littlebit-ref.h`, tolerance 1e-4 of max|y|; also with `-b CPU`, 328 cases); both it and `test-littlebit-ref` include
+  independent double-precision reference in `tests/littlebit-ref.h`, tolerance 1e-4 of max|y|; also with `-b CPU`, 332 cases); both it and `test-littlebit-ref` include
   ragged `d_out` (1, 4, 16, 37, 100; `d_in` stays a multiple of 128) with and without residual, n in {1, 9, 512}, and thread counts 1/3/4/8
   (worst relative error 1.8e-5 over 438 reference cases, 6e-7 for the ragged-by-thread cases, bit-identical across thread counts);
   `tests/test-littlebit-ref.cpp` (ctest `test-littlebit-ref`: reference grid, mutation checks,
   thread determinism, supports_op).
 
-## LittleBit in the graph (Task 8)
+## LittleBit in the graph
 
 `build_lora_mm` (src/llama-graph.cpp) finds a LittleBit linear through `model.lb_linears` (keyed by the pointer
 `create_tensor` returned for the "weight") and then:
 
 - **B1 factors** (what `tools/convert/lb_to_gguf.py` writes): one `ggml_littlebit(...)` node (12-argument form; the
-  residual scales are packed by two CONCAT nodes inside, `ggml_littlebit_packed` is deferred to Task 13). F32
+  residual scales are packed by two CONCAT nodes inside, `ggml_littlebit_packed`, which takes pre-packed scales, is not used by the graph yet). F32
   activations, no activation quantization. The input is cast / made contiguous first if needed.
 - **Q1_0 factors** (the legacy form of Cybertiron's converter): the old chain `build_lb_path`, kept as a documented
   slow baseline. It multiplies Q1_0 weights by Q8_0-quantized activations, so it carries int8 activation noise
@@ -204,8 +218,8 @@ Added in the engine (`littlebit` work on branch `littlemore`); the graph builder
   `--override-tensor`. Reason: `GGML_OP_LITTLEBIT` has a CPU kernel only; weights on the GPU would be copied
   across devices on every call. Verified with `GGML_SCHED_DEBUG=1 llama-debug -ngl 99` on a tiny Llama: the
   embedding, norms, RoPE, flash attention and the output head run on CUDA0, and every `LITTLEBIT` node reads
-  its weights in place with a `CPU#...` copy of the activation as input, i.e. the node runs on the CPU backend. Task 10+ must
-  drop `TENSOR_PIN_CPU` for a backend that gets a kernel.
+  its weights in place with a `CPU#...` copy of the activation as input, i.e. the node runs on the CPU backend. A future GPU kernel must
+  drop `TENSOR_PIN_CPU` for the backend that gets it.
 - The scale vectors are loaded as `GGML_OP_MUL` operands (they are broadcast-multiplied into the activations), not as
   the MUL_MAT weight their tensor id would suggest.
 - **Coverage check** (new, in `llama_model_base::load_tensors`, before the generic "wrong number of tensors"): every
@@ -256,10 +270,10 @@ the builder does not request fails the load (see the coverage check).
 
 | Family | bias on converted linears in HF | engine consumes it? |
 |---|---|---|
-| Qwen3 | q,k,v,o when `attention_bias` | q/k/v: yes (`create_tensor_qkv` loads `wq_b..`, `build_qkv` adds them). o: **no before Task 8**, now `wo_b` is loaded and `build_attn` adds it |
+| Qwen3 | q,k,v,o when `attention_bias` | q/k/v: yes (`create_tensor_qkv` loads `wq_b..`, `build_qkv` adds them). o: **no before the fused-op change**, now `wo_b` is loaded and `build_attn` adds it |
 | Llama | q,k,v,o (`attention_bias`), gate,up,down (`mlp_bias`) | yes, all (`wo_b`, `ffn_*_b`) |
-| Gemma 3 | q,k,v,o when `attention_bias` | q/k/v yes; o: **no before Task 8**, now loaded and applied (`build_attn` was called with a literal `NULL`) |
-| Qwen3.5 | q,k,v,o when `attention_bias`; DeltaNet projections and MLP have none | q/k/v yes; o: added in Task 8 (`build_layer_attn` adds `wo_b`) |
+| Gemma 3 | q,k,v,o when `attention_bias` | q/k/v yes; o: **no before the fused-op change**, now loaded and applied (`build_attn` was called with a literal `NULL`) |
+| Qwen3.5 | q,k,v,o when `attention_bias`; DeltaNet projections and MLP have none | q/k/v yes; o: added with the fused-op change (`build_layer_attn` adds `wo_b`) |
 
 Tested with random biases on every family (`test_biases_are_applied`): the fused graph matches a reference that adds
 the same biases (max-abs 7e-6 .. 3.5e-4) and is far from one that ignores them. A bias on a linear whose builder has
@@ -278,8 +292,10 @@ warns); the tests wrap it.
 Logit rms is about 0.33. Qwen3-0.6B (init-only, 0.55 bpw, 28 layers), see the table in
 `tests/engine/test_fused_graph_qwen3_06b.py`: 1.3e-2 on CPU in the default configuration (flash attention, f16 KV
 cache), **1e-4 with `-fa off -ctk f32 -ctv f32`**, 1.5e-2 .. 6e-2 with `-ngl 99` (the CUDA half of the graph), against
-0.73 .. 1.6 for the slow path. Speed (CPU, informational): the CPU reference kernel generates 10 tokens/s against 89
-tokens/s for the Q1_0 chain; the kernel is a scalar reference, tuning is for Tasks 10+.
+0.73 .. 1.6 for the slow path (these figures are the output of the tests in that file, run with `-s`).
+Speed (CPU, informal and machine-dependent): `test_cpu_speed_fused_vs_chain_is_reported` measured the CPU reference kernel
+at 10 tokens/s against 89 tokens/s for the Q1_0 chain in one run, and 9.2 against 50.6 when repeated on 2026-11-21 (32 tokens
+from "Hello"); either way the scalar reference kernel is several times slower than the slow path, and it is not tuned.
 
 **Gemma 3 layer pattern:** the engine reads the per-layer sliding-window pattern from the array key
 `gemma3.attention.sliding_window_pattern` (bool per layer, true = sliding window; `load_swa_pattern`) and falls back to the real
@@ -293,11 +309,16 @@ length is a `ConversionError`; configs without `layer_types` keep the engine def
 four sliding layers 4.0e-4, the 6-layer 5:1 pattern 7.0e-4
 (`tests/engine/test_fused_graph_families.py::test_gemma3_layer_patterns`, `tests/convert/test_gemma_pattern.py`).
 
-### GPU offload error: how much is the CUDA noise floor (review item 3)
+### GPU offload error: how much is the CUDA noise floor
 
 `tools/dev/dense_floor.py` runs the DENSE Qwen3-0.6B (no LittleBit) through the same llama.cpp paths against its own fp32 HF
 (transformers, CPU) reference, next to the LittleBit file, on the same token ids and settings. max-abs over the vocabulary
 (`default` = flash attention + f16 KV, `exact` = `-fa off -ctk f32 -ctv f32`):
+
+Columns: "dense F16" and "dense F32" are the original (unquantized) Qwen3-0.6B written as an F16 or an F32 GGUF; "dense F32 + F16 head" is the F32
+file with only the tied token-embedding / output-head tensor stored as F16, which is how the LittleBit file stores its head, so it separates the
+effect of the F16 head from everything else. All dense columns are compared with the dense fp32 HF reference; the last column compares the
+LittleBit B1 file with the LittleBit reference (`reference.py`).
 
 | prompt | ngl | config | dense F16 | dense F32 | dense F32 + F16 head | LittleBit B1 vs its reference |
 |---|---|---|---|---|---|---|
@@ -324,7 +345,7 @@ Conclusions, with what is and is not shown:
   tokens (batched CUDA matmuls; TF32 / f16 tensor-core use is the likely cause but was NOT tested). LittleBit is 1.46x / 1.56x the dense
   floor by max-abs (rms 1.47x / 1.20x). **About 1.5x is not explained by the dense control** (unattributed residual). The LittleBit model has other activation
   magnitudes than the dense one; that was not isolated.
-- For Tasks 10-12: when the CUDA kernel for `GGML_OP_LITTLEBIT` lands, compare with a CPU-exact run of the same file (not with the dense floor), use an F32
+- For future GPU kernels: when the CUDA kernel for `GGML_OP_LITTLEBIT` lands, compare with a CPU-exact run of the same file (not with the dense floor), use an F32
   head or `-fa off` + F32 KV to separate its error from the rest, and watch the 16-token ratio to the dense floor (guard: `test_gpu_error_is_within_dense_floor_factor`, limit 2.0).
 
 Regression guards in `tests/engine/test_fused_graph_qwen3_06b.py`: LittleBit-vs-reference <= 2.0x dense-vs-dense-reference at 16 tokens, `-ngl 99`
@@ -336,4 +357,4 @@ Regression guards in `tests/engine/test_fused_graph_qwen3_06b.py`: LittleBit-vs-
 - [x] The Hadamard input transform / precision policy: not applicable (metadata driven), fails loudly if metadata names a LittleBit linear.
 - [ ] Split-mode / tensor-split regexes do not match `lb_*` tensor names (moot while the LittleBit tensors are pinned to the CPU).
 - [x] `lb_to_gguf.py` silently skipped unknown linears: the engine copy is deleted; `tools/convert/lb_to_gguf.py` validates every linear.
-- [ ] GPU kernels for `GGML_OP_LITTLEBIT` (Tasks 10-12): remove `TENSOR_PIN_CPU`, handle ragged `d_out`.
+- [ ] GPU kernels for `GGML_OP_LITTLEBIT` (not written yet): remove `TENSOR_PIN_CPU`, handle ragged `d_out`.

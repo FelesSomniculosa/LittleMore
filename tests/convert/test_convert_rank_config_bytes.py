@@ -1,4 +1,4 @@
-"""Round-1 review additions: rank coverage, config override, byte-level polarity, exact check, memory preflight."""
+"""Converter tests on: any rank (padding), a missing/overridden littlebit_config.json, byte-level sign polarity, the exact check, the memory preflight."""
 from __future__ import annotations
 
 import shutil
@@ -147,7 +147,7 @@ def test_written_bytes_are_complement_of_samsung_bytes(q3, tmp_path, monkeypatch
             assert got.shape == sam.shape == (st[key].shape[0], st[key].shape[1] * 4)
             np.testing.assert_array_equal(got, ~sam)
             expected[(k, sfx)] = ~sam
-    # teeth: a packer that forgets the flip writes the Samsung bytes themselves, which this test rejects.
+    # A test that fails when the code is wrong: a packer that forgets the flip writes the Samsung bytes themselves, which this test rejects.
     # (Validation alone cannot see a flip applied to U AND V together: the two sign errors cancel.)
     monkeypatch.setattr(lb, "signs_to_b1", lambda s: np.packbits(s < 0, axis=-1, bitorder="little"))
     out2 = tmp_path / "o2.gguf"

@@ -1,8 +1,11 @@
-"""Noise floor of the engine's CPU/CUDA/F16-head/KV paths with NO LittleBit involved (Task 8 review, item 3).
+"""Is the GPU error LittleBit's or CUDA's own?  Measures the noise floor of the engine's CPU/CUDA/F16-head/KV paths
+with NO LittleBit involved, so the error of a LittleBit run can be compared against it.
 
 Runs the DENSE Qwen3-0.6B (HF fp32 reference vs llama.cpp on F16, F32 and "F32 + F16 head" GGUFs) and the LittleBit B1 GGUF
 on the same token ids and settings, and prints max-abs / rms for each pair.  Prints a markdown table.
 Usage: .venv/Scripts/python.exe tools/dev/dense_floor.py
+Needs the cached Qwen3-0.6B assets and the engine build (see docs/development.md).
+The table in docs/engine-changes.md ("GPU offload error") is the output of this script.
 """
 from __future__ import annotations
 
@@ -23,6 +26,7 @@ CONFIGS = {"default": (), "exact": ("-fa", "off", "-ctk", "f32", "-ctv", "f32")}
 
 
 def dense_reference(ids):
+    """Last-position logits of the original dense Qwen3-0.6B in fp32 on CPU (HF transformers) for token ids `ids`."""
     from transformers import AutoModelForCausalLM
     m = AutoModelForCausalLM.from_pretrained(str(A.MODEL_DIR), dtype=torch.float32).eval()
     with torch.no_grad():
@@ -30,11 +34,13 @@ def dense_reference(ids):
 
 
 def stats(a, b):
+    """(max absolute difference, root-mean-square difference) between two logit vectors."""
     d = a - b
     return float(np.abs(d).max()), float(np.sqrt(np.mean(d * d)))
 
 
 def main():
+    """Run every (prompt, -ngl, config, model) combination and print the markdown table."""
     if not F32H16.exists():   # F32 dense with only the (tied) embedding / head in F16, like the LittleBit file
         import gguf
         A.copy_gguf(F32, F32H16, lambda t: (np.asarray(t.data).astype(np.float16), gguf.GGMLQuantizationType.F16)
