@@ -114,9 +114,24 @@ because of its fp16 scale; LittleBit keeps all scales in separate F32 vectors).
 - **Rebase hazard:** upstream's last type is `F8_E4M3 = 43`. If a future upstream
   claims 44, renumber `GGML_TYPE_B1` in `ggml.h` and `gguf-py/gguf/constants.py`
   and record the new number here (files written with the old number would be misread).
-- CPU: `to_float` only. There is **no `vec_dot`** and the CPU backend's
-  `supports_op` returns false for `MUL_MAT` with a B1 weight, so it can never be
-  used as an ordinary mul_mat weight; only the LittleBit op / kernels read it.
+- CPU: `to_float` only. There is **no `vec_dot`** and no `from_float`.
+- **Rule: no backend may claim B1 for MUL_MAT / MUL_MAT_ID / GET_ROWS / CPY / SET_ROWS
+  (or any other op) until a kernel exists; the fused LITTLEBIT op (Tasks 7, 10-12)
+  consumes B1 directly** and must add its own explicit exception in each backend's
+  `supports_op`. Tasks 10/11 must not claim B1 mul_mat.
+- Audit of `supports_op` (checked by reading code and by running
+  `ggml_backend_dev_supports_op` on CPU, CUDA0, Vulkan0, Vulkan1 in `test-b1`):
+  - CPU: MUL_MAT_ID / CPY / SET_ROWS (B1 destination) / OUT_PROD / FLASH_ATTN_EXT
+    would have reached a null `vec_dot` / `from_float`, and GET_ROWS / OUT_PROD
+    would have hit `GGML_ABORT` (no B1 case in `ops.cpp` switches). Fixed with one
+    guard at the top of `ggml_backend_cpu_device_supports_op`: any op with a B1
+    source or result (except view-like ops) is refused. Repack/extra-buffer paths are
+    type-gated (`ggml_repack_get_optimal_repack_type`) and cannot see B1.
+  - CUDA / Vulkan: GET_ROWS, SET_ROWS, CPY and MUL_MAT-with-B1-weight are
+    whitelists and already answered false. **But MUL_MAT with B1 as src1 (the
+    activation) answered TRUE on CUDA0, Vulkan0 and Vulkan1** (measured), which
+    would compute garbage. Fixed with the same small guard at the top of both
+    backends' `supports_op`.
 - Tests: `engine/tests/test-b1.cpp` (ctest `test-b1`), `tests/engine/test_gguf_b1.py`.
 
 ## Known gaps / TODO
