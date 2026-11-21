@@ -7,6 +7,10 @@ What
     load: every LittleBit linear becomes five tensors `blk.N.<sub>.lb_v / lb_u / lb_s_v2 /
     lb_s_mid / lb_s_u1` (plus the same five with an `r` suffix for the residual path), the
     signs stored as the engine's pure 1-bit type B1 (exactly 1.0 bit per sign, no scale).
+    With a residual path, `blk.N.<sub>.lb_s_pkr` holds the three residual scale vectors once
+    more, packed as [lb_s_v2r | lb_s_midr | lb_s_u1r] (F32, length n_in + r_pad + n_out): the
+    operand layout of the engine's fused op, which then needs no per-call packing.  The
+    separate vectors stay for readers that use them (the Q1_0 chain, older engines).
 Why
     The sign matrices are the bulk of the model; B1 stores them at exactly 1 bit per sign
     (the older Q1_0 slow path stored an unused per-block scale as well: 1.125 bits).  The
@@ -166,6 +170,16 @@ class ConversionReport:
 def pad_to(n: int, m: int = QK) -> int:
     """Smallest multiple of `m` that is >= n (the rank is padded to a multiple of 128)."""
     return (n + m - 1) // m * m
+
+
+def pack_residual_scales(arrays: dict[str, np.ndarray]) -> np.ndarray:
+    """[s_v2 | s_mid | s_u1] of one path as one float32 vector (the `lb_s_pkr` tensor of the residual path).
+
+    `arrays`: the output of `_build_path` for the residual path.  The order and the lengths
+    (n_in, r_pad, n_out) are those of the engine's `ggml_littlebit_packed` source 8.
+    """
+    return np.ascontiguousarray(np.concatenate(
+        [arrays["lb_s_v2"], arrays["lb_s_mid"], arrays["lb_s_u1"]]).astype(np.float32, copy=False))
 
 
 def signs_to_b1(signs: np.ndarray) -> np.ndarray:
@@ -566,6 +580,13 @@ def _build(ckpt: Path, params: dict[str, ref.LBLinearParams], tmp: Path, validat
                             writer.add_tensor(name, arr)
                     except ValueError as e:
                         raise ConversionError(f"{mod}: cannot add GGUF tensor {name} ({e})") from e
+                if sfx == "r":
+                    # the residual scales once more, packed in the order GGML_OP_LITTLEBIT takes them
+                    name = f"{base}.lb_s_pkr"
+                    try:
+                        writer.add_tensor(name, pack_residual_scales(arrays))
+                    except ValueError as e:
+                        raise ConversionError(f"{mod}: cannot add GGUF tensor {name} ({e})") from e
 
     # (5) Metadata (incl. vocabulary) and file.
     try:
@@ -658,6 +679,20 @@ def _verify(path: Path, params: dict[str, ref.LBLinearParams], report: Conversio
                     group[k + sfx] = t
             if f"{base}.lb_vr" in by_name and p.residual is None:
                 return f"{mod}: residual tensors written for a checkpoint linear without a residual path"
+            packed = by_name.get(f"{base}.lb_s_pkr")
+            if p.residual is None and packed is not None:
+                return f"{mod}: {base}.lb_s_pkr written for a checkpoint linear without a residual path"
+            if p.residual is not None:
+                if packed is None:
+                    return f"{mod}: tensor {base}.lb_s_pkr is missing from the written file"
+                try:
+                    group_pk = _validate.with_packed_residual_scales(group, packed)
+                except ValueError as e:
+                    return f"{mod}: {e}"
+                for k in ("lb_s_v2r", "lb_s_midr", "lb_s_u1r"):
+                    a = np.asarray(group[k].data, dtype=np.float32).reshape(-1)
+                    if not np.array_equal(a.view(np.uint32), np.asarray(group_pk[k].data).view(np.uint32)):
+                        return f"{mod}: {base}.lb_s_pkr does not hold the bytes of {base}.{k}"
             if not validate:
                 continue
             tol = _validate.tolerance(p)
@@ -673,6 +708,15 @@ def _verify(path: Path, params: dict[str, ref.LBLinearParams], report: Conversio
                 return (f"{mod} -> {pr.gguf_name}: float64 exact check failed: error {err64:.3e} exceeds "
                         f"{_validate.EXACT_TOL:.0e} (the conversion must be bit-exact; tolerance of the float32 check "
                         f"was {tol:.3e})")
+            if p.residual is not None:
+                # the packed residual scales, checked on their own against the float64 reference decode
+                try:
+                    err64_pk = _validate.validate_layer_exact(p, group_pk, row_idx=pr.row_idx, col_idx=pr.col_idx)
+                except ValueError as e:
+                    return f"{mod}: {e}"
+                if not err64_pk <= _validate.EXACT_TOL:
+                    return (f"{mod} -> {pr.gguf_name}: float64 exact check with the packed residual scales "
+                            f"({base}.lb_s_pkr) failed: error {err64_pk:.3e} exceeds {_validate.EXACT_TOL:.0e}")
             report.tolerance = tol if not report.tolerance else min(report.tolerance, tol)
             report.max_rel_err = max(report.max_rel_err, err)
             if not err <= tol:

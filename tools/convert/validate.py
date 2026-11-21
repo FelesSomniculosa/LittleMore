@@ -135,6 +135,35 @@ def _path_forward(x: np.ndarray, g: Mapping[str, Any], sfx: str, what: str) -> n
     return y * s_u1
 
 
+class _Vec:
+    """A stand-in for a GGUF reader tensor that only carries `.data` (a 1-D float32 array)."""
+
+    def __init__(self, data: np.ndarray) -> None:
+        self.data = data
+
+
+def with_packed_residual_scales(gguf_tensors: Mapping[str, Any], packed: Any) -> dict[str, Any]:
+    """The tensors of one linear with the residual scales taken from the packed vector `lb_s_pkr`.
+
+    `packed` (a GGUF reader tensor, F32) must hold [s_v2r | s_midr | s_u1r] with the lengths
+    (n_in, r_pad, n_out) read here from the residual sign matrices `lb_vr` / `lb_ur`, the layout
+    of the engine's fused op.  The result replaces `lb_s_v2r`, `lb_s_midr`, `lb_s_u1r` by the
+    three segments, so `validate_layer` / `validate_layer_exact` check the packed copy on its
+    own.  Raises ValueError on a wrong length.
+    """
+    r_pad, n_in = _b1_matrix_shape(gguf_tensors["lb_vr"], "linear.lb_vr")
+    n_out, _ = _b1_matrix_shape(gguf_tensors["lb_ur"], "linear.lb_ur")
+    pk = np.asarray(packed.data, dtype=np.float32).reshape(-1)
+    if pk.size != n_in + r_pad + n_out:
+        raise ValueError(f"lb_s_pkr has {pk.size} entries, expected n_in + r_pad + n_out = "
+                         f"{n_in} + {r_pad} + {n_out} = {n_in + r_pad + n_out}")
+    out = dict(gguf_tensors)
+    out["lb_s_v2r"] = _Vec(pk[:n_in])
+    out["lb_s_midr"] = _Vec(pk[n_in:n_in + r_pad])
+    out["lb_s_u1r"] = _Vec(pk[n_in + r_pad:])
+    return out
+
+
 def validate_layer(ckpt_params: ref.LBLinearParams, gguf_tensors: Mapping[str, Any],
                    n_samples: int = 4, row_idx: np.ndarray | None = None,
                    col_idx: np.ndarray | None = None, seed: int = 0) -> float:

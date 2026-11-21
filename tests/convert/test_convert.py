@@ -101,7 +101,7 @@ def test_no_residual_checkpoint(tmp_path):
     report = lb.convert_checkpoint(ck, out)
     names = _read(out)
     assert any(n.endswith(".lb_v") for n in names)
-    assert not any(n.endswith(("lb_vr", "lb_ur", "lb_s_v2r", "lb_s_midr", "lb_s_u1r")) for n in names)
+    assert not any(n.endswith(("lb_vr", "lb_ur", "lb_s_v2r", "lb_s_midr", "lb_s_u1r", "lb_s_pkr")) for n in names)
     assert report.n_validated == report.n_linears > 0
 
 
@@ -174,6 +174,75 @@ def test_padded_rank_with_residual_different_rank(tmp_path):
     assert np.all(t["blk.0.attn_q.lb_s_mid"].data[136:] == 0)
     assert np.all(t["blk.0.attn_q.lb_s_midr"].data[72:] == 0)
     assert report.max_rel_err < report.tolerance
+
+
+@needs_qwen_tok
+def test_packed_residual_scales(qwen3_converted):
+    """Every linear with a residual path also carries lb_s_pkr = [s_v2r | s_midr | s_u1r] (F32), byte-equal to the
+    three separate vectors, and the layer decoded with the packed copy instead of them matches the float64 reference
+    (checked here independently of the converter's own validation)."""
+    ckpt, out, report = qwen3_converted
+    params = ref.load_checkpoint(ckpt)
+    t = _read(out)
+    n_checked = 0
+    for mod, p in params.items():
+        for pr in report.probes[mod]:
+            base = pr.gguf_name.removesuffix(".weight")
+            assert (p.residual is not None) == (f"{base}.lb_s_pkr" in t), base
+            if p.residual is None:
+                continue
+            pk = t[f"{base}.lb_s_pkr"]
+            assert pk.tensor_type == gguf.GGMLQuantizationType.F32
+            n_in = _shape_of(t[f"{base}.lb_vr"])[0]
+            r2 = _shape_of(t[f"{base}.lb_vr"])[1]
+            n_out = _shape_of(t[f"{base}.lb_ur"])[1]
+            want = np.concatenate([t[f"{base}.lb_s_v2r"].data, t[f"{base}.lb_s_midr"].data, t[f"{base}.lb_s_u1r"].data])
+            assert pk.data.shape == (n_in + r2 + n_out,)
+            np.testing.assert_array_equal(pk.data.view(np.uint32), want.astype(np.float32).view(np.uint32))
+            group = {k: t[f"{base}.{k}"] for k in ("lb_v", "lb_u", "lb_s_v2", "lb_s_mid", "lb_s_u1", "lb_vr", "lb_ur")}
+            group.update({k: None for k in ("lb_s_v2r", "lb_s_midr", "lb_s_u1r")})  # only the packed copy is used
+            err = val.validate_layer_exact(p, val.with_packed_residual_scales(group, pk),
+                                           row_idx=pr.row_idx, col_idx=pr.col_idx)
+            assert err <= val.EXACT_TOL, (base, err)
+            n_checked += 1
+    assert n_checked == report.n_linears > 0
+
+
+@needs_qwen_tok
+def test_packed_residual_scales_corruption_is_caught(qwen3_converted):
+    """The validator fails on a wrong lb_s_pkr: one entry of any segment changed, or the wrong length."""
+    ckpt, out, report = qwen3_converted
+    p = ref.load_checkpoint(ckpt)["model.layers.0.self_attn.q_proj"]
+    t = _read(out)
+    group = {k: t[f"blk.0.attn_q.{k}"] for k in ("lb_v", "lb_u", "lb_s_v2", "lb_s_mid", "lb_s_u1", "lb_vr", "lb_ur")}
+    pk = t["blk.0.attn_q.lb_s_pkr"]
+    n_in = _shape_of(t["blk.0.attn_q.lb_vr"])[0]
+    r2 = _shape_of(t["blk.0.attn_q.lb_vr"])[1]
+    assert val.validate_layer_exact(p, val.with_packed_residual_scales(group, pk)) <= val.EXACT_TOL
+    for i in (3, n_in + 2, n_in + r2 + 5):  # an entry of s_v2r, of s_midr (inside the logical rank), of s_u1r
+        data = np.array(pk.data, copy=True)
+        data[i] *= 2.0
+        err = val.validate_layer_exact(p, val.with_packed_residual_scales(group, pk._replace(data=data)))
+        assert err > 1e3 * val.EXACT_TOL, (i, err)
+    with pytest.raises(ValueError, match="lb_s_pkr has"):
+        val.with_packed_residual_scales(group, pk._replace(data=np.array(pk.data[:-1], copy=True)))
+
+
+@needs_qwen_tok
+def test_corrupt_packed_scales_abort_conversion(qwen3_ckpt, tmp_path, monkeypatch):
+    """If the packed copy disagrees with the separate residual scales, convert() aborts naming lb_s_pkr."""
+    real = lb.pack_residual_scales
+
+    def bad(arrays):
+        """The real packer, but with the first entry of s_u1r doubled."""
+        out = real(arrays).copy()
+        out[-arrays["lb_s_u1"].size] *= 2.0
+        return out
+
+    monkeypatch.setattr(lb, "pack_residual_scales", bad)
+    with pytest.raises(lb.ConversionError, match="lb_s_pkr"):
+        lb.convert(qwen3_ckpt, tmp_path / "o.gguf")
+    assert not (tmp_path / "o.gguf").exists()
 
 
 # --------------------------------------------------------------------------- errors
