@@ -120,6 +120,14 @@ Example, making a checkpoint by hand:
 .venv\Scripts\python.exe -m pytest tests/convert -q
 ```
 
+Input widths (hidden size, intermediate size) must be multiples of 128, because
+a `B1` row is whole 128-sign blocks; the converter refuses anything else. The
+rank may be anything (it is padded to a multiple of 128 with zero scales, which
+is exact). A checkpoint without `littlebit_config.json` is refused with an
+explanation; pass `--assume-no-littlebit-config` to skip only the residual
+cross-check against that file. Gemma 3 is tested on the generic path only
+(identity permutations); Llama and Qwen3.5 exercise real permutations.
+
 Until the engine loader for `B1` exists (Task 8) these GGUFs cannot be run in
 llama.cpp; correctness is checked numerically by the validator. The converter
 tests build tiny random models offline; the Qwen families need the cached

@@ -184,8 +184,10 @@ def test_missing_config_raises(qwen3_ckpt, tmp_path, missing):
     ck = tmp_path / "ck"
     shutil.copytree(qwen3_ckpt, ck)
     (ck / missing).unlink()
-    with pytest.raises(lb.ConversionError, match=missing):
+    with pytest.raises(lb.ConversionError, match=missing) as e:
         lb.convert(ck, tmp_path / "o.gguf")
+    if missing == "littlebit_config.json":
+        assert "--assume-no-littlebit-config" in str(e.value)  # the message says how to proceed
     assert not (tmp_path / "o.gguf").exists()
 
 
@@ -369,7 +371,11 @@ FAMILY_CASES = [
 
 @pytest.mark.parametrize("family,arch", FAMILY_CASES)
 def test_family_converts_and_validates(family, arch, tmp_path):
-    """Tiny random model of the family -> checkpoint -> GGUF; every linear validated; probes are permutations."""
+    """Tiny random model of the family -> checkpoint -> GGUF; every linear validated; probes are permutations.
+
+    Gemma 3 only exercises the generic path (identity permutations expected); Llama (q/k RoPE
+    rows) and Qwen3.5 (V-head reorder) exercise real permutations.
+    """
     ck = _tiny.make_tiny_checkpoint(family, tmp_path)
     out = tmp_path / f"{family}.gguf"
     report = lb.convert_checkpoint(ck, out)

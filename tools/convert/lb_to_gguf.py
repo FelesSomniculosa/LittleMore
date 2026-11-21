@@ -15,15 +15,48 @@ Why
 
 Starting point and licence
     The structure of this file (probe mechanism, scale folding, rank padding, naming) is
-    derived from `engine/tools/littlebit/lb_to_gguf.py` by Cybertiron (MIT licence,
-    "Architecture-generic LittleBit -> GGUF converter"), which wrote Q1_0 tensors from a
-    base GGUF.  Changes here: B1 output with the polarity flip, one self-contained input
-    directory (the base GGUF is produced inside, by llama.cpp's own converter classes),
-    per-layer numerical validation by reading the written file back, and an atomic write.
-    MIT licence notice of the original: Permission is hereby granted, free of charge, to
-    any person obtaining a copy of the software to deal in it without restriction,
-    subject to the inclusion of the original copyright and permission notice in all copies
-    or substantial portions.  The software is provided "as is", without warranty of any kind.
+    derived from `engine/tools/littlebit/lb_to_gguf.py` by Cybertiron
+    (https://github.com/Cybertiron/llama.cpp-littlebit, "Architecture-generic LittleBit ->
+    GGUF converter"), which wrote Q1_0 tensors from a base GGUF.  That file carries no
+    copyright line of its own; it is part of the llama.cpp fork whose LICENSE reads
+    (verbatim, from engine/LICENSE):
+
+        MIT License
+
+        Copyright (c) 2023-2026 The ggml authors
+
+        Permission is hereby granted, free of charge, to any person obtaining a copy
+        of this software and associated documentation files (the "Software"), to deal
+        in the Software without restriction, including without limitation the rights
+        to use, copy, modify, merge, publish, distribute, sublicense, and/or sell
+        copies of the Software, and to permit persons to whom the Software is
+        furnished to do so, subject to the following conditions:
+
+        The above copyright notice and this permission notice shall be included in all
+        copies or substantial portions of the Software.
+
+        THE SOFTWARE IS PROVIDED "AS IS", WITHOUT WARRANTY OF ANY KIND, EXPRESS OR
+        IMPLIED, INCLUDING BUT NOT LIMITED TO THE WARRANTIES OF MERCHANTABILITY,
+        FITNESS FOR A PARTICULAR PURPOSE AND NONINFRINGEMENT. IN NO EVENT SHALL THE
+        AUTHORS OR COPYRIGHT HOLDERS BE LIABLE FOR ANY CLAIM, DAMAGES OR OTHER
+        LIABILITY, WHETHER IN AN ACTION OF CONTRACT, TORT OR OTHERWISE, ARISING FROM,
+        OUT OF OR IN CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS IN THE
+        SOFTWARE.
+
+    Changes here: B1 output with the polarity flip, one self-contained input directory (the
+    base GGUF is produced inside, by llama.cpp's own converter classes), per-layer numerical
+    validation by reading the written file back, and an atomic write.
+
+Families exercised by tests/convert (tiny random models): Qwen3, Llama, Gemma 3, Qwen3.5
+(DeltaNet).  Llama (RoPE row permutation of q/k) and Qwen3.5 (value-head reorder) exercise
+real permutations.  Gemma 3 exercises only the GENERIC path (its converter applies identity
+permutations to the linears); nothing Gemma-specific is claimed beyond that.
+
+Input widths: every LittleBit linear's input width (hidden size / intermediate size) must be
+a multiple of 128, because a B1 row is made of whole 128-sign blocks and the fused kernel
+reads whole blocks; the converter rejects anything else with a ConversionError rather than
+padding (padding the input would change the activation the engine feeds in).  The RANK has
+no such restriction: any logical rank >= 1 is padded up (see `_build_path`).
 
 Limitation (until Task 8)
     The engine-side loader/graph that consumes B1 factors lands in Task 8.  Until then a
@@ -49,7 +82,7 @@ linear) are written as F16, 1-D tensors (norms, biases, scale-like vectors) as F
 `head_type` is the hook for Q8_0/Q6_K heads (Task 13).  Terms (LittleBit, GGUF, rank, RoPE,
 GQA) are defined in docs/development.md (glossary).
 
-Usage: python -m tools.convert.lb_to_gguf <ckpt_dir> -o <out.gguf> [--head-type f16] [--no-validate]
+Usage: python -m tools.convert.lb_to_gguf <ckpt_dir> -o <out.gguf> [--head-type f16] [--no-validate] [--assume-no-littlebit-config]
 """
 from __future__ import annotations
 
@@ -124,6 +157,7 @@ class ConversionReport:
     biases: list[str] = field(default_factory=list)               # checkpoint bias tensors carried over
     dropped: list[str] = field(default_factory=list)              # source tensors the HF converter dropped
     arch: str = ""
+    config_check_skipped: bool = False      # littlebit_config.json cross-check skipped (override flag)
     lb_bytes: int = 0                       # bytes of the B1 sign matrices written
 
 
@@ -271,24 +305,110 @@ def _lb_module_of(key: str) -> str | None:
     return m["mod"] if m else None
 
 
-def _check_inputs(ckpt: Path, head_type: str) -> dict[str, Any]:
-    """Early, cheap checks: head_type, required config files, shards present.  Returns littlebit_config."""
+def _check_inputs(ckpt: Path, head_type: str, assume_no_littlebit_config: bool = False) -> dict[str, Any]:
+    """Early, cheap checks: head_type, required config files, shards present.  Returns littlebit_config.
+
+    `littlebit_config.json` is only used for one cross-check (does `residual` match the tensors);
+    shapes come from the tensors.  Without the override flag a missing file is an error whose
+    message says what it is and how to proceed; with the flag it is skipped (with a warning).
+    """
     if head_type not in _HEAD_TYPES:
         raise ConversionError(f"unknown head_type {head_type!r}; expected one of {_HEAD_TYPES}")
     if head_type != "f16":
         raise NotImplementedError(f"head_type={head_type!r}: Task 13")
     if not ckpt.is_dir():
         raise ConversionError(f"checkpoint directory not found: {ckpt}")
-    for fn in ("config.json", "littlebit_config.json"):
-        if not (ckpt / fn).is_file():
-            raise ConversionError(f"{ckpt}: required file {fn} is missing (config.json: the HF architecture/hyper-parameters; "
-                                  "littlebit_config.json: how the checkpoint was made)")
+    if not (ckpt / "config.json").is_file():
+        raise ConversionError(f"{ckpt}: required file config.json is missing (the Hugging Face config: architecture and hyper-parameters)")
     if not _shard_files(ckpt):
         raise ConversionError(f"{ckpt}: no *.safetensors files")
+    cfg = ckpt / "littlebit_config.json"
+    if not cfg.is_file():
+        if not assume_no_littlebit_config:
+            raise ConversionError(
+                f"{ckpt}: littlebit_config.json is missing.  This small JSON file is written by the LittleBit "
+                "checkpoint tooling next to the weights and records how the checkpoint was made (bit budget, "
+                "whether a residual path exists, ...); legacy checkpoints may lack it.  The converter only uses it "
+                "to cross-check that residual paths are present exactly when it says so.  If you trust the "
+                "checkpoint, re-run with --assume-no-littlebit-config (Python: assume_no_littlebit_config=True): "
+                "that skips only this cross-check and detects residual paths from the tensors themselves.")
+        logger.warning("littlebit_config.json is missing: residual cross-check skipped (--assume-no-littlebit-config)")
+        return {}
+    if assume_no_littlebit_config:
+        logger.warning("--assume-no-littlebit-config given: residual cross-check against littlebit_config.json skipped")
+        return {}
     try:
-        return json.loads((ckpt / "littlebit_config.json").read_text(encoding="utf-8"))
+        return json.loads(cfg.read_text(encoding="utf-8"))
     except ValueError as e:
-        raise ConversionError(f"{ckpt / 'littlebit_config.json'}: not valid JSON ({e})") from e
+        raise ConversionError(f"{cfg}: not valid JSON ({e})") from e
+
+
+def _available_memory() -> int | None:
+    """Bytes of RAM currently available, or None when it cannot be determined.
+
+    psutil if installed (it is not a project dependency); else the standard library only:
+    GlobalMemoryStatusEx via ctypes on Windows, sysconf on POSIX.
+    """
+    try:
+        import psutil  # type: ignore
+        return int(psutil.virtual_memory().available)
+    except ImportError:
+        pass
+    try:
+        if os.name == "nt":
+            import ctypes
+
+            class _MemStatus(ctypes.Structure):
+                _fields_ = [("dwLength", ctypes.c_ulong), ("dwMemoryLoad", ctypes.c_ulong),
+                            ("ullTotalPhys", ctypes.c_ulonglong), ("ullAvailPhys", ctypes.c_ulonglong),
+                            ("ullTotalPageFile", ctypes.c_ulonglong), ("ullAvailPageFile", ctypes.c_ulonglong),
+                            ("ullTotalVirtual", ctypes.c_ulonglong), ("ullAvailVirtual", ctypes.c_ulonglong),
+                            ("sullAvailExtendedVirtual", ctypes.c_ulonglong)]
+            st = _MemStatus()
+            st.dwLength = ctypes.sizeof(_MemStatus)
+            if ctypes.windll.kernel32.GlobalMemoryStatusEx(ctypes.byref(st)):  # type: ignore[attr-defined]
+                return int(st.ullAvailPhys)
+            return None
+        return int(os.sysconf("SC_AVPHYS_PAGES") * os.sysconf("SC_PAGE_SIZE"))
+    except (OSError, ValueError, AttributeError):
+        return None
+
+
+def _estimate_bytes(ckpt: Path) -> int:
+    """Peak RAM the conversion needs, computed from the tensor shapes in the checkpoint headers.
+
+    Per packed sign matrix of n bits: n bytes (reference.load_checkpoint holds int8 signs) plus
+    n/8 bytes (the B1 copy waiting in the GGUF writer); per scale vector 8 bytes/element (the
+    checkpoint copy + the float32 copy); per other tensor 4 bytes/element (source + F16/F32 output).
+    That is roughly 0.55 GB per billion model parameters at a 0.55 bits-per-weight budget.
+    """
+    total = 0.0
+    for shard in _shard_files(ckpt):
+        with safe_open(str(shard), framework="pt") as f:
+            for key in f.keys():
+                n = 1
+                for d in f.get_slice(key).get_shape():
+                    n *= int(d)
+                if key.endswith("_packed"):
+                    total += n * 32 * (1 + 1 / 8)
+                elif _lb_module_of(key) is not None:
+                    total += n * 8
+                else:
+                    total += n * 4
+    return int(total)
+
+
+def _memory_preflight(ckpt: Path) -> None:
+    """Raise ConversionError with the estimate if the conversion clearly cannot fit in free RAM."""
+    avail = _available_memory()
+    if avail is None:
+        logger.debug("available memory unknown; skipping the memory preflight")
+        return
+    need = _estimate_bytes(ckpt)
+    logger.info("memory preflight: need ~%.2f GiB, %.2f GiB available", need / 2**30, avail / 2**30)
+    if need > avail:
+        raise ConversionError(f"converting {ckpt} needs an estimated {need / 2**30:.2f} GiB of RAM "
+                              f"but only {avail / 2**30:.2f} GiB are available; free memory or use a machine with more RAM")
 
 
 def _make_converter(ckpt: Path, tmp_out: Path) -> ModelBase:
@@ -324,7 +444,8 @@ def _make_converter(ckpt: Path, tmp_out: Path) -> ModelBase:
     return conv
 
 
-def convert_checkpoint(ckpt_dir: Path, out: Path, head_type: str = "f16", validate: bool = True) -> ConversionReport:
+def convert_checkpoint(ckpt_dir: Path, out: Path, head_type: str = "f16", validate: bool = True,
+                       assume_no_littlebit_config: bool = False) -> ConversionReport:
     """Convert and (by default) validate; same as `convert` but returns a `ConversionReport`.
 
     Steps: (1) check the inputs; (2) load and cross-check the LittleBit params with
@@ -336,7 +457,8 @@ def convert_checkpoint(ckpt_dir: Path, out: Path, head_type: str = "f16", valida
     output and no temp file remain.
     """
     ckpt_dir, out = Path(ckpt_dir), Path(out)
-    lbcfg = _check_inputs(ckpt_dir, head_type)
+    lbcfg = _check_inputs(ckpt_dir, head_type, assume_no_littlebit_config)
+    _memory_preflight(ckpt_dir)
     try:
         params = ref.load_checkpoint(ckpt_dir)
     except ValueError as e:
@@ -344,7 +466,7 @@ def convert_checkpoint(ckpt_dir: Path, out: Path, head_type: str = "f16", valida
     if not params:
         raise ConversionError(f"{ckpt_dir}: no LittleBit linear found (no <module>.U_packed tensors)")
     has_res = [m for m, p in params.items() if p.residual is not None]
-    if "residual" in lbcfg and bool(lbcfg["residual"]) != bool(has_res):
+    if not assume_no_littlebit_config and "residual" in lbcfg and bool(lbcfg["residual"]) != bool(has_res):
         raise ConversionError(f"littlebit_config.json says residual={lbcfg['residual']} but "
                               f"{len(has_res)} of {len(params)} linears have a residual path")
     for mod, p in params.items():
@@ -357,6 +479,7 @@ def convert_checkpoint(ckpt_dir: Path, out: Path, head_type: str = "f16", valida
     tmp = Path(tmp_name)
     try:
         report = _build(ckpt_dir, params, tmp, validate)
+        report.config_check_skipped = bool(assume_no_littlebit_config)
         gc.collect()  # drop any memory map of `tmp` before renaming it (Windows refuses otherwise)
         os.replace(tmp, out)
         return report
@@ -366,6 +489,8 @@ def convert_checkpoint(ckpt_dir: Path, out: Path, head_type: str = "f16", valida
             tmp.unlink()  # only still there when something failed
         except FileNotFoundError:
             pass
+        except OSError as e:  # e.g. Windows still holds a memory map; must not mask the real error
+            logger.warning("could not remove temporary file %s (%s)", tmp, e)
 
 
 def _build(ckpt: Path, params: dict[str, ref.LBLinearParams], tmp: Path, validate: bool) -> ConversionReport:
@@ -507,6 +632,14 @@ def _verify(path: Path, params: dict[str, ref.LBLinearParams], report: Conversio
                 err = _validate.validate_layer(p, group, row_idx=pr.row_idx, col_idx=pr.col_idx)
             except ValueError as e:
                 return f"{mod}: {e}"
+            try:
+                err64 = _validate.validate_layer_exact(p, group, row_idx=pr.row_idx, col_idx=pr.col_idx)
+            except ValueError as e:
+                return f"{mod}: {e}"
+            if not err64 <= _validate.EXACT_TOL:
+                return (f"{mod} -> {pr.gguf_name}: float64 exact check failed: error {err64:.3e} exceeds "
+                        f"{_validate.EXACT_TOL:.0e} (the conversion must be bit-exact; tolerance of the float32 check "
+                        f"was {tol:.3e})")
             report.tolerance = tol if not report.tolerance else min(report.tolerance, tol)
             report.max_rel_err = max(report.max_rel_err, err)
             if not err <= tol:
@@ -515,7 +648,8 @@ def _verify(path: Path, params: dict[str, ref.LBLinearParams], report: Conversio
     return None
 
 
-def convert(ckpt_dir: Path, out: Path, head_type: str = "f16", validate: bool = True) -> None:
+def convert(ckpt_dir: Path, out: Path, head_type: str = "f16", validate: bool = True,
+            assume_no_littlebit_config: bool = False) -> None:
     """Convert the Samsung-format LittleBit checkpoint in `ckpt_dir` to a B1 GGUF at `out`.
 
     `head_type`: precision of the embedding / output head; only "f16" is implemented
@@ -523,9 +657,11 @@ def convert(ckpt_dir: Path, out: Path, head_type: str = "f16", validate: bool = 
     every LittleBit linear is read back from the written file and compared with the PyTorch
     reference; any error above tolerance, a missing/skipped linear or a bad input raises
     `ConversionError` and leaves no file at `out` (the file is written to a temp name and
-    renamed only after validation).
+    renamed only after validation).  `assume_no_littlebit_config=True` lets a checkpoint without
+    `littlebit_config.json` through: only the residual cross-check against that file is skipped
+    (with a warning, recorded in `ConversionReport.config_check_skipped`).
     """
-    convert_checkpoint(ckpt_dir, out, head_type, validate)
+    convert_checkpoint(ckpt_dir, out, head_type, validate, assume_no_littlebit_config)
 
 
 def main(argv: list[str] | None = None) -> int:
@@ -534,11 +670,14 @@ def main(argv: list[str] | None = None) -> int:
     ap.add_argument("ckpt", type=Path, help="checkpoint directory (safetensors + config.json + tokenizer + littlebit_config.json)")
     ap.add_argument("-o", "--out", type=Path, required=True, help="output .gguf path")
     ap.add_argument("--head-type", default="f16", choices=_HEAD_TYPES, help="embedding/output precision (only f16 for now)")
+    ap.add_argument("--assume-no-littlebit-config", action="store_true",
+                    help="accept a checkpoint without littlebit_config.json (skips only the residual cross-check)")
     ap.add_argument("--no-validate", action="store_true", help="skip the per-layer read-back validation (not recommended)")
     args = ap.parse_args(argv)
     logging.basicConfig(level=logging.INFO, format="%(message)s")
     try:
-        report = convert_checkpoint(args.ckpt, args.out, args.head_type, not args.no_validate)
+        report = convert_checkpoint(args.ckpt, args.out, args.head_type, not args.no_validate,
+                                    args.assume_no_littlebit_config)
     except ConversionError as e:
         print(f"error: {e}", file=sys.stderr)
         return 1

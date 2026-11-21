@@ -151,7 +151,6 @@ def validate_layer(ckpt_params: ref.LBLinearParams, gguf_tensors: Mapping[str, A
     tensors are inconsistent with each other (wrong shapes / lengths), never for a numeric mismatch.
     Compare the result with `tolerance(ckpt_params)`.
     """
-    what = "linear"
     n_in = ckpt_params.primary.V.shape[1]
     gen = np.random.default_rng(seed)
     x = gen.standard_normal((n_samples, n_in)).astype(np.float32)
@@ -159,8 +158,20 @@ def validate_layer(ckpt_params: ref.LBLinearParams, gguf_tensors: Mapping[str, A
         y_ref = ref.LBLinear.from_params(ckpt_params)(torch.from_numpy(x)).numpy().astype(np.float64)
     if row_idx is not None:
         y_ref = y_ref[:, np.asarray(row_idx)]
+    y = _gguf_forward(x, gguf_tensors, col_idx)
+    err = 0.0
+    for i in range(n_samples):
+        denom = np.linalg.norm(y_ref[i])
+        diff = np.linalg.norm(y[i] - y_ref[i])
+        err = max(err, float(diff / denom) if denom > 0 else float(diff))
+    return err
+
+
+def _gguf_forward(x: np.ndarray, gguf_tensors: Mapping[str, Any], col_idx: np.ndarray | None) -> np.ndarray:
+    """float64 output of the GGUF tensors (all paths present) for float32 inputs `x` (n, n_in)."""
+    what = "linear"
     xg = x if col_idx is None else x[:, np.asarray(col_idx)]
-    y = 0.0
+    y: Any = 0.0
     n_paths = 0
     for sfx in ("", "r"):
         if "lb_v" + sfx in gguf_tensors:
@@ -171,9 +182,56 @@ def validate_layer(ckpt_params: ref.LBLinearParams, gguf_tensors: Mapping[str, A
             n_paths += 1
     if n_paths == 0:
         raise ValueError(f"{what}: no lb_v tensor given")
-    err = 0.0
-    for i in range(n_samples):
-        denom = np.linalg.norm(y_ref[i])
-        diff = np.linalg.norm(y[i] - y_ref[i])
-        err = max(err, float(diff / denom) if denom > 0 else float(diff))
-    return err
+    return y
+
+
+# Tolerance of the exact check, relative to max|y|.  The conversion is bit-exact (signs exact,
+# scales copied, mid = float32(v1*u2) on both sides), so both sides evaluate the same real number
+# in float64 and differ only by float64 summation order (~1e-15).  1e-9 leaves 6 orders of margin.
+EXACT_TOL = 1e-9
+
+
+def _reference_f64(params: ref.LBLinearParams, x: np.ndarray) -> np.ndarray:
+    """The reference chain evaluated in float64 straight from the decoded Samsung signs/scales.
+
+    No padding, logical rank only.  mid = float32(v1 * u2): the folded scale is defined as the
+    float32 product (that is what the format stores); everything else is exact.
+    """
+    xd = x.astype(np.float64)
+    y: Any = 0.0
+    for path in (params.primary, params.residual):
+        if path is None:
+            continue
+        v2 = path.v2.float().numpy().astype(np.float64).reshape(-1)
+        u1 = path.u1.float().numpy().astype(np.float64).reshape(-1)
+        mid = (path.v1.float() * path.u2.float()).numpy().astype(np.float64).reshape(-1)
+        r, n_out = path.V.shape[0], path.U.shape[0]
+        h = np.empty((x.shape[0], r))
+        for r0 in range(0, r, _CHUNK_ROWS):
+            h[:, r0:r0 + _CHUNK_ROWS] = (xd * v2) @ path.V[r0:r0 + _CHUNK_ROWS].numpy().astype(np.float64).T
+        h *= mid
+        out = np.empty((x.shape[0], n_out))
+        for r0 in range(0, n_out, _CHUNK_ROWS):
+            out[:, r0:r0 + _CHUNK_ROWS] = h @ path.U[r0:r0 + _CHUNK_ROWS].numpy().astype(np.float64).T
+        y = y + out * u1
+    return y
+
+
+def validate_layer_exact(ckpt_params: ref.LBLinearParams, gguf_tensors: Mapping[str, Any],
+                         n_samples: int = 4, row_idx: np.ndarray | None = None,
+                         col_idx: np.ndarray | None = None, seed: int = 0) -> float:
+    """Like `validate_layer` but against a float64 evaluation of the reference decode.
+
+    Returns max|y_gguf - y_ref64| / max|y_ref64| (compare with `EXACT_TOL`).  Because the
+    conversion is bit-exact this is ~1e-15 for a correct file, so a single wrong sign bit is
+    caught even in layers so large that the float32 tolerance of `validate_layer` would give
+    it only a small margin.
+    """
+    n_in = ckpt_params.primary.V.shape[1]
+    x = np.random.default_rng(seed).standard_normal((n_samples, n_in)).astype(np.float32)
+    y_ref = _reference_f64(ckpt_params, x)
+    if row_idx is not None:
+        y_ref = y_ref[:, np.asarray(row_idx)]
+    y = _gguf_forward(x, gguf_tensors, col_idx)
+    scale = float(np.abs(y_ref).max())
+    return float(np.abs(y - y_ref).max() / scale) if scale > 0 else float(np.abs(y).max())
