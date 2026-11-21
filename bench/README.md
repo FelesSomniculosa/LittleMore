@@ -25,9 +25,12 @@ instead of bf16.
 ## How a number is made
 
 - `run_bench(model_gguf, backend, n_gpu_layers)` runs `engine/build/bin/llama-bench -m <file> -ngl <n> -dev <device>
-  -p 512 -n 128 -r 5 -o json`: prompt processing of 512 tokens (`pp512`) and generation of 128 tokens (`tg128`), both
-  in tokens per second, default settings otherwise (flash attention auto, F16 KV cache, batch 2048 / ubatch 512).
-  llama-bench runs one untimed pass per test before its 5 timed repetitions; all 5 are kept.
+  -o json` twice: generation of 128 tokens (`tg128`, `-p 0 -n 128 -r 10`) and then prompt processing of 512 tokens
+  (`pp512`, `-p 512 -n 0 -r 10`), both in tokens per second, default settings otherwise (flash attention auto, F16 KV
+  cache, batch 2048 / ubatch 512). Generation comes first because, measured on this GPU, a tg128 right after pp512 in the
+  same llama-bench run starts 10-20 % slow while the GPU recovers from the power-capped prompt phase. llama-bench runs
+  one untimed pass per test before its 10 timed repetitions; all are kept, and the reported value is their median (the
+  first repetition can still be a few percent slow).
 - Warm-up: this laptop GPU idles at 1605 MHz and needs about a second of load to reach its boost clock (2040-2340 MHz),
   and drops back while the CPU loads a model. So right before the measured run the harness runs short generations of
   the same model for at least 3 s, and it samples the SM clock with nvidia-smi during the measured run (stored as
@@ -36,7 +39,7 @@ instead of bf16.
   what the benchmark process allocated (weights, KV cache, compute buffers, CUDA context).
 - Rounds: `run_plan` runs the whole list once per round and repeats the rounds (A B C ... A B C ...), so drifts of the
   machine (clock, temperature, the DRAM bandwidth, which varies between 128 and 188 GB/s from run to run on this GPU)
-  hit every file alike. The tables give the mean of the round means and the range of the round means.
+  hit every file alike. The tables give the mean of the round medians and the range of the round medians.
 
 ## Reproduce
 
