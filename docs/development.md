@@ -169,7 +169,8 @@ kernel" in [engine-changes.md](engine-changes.md#cpu-avx2-kernel-of-ggml_op_litt
 ```
 
 `bench/run_bench.py` wraps `llama-bench` (warm-up, repetitions, interleaved rounds, GPU memory and clock); the gate is
-"LittleBit 0.55 bpw generates faster than bf16 on CUDA for Qwen3-0.6B and Qwen3-1.7B". See [bench/README.md](../bench/README.md)
+"LittleBit 0.55 bpw generates faster than bf16 on CUDA for Qwen3-0.6B and Qwen3-1.7B" (Phase 1 status: provisional
+pass, Qwen3-1.7B measured on proxy weights only). See [bench/README.md](../bench/README.md)
 and the results in [bench/results/phase1.md](../bench/results/phase1.md).
 
 ## Glossary

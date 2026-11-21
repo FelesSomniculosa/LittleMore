@@ -89,7 +89,8 @@
     1125.0,
     2280.0,
     2340.0
-   ]
+   ],
+   "weights": "original"
   },
   {
    "model": "qwen3-0.6b",
@@ -176,7 +177,8 @@
     1620.0,
     1875.0,
     2340.0
-   ]
+   ],
+   "weights": "original"
   },
   {
    "model": "qwen3-0.6b",
@@ -263,7 +265,8 @@
     1110.0,
     2325.0,
     2325.0
-   ]
+   ],
+   "weights": "original"
   },
   {
    "model": "qwen3-0.6b",
@@ -350,7 +353,8 @@
     1125.0,
     2325.0,
     2325.0
-   ]
+   ],
+   "weights": "original"
   },
   {
    "model": "qwen3-0.6b",
@@ -437,7 +441,8 @@
     1245.0,
     2325.0,
     2325.0
-   ]
+   ],
+   "weights": "original"
   },
   {
    "model": "qwen3-0.6b",
@@ -524,7 +529,8 @@
     735.0,
     2325.0,
     2325.0
-   ]
+   ],
+   "weights": "original"
   },
   {
    "model": "qwen3-0.6b",
@@ -611,7 +617,8 @@
     1785.0,
     1845.0,
     2325.0
-   ]
+   ],
+   "weights": "original"
   },
   {
    "model": "qwen3-0.6b",
@@ -698,10 +705,11 @@
     2085.0,
     2130.0,
     2325.0
-   ]
+   ],
+   "weights": "original"
   },
   {
-   "model": "qwen3-1.7b",
+   "model": "qwen3-1.7b-proxy",
    "variant": "littlebit-0.55",
    "file": ".cache/gguf/qwen3-1.7b-proxy-lb2-0.55-b1.gguf",
    "round": 0,
@@ -785,10 +793,11 @@
     1515.0,
     2145.0,
     2340.0
-   ]
+   ],
+   "weights": "proxy"
   },
   {
-   "model": "qwen3-1.7b",
+   "model": "qwen3-1.7b-proxy",
    "variant": "bf16",
    "file": ".cache/gguf/qwen3-1.7b-proxy-bf16.gguf",
    "round": 0,
@@ -872,10 +881,11 @@
     1125.0,
     1995.0,
     2340.0
-   ]
+   ],
+   "weights": "proxy"
   },
   {
-   "model": "qwen3-1.7b",
+   "model": "qwen3-1.7b-proxy",
    "variant": "littlebit-0.55-q8_0head",
    "file": ".cache/gguf/qwen3-1.7b-proxy-lb2-0.55-b1-q8_0head.gguf",
    "round": 0,
@@ -959,10 +969,11 @@
     1365.0,
     2130.0,
     2325.0
-   ]
+   ],
+   "weights": "proxy"
   },
   {
-   "model": "qwen3-1.7b",
+   "model": "qwen3-1.7b-proxy",
    "variant": "littlebit-0.55-q6_khead",
    "file": ".cache/gguf/qwen3-1.7b-proxy-lb2-0.55-b1-q6_khead.gguf",
    "round": 0,
@@ -1046,10 +1057,11 @@
     1500.0,
     2115.0,
     2325.0
-   ]
+   ],
+   "weights": "proxy"
   },
   {
-   "model": "qwen3-1.7b",
+   "model": "qwen3-1.7b-proxy",
    "variant": "littlebit-0.1",
    "file": ".cache/gguf/qwen3-1.7b-proxy-lb2-0.1-b1.gguf",
    "round": 0,
@@ -1133,10 +1145,11 @@
     1110.0,
     2265.0,
     2325.0
-   ]
+   ],
+   "weights": "proxy"
   },
   {
-   "model": "qwen3-1.7b",
+   "model": "qwen3-1.7b-proxy",
    "variant": "littlebit-0.1-q8_0head",
    "file": ".cache/gguf/qwen3-1.7b-proxy-lb2-0.1-b1-q8_0head.gguf",
    "round": 0,
@@ -1220,10 +1233,11 @@
     945.0,
     2325.0,
     2325.0
-   ]
+   ],
+   "weights": "proxy"
   },
   {
-   "model": "qwen3-1.7b",
+   "model": "qwen3-1.7b-proxy",
    "variant": "f16",
    "file": ".cache/gguf/qwen3-1.7b-proxy-f16.gguf",
    "round": 0,
@@ -1307,10 +1321,11 @@
     870.0,
     1950.0,
     2325.0
-   ]
+   ],
+   "weights": "proxy"
   },
   {
-   "model": "qwen3-1.7b",
+   "model": "qwen3-1.7b-proxy",
    "variant": "q4_k_m",
    "file": ".cache/gguf/qwen3-1.7b-proxy-q4_k_m.gguf",
    "round": 0,
@@ -1394,7 +1409,8 @@
     1305.0,
     1605.0,
     2325.0
-   ]
+   ],
+   "weights": "proxy"
   },
   {
    "model": "qwen3-0.6b-proxy",
@@ -1481,7 +1497,8 @@
     1140.0,
     2235.0,
     2325.0
-   ]
+   ],
+   "weights": "proxy"
   },
   {
    "model": "qwen3-0.6b-proxy",
@@ -1568,7 +1585,8 @@
     1605.0,
     1845.0,
     2325.0
-   ]
+   ],
+   "weights": "proxy"
   },
   {
    "model": "qwen3-0.6b",
@@ -1655,7 +1673,8 @@
     840.0,
     2265.0,
     2325.0
-   ]
+   ],
+   "weights": "original"
   },
   {
    "model": "qwen3-0.6b",
@@ -1742,7 +1761,8 @@
     1515.0,
     1815.0,
     2325.0
-   ]
+   ],
+   "weights": "original"
   },
   {
    "model": "qwen3-0.6b",
@@ -1829,7 +1849,8 @@
     1125.0,
     2325.0,
     2325.0
-   ]
+   ],
+   "weights": "original"
   },
   {
    "model": "qwen3-0.6b",
@@ -1916,7 +1937,8 @@
     1185.0,
     2325.0,
     2325.0
-   ]
+   ],
+   "weights": "original"
   },
   {
    "model": "qwen3-0.6b",
@@ -2003,7 +2025,8 @@
     1290.0,
     2295.0,
     2325.0
-   ]
+   ],
+   "weights": "original"
   },
   {
    "model": "qwen3-0.6b",
@@ -2090,7 +2113,8 @@
     900.0,
     2325.0,
     2325.0
-   ]
+   ],
+   "weights": "original"
   },
   {
    "model": "qwen3-0.6b",
@@ -2177,7 +2201,8 @@
     1260.0,
     1800.0,
     2325.0
-   ]
+   ],
+   "weights": "original"
   },
   {
    "model": "qwen3-0.6b",
@@ -2264,10 +2289,11 @@
     1695.0,
     2130.0,
     2325.0
-   ]
+   ],
+   "weights": "original"
   },
   {
-   "model": "qwen3-1.7b",
+   "model": "qwen3-1.7b-proxy",
    "variant": "littlebit-0.55",
    "file": ".cache/gguf/qwen3-1.7b-proxy-lb2-0.55-b1.gguf",
    "round": 1,
@@ -2351,10 +2377,11 @@
     1470.0,
     2130.0,
     2325.0
-   ]
+   ],
+   "weights": "proxy"
   },
   {
-   "model": "qwen3-1.7b",
+   "model": "qwen3-1.7b-proxy",
    "variant": "bf16",
    "file": ".cache/gguf/qwen3-1.7b-proxy-bf16.gguf",
    "round": 1,
@@ -2438,10 +2465,11 @@
     1050.0,
     1965.0,
     2325.0
-   ]
+   ],
+   "weights": "proxy"
   },
   {
-   "model": "qwen3-1.7b",
+   "model": "qwen3-1.7b-proxy",
    "variant": "littlebit-0.55-q8_0head",
    "file": ".cache/gguf/qwen3-1.7b-proxy-lb2-0.55-b1-q8_0head.gguf",
    "round": 1,
@@ -2525,10 +2553,11 @@
     1530.0,
     2100.0,
     2325.0
-   ]
+   ],
+   "weights": "proxy"
   },
   {
-   "model": "qwen3-1.7b",
+   "model": "qwen3-1.7b-proxy",
    "variant": "littlebit-0.55-q6_khead",
    "file": ".cache/gguf/qwen3-1.7b-proxy-lb2-0.55-b1-q6_khead.gguf",
    "round": 1,
@@ -2612,10 +2641,11 @@
     1455.0,
     2085.0,
     2325.0
-   ]
+   ],
+   "weights": "proxy"
   },
   {
-   "model": "qwen3-1.7b",
+   "model": "qwen3-1.7b-proxy",
    "variant": "littlebit-0.1",
    "file": ".cache/gguf/qwen3-1.7b-proxy-lb2-0.1-b1.gguf",
    "round": 1,
@@ -2699,10 +2729,11 @@
     1080.0,
     2190.0,
     2325.0
-   ]
+   ],
+   "weights": "proxy"
   },
   {
-   "model": "qwen3-1.7b",
+   "model": "qwen3-1.7b-proxy",
    "variant": "littlebit-0.1-q8_0head",
    "file": ".cache/gguf/qwen3-1.7b-proxy-lb2-0.1-b1-q8_0head.gguf",
    "round": 1,
@@ -2786,10 +2817,11 @@
     1170.0,
     2310.0,
     2325.0
-   ]
+   ],
+   "weights": "proxy"
   },
   {
-   "model": "qwen3-1.7b",
+   "model": "qwen3-1.7b-proxy",
    "variant": "f16",
    "file": ".cache/gguf/qwen3-1.7b-proxy-f16.gguf",
    "round": 1,
@@ -2873,10 +2905,11 @@
     795.0,
     1950.0,
     2325.0
-   ]
+   ],
+   "weights": "proxy"
   },
   {
-   "model": "qwen3-1.7b",
+   "model": "qwen3-1.7b-proxy",
    "variant": "q4_k_m",
    "file": ".cache/gguf/qwen3-1.7b-proxy-q4_k_m.gguf",
    "round": 1,
@@ -2960,7 +2993,8 @@
     1185.0,
     1620.0,
     2325.0
-   ]
+   ],
+   "weights": "proxy"
   },
   {
    "model": "qwen3-0.6b-proxy",
@@ -3047,7 +3081,8 @@
     1155.0,
     2235.0,
     2325.0
-   ]
+   ],
+   "weights": "proxy"
   },
   {
    "model": "qwen3-0.6b-proxy",
@@ -3134,7 +3169,8 @@
     1320.0,
     1830.0,
     2325.0
-   ]
+   ],
+   "weights": "proxy"
   },
   {
    "model": "qwen3-0.6b",
@@ -3221,7 +3257,8 @@
     825.0,
     2235.0,
     2325.0
-   ]
+   ],
+   "weights": "original"
   },
   {
    "model": "qwen3-0.6b",
@@ -3308,7 +3345,8 @@
     1680.0,
     1815.0,
     2325.0
-   ]
+   ],
+   "weights": "original"
   },
   {
    "model": "qwen3-0.6b",
@@ -3395,7 +3433,8 @@
     1140.0,
     2325.0,
     2325.0
-   ]
+   ],
+   "weights": "original"
   },
   {
    "model": "qwen3-0.6b",
@@ -3482,7 +3521,8 @@
     1095.0,
     2325.0,
     2325.0
-   ]
+   ],
+   "weights": "original"
   },
   {
    "model": "qwen3-0.6b",
@@ -3569,7 +3609,8 @@
     1125.0,
     2295.0,
     2325.0
-   ]
+   ],
+   "weights": "original"
   },
   {
    "model": "qwen3-0.6b",
@@ -3656,7 +3697,8 @@
     1125.0,
     2325.0,
     2325.0
-   ]
+   ],
+   "weights": "original"
   },
   {
    "model": "qwen3-0.6b",
@@ -3743,7 +3785,8 @@
     1305.0,
     1770.0,
     2325.0
-   ]
+   ],
+   "weights": "original"
   },
   {
    "model": "qwen3-0.6b",
@@ -3830,10 +3873,11 @@
     1650.0,
     2115.0,
     2325.0
-   ]
+   ],
+   "weights": "original"
   },
   {
-   "model": "qwen3-1.7b",
+   "model": "qwen3-1.7b-proxy",
    "variant": "littlebit-0.55",
    "file": ".cache/gguf/qwen3-1.7b-proxy-lb2-0.55-b1.gguf",
    "round": 2,
@@ -3917,10 +3961,11 @@
     1365.0,
     2100.0,
     2325.0
-   ]
+   ],
+   "weights": "proxy"
   },
   {
-   "model": "qwen3-1.7b",
+   "model": "qwen3-1.7b-proxy",
    "variant": "bf16",
    "file": ".cache/gguf/qwen3-1.7b-proxy-bf16.gguf",
    "round": 2,
@@ -4004,10 +4049,11 @@
     915.0,
     1965.0,
     2325.0
-   ]
+   ],
+   "weights": "proxy"
   },
   {
-   "model": "qwen3-1.7b",
+   "model": "qwen3-1.7b-proxy",
    "variant": "littlebit-0.55-q8_0head",
    "file": ".cache/gguf/qwen3-1.7b-proxy-lb2-0.55-b1-q8_0head.gguf",
    "round": 2,
@@ -4091,10 +4137,11 @@
     1455.0,
     2115.0,
     2325.0
-   ]
+   ],
+   "weights": "proxy"
   },
   {
-   "model": "qwen3-1.7b",
+   "model": "qwen3-1.7b-proxy",
    "variant": "littlebit-0.55-q6_khead",
    "file": ".cache/gguf/qwen3-1.7b-proxy-lb2-0.55-b1-q6_khead.gguf",
    "round": 2,
@@ -4178,10 +4225,11 @@
     1380.0,
     2085.0,
     2325.0
-   ]
+   ],
+   "weights": "proxy"
   },
   {
-   "model": "qwen3-1.7b",
+   "model": "qwen3-1.7b-proxy",
    "variant": "littlebit-0.1",
    "file": ".cache/gguf/qwen3-1.7b-proxy-lb2-0.1-b1.gguf",
    "round": 2,
@@ -4265,10 +4313,11 @@
     795.0,
     2250.0,
     2325.0
-   ]
+   ],
+   "weights": "proxy"
   },
   {
-   "model": "qwen3-1.7b",
+   "model": "qwen3-1.7b-proxy",
    "variant": "littlebit-0.1-q8_0head",
    "file": ".cache/gguf/qwen3-1.7b-proxy-lb2-0.1-b1-q8_0head.gguf",
    "round": 2,
@@ -4352,10 +4401,11 @@
     855.0,
     2325.0,
     2325.0
-   ]
+   ],
+   "weights": "proxy"
   },
   {
-   "model": "qwen3-1.7b",
+   "model": "qwen3-1.7b-proxy",
    "variant": "f16",
    "file": ".cache/gguf/qwen3-1.7b-proxy-f16.gguf",
    "round": 2,
@@ -4439,10 +4489,11 @@
     750.0,
     1935.0,
     2325.0
-   ]
+   ],
+   "weights": "proxy"
   },
   {
-   "model": "qwen3-1.7b",
+   "model": "qwen3-1.7b-proxy",
    "variant": "q4_k_m",
    "file": ".cache/gguf/qwen3-1.7b-proxy-q4_k_m.gguf",
    "round": 2,
@@ -4526,7 +4577,8 @@
     1455.0,
     1620.0,
     2325.0
-   ]
+   ],
+   "weights": "proxy"
   },
   {
    "model": "qwen3-0.6b-proxy",
@@ -4613,7 +4665,8 @@
     1095.0,
     2205.0,
     2325.0
-   ]
+   ],
+   "weights": "proxy"
   },
   {
    "model": "qwen3-0.6b-proxy",
@@ -4700,7 +4753,9 @@
     1680.0,
     1830.0,
     2325.0
-   ]
+   ],
+   "weights": "proxy"
   }
- ]
+ ],
+ "relabelled": "2026-11-22, Task 13 fix round 1: the Qwen3-1.7B records were stored under 'qwen3-1.7b'; they were measured on proxy weights (file names *-proxy-*) and are now under 'qwen3-1.7b-proxy' with weights='proxy'; no number changed"
 }

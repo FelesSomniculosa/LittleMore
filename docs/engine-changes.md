@@ -768,19 +768,43 @@ Prefill on the GPU (Task 13; `PROMPT_PREFILL`, 44 tokens, so every Qwen3-0.6B li
 prefill path): exact config 1.94e-2 against the dense floor 1.23e-2, 1.58x (limit 2.0). Default config 3.09e-2 against
 1.49e-2, 2.08x: above 2, diagnosed rather than loosened. On the pure CPU (`-dev none`, no GPU at all) the same 44
 tokens give LittleBit 2.20e-2 against dense 8.31e-3 in the default config (2.65x) and 1.29e-4 in the exact one, so the
-init-only LittleBit model is more sensitive to flash attention's f16 path than the dense model, independent of the
-GPU. The prefill path is not the carrier: with the CUDA op forced onto the chunked decode kernels (temporary build)
+init-only LittleBit model amplifies some rounding far more than the dense model, independent of the GPU. Isolated
+on the pure CPU (5 prompts of 22..62 tokens, Task 13 fix round 1): the carrier is f16 rounding of keys / values in
+attention. Flash attention gives identical errors with an f16 or an f32 KV cache; with flash attention off, the f16
+KV cache alone gives the same level (LittleBit 2.4e-2..1.1e-1, dense 5.5e-3..8.6e-3); with f32 KV and no flash
+attention LittleBit is at 1.3e-4..5.2e-4 (dense 1.7e-5..2.5e-5). The prefill path is not the carrier: with the CUDA op forced onto the chunked decode kernels (temporary build)
 the run gives 2.52e-2 (default) and 2.91e-2 (exact), the same level in a different rounding order. The default-config
 prefill guard is therefore LittleBit-on-GPU <= 2.0x LittleBit-on-the-pure-CPU in the same configuration (measured
 1.40). Side finding: at `-ngl 0` a prompt of 32 tokens or more is not a CPU-only run (op offload moves batched ops,
 including LittleBit, to CUDA0): 44 tokens at `-ngl 0` exact give 2.46e-2, not the 1.3e-4 of `-dev none`.
 
+**These model-level GPU guards are coarse; the dense-floor factor is not a sound detector in general** (Task 13 fix
+round 1). Measured on 5 prompts of 22..62 tokens (all above the 16-token chunk limit), each on the prefill path and on
+the chunked decode kernels (temporary forced build), max-abs against the fp32 references, `-ngl 99`:
+
+| run (5 prompts) | LittleBit default | LittleBit exact | / dense floor, default | / dense floor, exact | GPU / pure CPU, default |
+|---|---|---|---|---|---|
+| prefill path (as committed) | 0.031 .. 0.191 | 0.019 .. 0.189 | 2.08 .. 19.8 | 1.58 .. 25.1 | 1.40 .. 1.80 |
+| chunked decode kernels (forced) | 0.025 .. 0.202 | 0.029 .. 0.170 | 1.69 .. 21.0 | 2.36 .. 22.5 | 1.14 .. 2.42 |
+| mutation: residual term x 1.001 | 0.105 .. 0.439 | 0.075 .. 0.494 | 9.3 .. 45.6 | 7.8 .. 65.4 | 3.44 .. 7.81 |
+| mutation: residual term x 1.01 | 0.98 .. 3.09 | 0.98 .. 3.12 | 86 .. 269 | 102 .. 342 | 21.6 .. 74.3 |
+| mutation: residual term x 1.1 | 7.7 .. 22.3 | 7.7 .. 22.4 | 681 .. 1430 | 801 .. 1527 | 87 .. 606 |
+| mutation: residual dropped | 20.5 .. 25.5 | 20.1 .. 25.5 | 1468 .. 2126 | 1739 .. 2666 | 171 .. 991 |
+
+(Mutations: in the prefill epilogue, `y = s_u1 * P + m * s_u1r * Q` with m = 1.001 / 1.01 / 1.1, or the residual term
+removed; one rebuild of ggml-cuda each.) So the 2.0x dense factor fails correct code on most prompts (it holds
+only where the test applies it: the 16-token prompt in both configurations, the 44-token prompt in the exact one), the GPU / pure-CPU ratio has correct runs up to 2.42, and the absolute
+errors of correct runs (up to 0.20) overlap with the smallest mutation (x 1.001: from 0.075). On the test's own prompt
+both guards catch every mutation, including x 1.001. The op-level tests (`test-littlebit-ref`, `test-backend-ops`,
+NMSE <= 1e-10) remain the precise detectors of the kernels; the choice of a model-level threshold is an open decision
+(options and their measured detection / false-failure figures are in the Task 13 report).
+
 ## Qwen3-0.6B on the GPU (informal speed read)
 
 (Task 11's first read. The formal speed gate, both Qwen3 sizes, both head settings, bf16 / F16 / Q4_K_M baselines and
-the harness: [bench/results/phase1.md](../bench/results/phase1.md). Gate PASS: tg128 LittleBit 0.55 vs bf16 236.3 vs
-127.5 tokens/s on Qwen3-0.6B and 143.8 vs 51.0 on Qwen3-1.7B, the latter measured on proxy weights of the right shapes,
-see the caveat there.)
+the harness: [bench/results/phase1.md](../bench/results/phase1.md). Gate PROVISIONAL PASS: tg128 LittleBit 0.55 vs
+bf16 236.3 vs 127.5 tokens/s on Qwen3-0.6B (original weights) and 143.8 vs 51.0 on Qwen3-1.7B measured on PROXY weights
+of the right shapes; provisional until the 1.7B rows are re-run on the original weights, see the caveat there.)
 
 `llama-bench -ngl 99 -p 512 -n 128 -r 3` (default settings: flash attention auto, f16 KV), RTX 4050 Laptop GPU warmed
 for 3 s before each model (`warm.exe`, an FMA loop), on 2026-11-21; peak VRAM = largest `memory.used` of nvidia-smi
@@ -828,6 +852,7 @@ then `nsys stats -r cuda_gpu_kern_sum`.
 - [ ] AVX-512 CPU path (the AVX-512 variants use the AVX2 kernel; no AVX-512 CPU to test on).
 - [ ] Vulkan kernel (Vulkan layers run the op on the CPU).
 - [ ] Prompt processing is 3x to 4x slower than F16 per large layer (float32 on CUDA cores vs f16 tensor cores).
-- [x] Speed gate (Task 13): LittleBit 0.55 generates faster than bf16 on CUDA for Qwen3-0.6B and Qwen3-1.7B
-  ([bench/results/phase1.md](../bench/results/phase1.md)).
+- [ ] Speed gate (Task 13): PROVISIONAL PASS. LittleBit 0.55 generates faster than bf16 on CUDA for Qwen3-0.6B
+  (original weights) and for Qwen3-1.7B on proxy weights only ([bench/results/phase1.md](../bench/results/phase1.md));
+  formally open until the next item is done.
 - [ ] Re-run the Qwen3-1.7B rows of the gate on the original weights (measured on proxy weights of the same shapes; needs the 4 GB download).

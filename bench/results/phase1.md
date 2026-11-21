@@ -1,9 +1,15 @@
 # Phase 1 speed results (CUDA, RTX 4050 Laptop GPU)
 
-**Gate: PASS.** LittleBit at 0.55 bits per weight, with the default F16 embedding / output head, generates tokens
-1.85x faster than bf16 on Qwen3-0.6B (236.3 vs 127.5 tokens/s) and 2.82x faster on Qwen3-1.7B (143.8 vs 51.0
-tokens/s). With a Q8_0 head: 2.34x and 3.64x; with a Q6_K head: 2.49x and 3.91x. The ratio was the same in every
-round (0.6B: 1.853 / 1.855 / 1.853; 1.7B: 2.824 / 2.815 / 2.815). **Read the caveat on the Qwen3-1.7B weights below.**
+**Gate: PROVISIONAL PASS.** Qwen3-0.6B passes on its original weights; Qwen3-1.7B was measured only on PROXY weights
+(same shapes and types, other values; see the caveat below), so the gate is provisional until the 1.7B rows are
+re-run on the original weights (which needs the user's approval for a ~4 GB download). LittleBit at 0.55 bits per
+weight, with the default F16 embedding / output head, generates tokens 1.85x faster than bf16 on Qwen3-0.6B (236.3 vs
+127.5 tokens/s) and 2.82x faster on Qwen3-1.7B-proxy (143.8 vs 51.0 tokens/s). With a Q8_0 head: 2.34x and 3.64x;
+with a Q6_K head: 2.49x and 3.91x. The ratio was the same in every round (0.6B: 1.853 / 1.855 / 1.853; 1.7B-proxy:
+2.824 / 2.815 / 2.815). In the tables and the JSON the proxy results are stored under `qwen3-1.7b-proxy` with
+`"weights": "proxy"`; `check_gate` counts them only with `allow_proxy=True` and `gate_status` labels the result
+provisional. (The JSON of this run first stored them under `qwen3-1.7b`; they were relabelled in Task 13's fix round,
+no number changed.)
 
 ## Setup
 
@@ -61,7 +67,7 @@ weights needs that download and one more run of the plan.
 | f16 | 1439 | 126.9 (126.4..127.4) | 12439 (11901..12806) | 1609 | 1260..2325 |
 | q4_k_m | 462 | 277.2 (276.3..277.7) | 14070 (13982..14175) | 829 | 1650..2325 |
 
-### qwen3-1.7b
+### qwen3-1.7b-proxy (PROXY weights: speed only, not the original model)
 
 | variant | file MiB | tg128 t/s (mean of the round medians; min..max of them) | pp512 t/s (same) | VRAM MiB | SM clock MHz (min..max sampled, incl. model loading) |
 |---|---|---|---|---|---|
@@ -74,26 +80,27 @@ weights needs that download and one more run of the plan.
 | f16 | 3288 | 50.9 (50.9..50.9) | 4557 (4381..4878) | 3765 | 750..2325 |
 | q4_k_m | 1056 | 132.7 (132.4..132.9) | 5628 (5533..5736) | 1517 | 1185..2325 |
 
-### qwen3-0.6b-proxy
+### qwen3-0.6b-proxy (PROXY weights: speed only, not the original model)
 
 | variant | file MiB | tg128 t/s (mean of the round medians; min..max of them) | pp512 t/s (same) | VRAM MiB | SM clock MHz (min..max sampled, incl. model loading) |
 |---|---|---|---|---|---|
 | littlebit-0.55 | 642 | 235.6 (234.5..236.9) | 3551 (3367..3669) | 821 | 1095..2325 |
 | bf16 | 1439 | 127.1 (126.9..127.4) | 9598 (9112..10050) | 1609 | 1320..2325 |
 
-- gate littlebit-0.55 > bf16 (tg128, qwen3-0.6b and qwen3-1.7b): **PASS**
-- gate littlebit-0.55 > f16 (tg128, qwen3-0.6b and qwen3-1.7b): **PASS**
-- gate littlebit-0.55-q6_khead > bf16 (tg128, qwen3-0.6b and qwen3-1.7b): **PASS**
-- gate littlebit-0.55-q6_khead > f16 (tg128, qwen3-0.6b and qwen3-1.7b): **PASS**
-- gate littlebit-0.55-q8_0head > bf16 (tg128, qwen3-0.6b and qwen3-1.7b): **PASS**
-- gate littlebit-0.55-q8_0head > f16 (tg128, qwen3-0.6b and qwen3-1.7b): **PASS**
+- gate littlebit-0.55 > bf16 (tg128, qwen3-0.6b and qwen3-1.7b): **PASS (provisional: qwen3-1.7b on proxy weights)**
+- gate littlebit-0.55 > f16 (tg128, qwen3-0.6b and qwen3-1.7b): **PASS (provisional: qwen3-1.7b on proxy weights)**
+- gate littlebit-0.55-q6_khead > bf16 (tg128, qwen3-0.6b and qwen3-1.7b): **PASS (provisional: qwen3-1.7b on proxy weights)**
+- gate littlebit-0.55-q6_khead > f16 (tg128, qwen3-0.6b and qwen3-1.7b): **PASS (provisional: qwen3-1.7b on proxy weights)**
+- gate littlebit-0.55-q8_0head > bf16 (tg128, qwen3-0.6b and qwen3-1.7b): **PASS (provisional: qwen3-1.7b on proxy weights)**
+- gate littlebit-0.55-q8_0head > f16 (tg128, qwen3-0.6b and qwen3-1.7b): **PASS (provisional: qwen3-1.7b on proxy weights)**
 
 
 ## Reading the numbers
 
-- **Gate (tg128, LittleBit 0.55 > bf16):** 0.6B 236.3 vs 127.5 (1.85x), 1.7B 143.8 vs 51.0 (2.82x), F16 head; the
-  same holds against F16 dense (126.9, 50.9) and with either quantized head. `check_gate` on these results: True for
-  every pairing (last lines above). No speed lever was needed; the 2A-S variant was not touched.
+- **Gate (tg128, LittleBit 0.55 > bf16):** 0.6B 236.3 vs 127.5 (1.85x), 1.7B-proxy 143.8 vs 51.0 (2.82x), F16 head;
+  the same holds against F16 dense (126.9, 50.9) and with either quantized head. `check_gate` on these results: False
+  (formal: Qwen3-1.7B has no original-weight result), True with `allow_proxy=True`, i.e. "PASS (provisional)" for every
+  pairing (last lines above). No speed lever was needed; the 2A-S variant was not touched.
 - **Target "on par with Q4_K_M":** with the F16 head LittleBit is 0.85x Q4_K_M on 0.6B (236 vs 277) and 1.08x on 1.7B
   (144 vs 133); with a Q8_0 head 1.08x / 1.40x, with a Q6_K head 1.15x / 1.50x. On 0.6B the F16 head (297 MiB of the
   642 MiB file, read for every token) is what keeps LittleBit below Q4_K_M, whose head is Q6_K.

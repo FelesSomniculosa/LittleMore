@@ -49,6 +49,11 @@ CUDA_BIN = Path(r"C:/Program Files/NVIDIA GPU Computing Toolkit/CUDA/v12.9/bin")
 
 # The two base models the hard gate is defined on (spec: "Speed gate is on Qwen3-0.6B and 1.7B").
 GATE_MODELS = ("qwen3-0.6b", "qwen3-1.7b")
+# Results measured on PROXY weights (a base model rebuilt from a quantized GGUF with tools/dev/dequant_gguf_to_hf.py:
+# right shapes and types, other weight values; valid for speed only) are stored under "<model>-proxy" and marked
+# "weights": "proxy".  They never satisfy the gate silently: check_gate uses them only with allow_proxy=True, and
+# gate_status then reports the result as provisional.
+PROXY_SUFFIX = "-proxy"
 
 # backend name -> llama-bench device argument ("none" = no GPU device at all, i.e. pure CPU)
 _DEVICES = {"cuda": "CUDA0", "vulkan": "Vulkan0", "cpu": "none"}
@@ -202,15 +207,18 @@ def run_bench(model_gguf: Path, backend: str, n_gpu_layers: int, *, reps: int = 
 
 
 def check_gate(results: dict, lb_key: str = "littlebit-0.55", dense_key: str = "bf16",
-               models: tuple[str, ...] = GATE_MODELS, metric: str = "tg128") -> bool:
+               models: tuple[str, ...] = GATE_MODELS, metric: str = "tg128", allow_proxy: bool = False) -> bool:
     """True only if, for every gate model, `results[model][lb_key][metric]` > `results[model][dense_key][metric]`.
 
     `results` maps model name -> variant name -> measurement dict (as `run_bench` returns, or aggregated by
     `aggregate`).  A missing model or variant, or a value that is not a finite positive number, fails the gate: an
-    unmeasured gate cannot pass.  Equal speed is not faster.
+    unmeasured gate cannot pass.  Equal speed is not faster.  Results on proxy weights (key "<model>-proxy") count only
+    with `allow_proxy=True`, and only for a model that has no result on its original weights.
     """
     for model in models:
         variants = results.get(model)
+        if variants is None and allow_proxy:
+            variants = results.get(model + PROXY_SUFFIX)
         if not isinstance(variants, dict):
             return False
         try:
@@ -225,6 +233,21 @@ def check_gate(results: dict, lb_key: str = "littlebit-0.55", dense_key: str = "
     return True
 
 
+def gate_status(results: dict, lb_key: str = "littlebit-0.55", dense_key: str = "bf16",
+                models: tuple[str, ...] = GATE_MODELS) -> str:
+    """The gate as a line of text: "PASS", "PASS (provisional: <models> on proxy weights)" or "FAIL".
+
+    Provisional means the gate passes only when proxy-weight results stand in for the listed models, which have no
+    result on their original weights; it is not the formal gate.
+    """
+    if check_gate(results, lb_key, dense_key, models):
+        return "PASS"
+    if check_gate(results, lb_key, dense_key, models, allow_proxy=True):
+        proxies = [m for m in models if m not in results and m + PROXY_SUFFIX in results]
+        return f"PASS (provisional: {', '.join(proxies)} on proxy weights)"
+    return "FAIL"
+
+
 def aggregate(runs: list[dict]) -> dict:
     """Raw runs (one dict per model, variant and round) -> model -> variant -> summary.
 
@@ -234,7 +257,8 @@ def aggregate(runs: list[dict]) -> dict:
     """
     out: dict = {}
     for run in runs:
-        v = out.setdefault(run["model"], {}).setdefault(run["variant"], {"file": run["file"], "rounds": 0})
+        v = out.setdefault(run["model"], {}).setdefault(run["variant"], {"file": run["file"], "rounds": 0,
+                                                                        "weights": run.get("weights", "original")})
         v["rounds"] += 1
         for key in ("pp512", "tg128"):
             v.setdefault(key + "_rounds", []).append(run[key])
@@ -260,6 +284,7 @@ def run_plan(plan: list[dict], rounds: int, out_json: Path, backend: str = "cuda
              reps: int = 10, warmup_s: float = 3.0) -> list[dict]:
     """Run every plan entry ({"model", "variant", "file"}) once per round, rounds interleaved; save raw runs as JSON.
 
+    An entry may carry "weights": "proxy" (its model key must then end in "-proxy"); it is copied into the record.
     The JSON is rewritten after every run, so an interrupted plan keeps what was measured.  An entry that fails (e.g.
     out of GPU memory) is recorded with its error instead of aborting the plan.
     """
@@ -267,7 +292,11 @@ def run_plan(plan: list[dict], rounds: int, out_json: Path, backend: str = "cuda
     out_json.parent.mkdir(parents=True, exist_ok=True)
     for rnd in range(rounds):
         for entry in plan:
+            weights = entry.get("weights", "original")
+            if (weights == "proxy") != entry["model"].endswith(PROXY_SUFFIX):
+                raise ValueError(f"plan entry {entry}: proxy weights need a model key ending in {PROXY_SUFFIX!r} and vice versa")
             rec = {"model": entry["model"], "variant": entry["variant"], "file": entry["file"], "round": rnd,
+                   "weights": weights,
                    "time": time.strftime("%Y-%m-%d %H:%M:%S")}
             try:
                 rec.update(run_bench(ROOT / entry["file"], backend, n_gpu_layers, reps=reps, warmup_s=warmup_s))
@@ -288,7 +317,8 @@ def render_markdown(raw: dict) -> str:
     agg = aggregate(runs)
     lines: list[str] = []
     for model, variants in agg.items():
-        lines += [f"### {model}", "",
+        proxy = any(v.get("weights") == "proxy" for v in variants.values())
+        lines += [f"### {model}" + (" (PROXY weights: speed only, not the original model)" if proxy else ""), "",
                   "| variant | file MiB | tg128 t/s (mean of the round medians; min..max of them) | pp512 t/s (same) | VRAM MiB | SM clock MHz (min..max sampled, incl. model loading) |",
                   "|---|---|---|---|---|---|"]
         for name, v in variants.items():
@@ -304,8 +334,8 @@ def render_markdown(raw: dict) -> str:
         lines.append(f"- FAILED: {r['model']} {r['variant']} (round {r['round']}): {r['error'].strip().splitlines()[-1][:200]}")
     for lb_key in sorted({k for v in agg.values() for k in v if k.startswith("littlebit-0.55")}):
         for dense_key in ("bf16", "f16"):
-            ok = check_gate(agg, lb_key=lb_key, dense_key=dense_key)
-            lines.append(f"- gate {lb_key} > {dense_key} (tg128, {' and '.join(GATE_MODELS)}): **{'PASS' if ok else 'FAIL'}**")
+            status = gate_status(agg, lb_key=lb_key, dense_key=dense_key)
+            lines.append(f"- gate {lb_key} > {dense_key} (tg128, {' and '.join(GATE_MODELS)}): **{status}**")
     return "\n".join(lines) + "\n"
 
 

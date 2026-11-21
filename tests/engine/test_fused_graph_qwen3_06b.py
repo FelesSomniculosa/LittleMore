@@ -120,12 +120,26 @@ def test_gpu_error_is_within_dense_floor_factor(ggufs, cfg, prompt):
     Prefill, default configuration (flash attention + f16 KV): the dense factor does NOT apply, and the bound is
     instead GPU_OVER_CPU_DEFAULT_MAX x the same LittleBit model's error on the pure CPU (`-dev none`) in the same
     configuration.  Diagnosis (measured, 44 tokens, max-abs against the respective fp32 reference): on the pure CPU,
-    with no GPU involved, LittleBit 2.20e-2 vs dense 8.31e-3, i.e. 2.65x already: the init-only LittleBit model is more
-    sensitive to flash attention's f16 path than the dense model (exact config on the pure CPU: 1.29e-4, the op itself
-    is exact).  On the GPU: 3.09e-2 vs dense 1.49e-2 (2.08x).  The LittleBit prefill path is not the carrier: with the
-    CUDA op forced onto the chunked decode kernels (temporary build) the same run gives 2.52e-2 (default) and 2.91e-2
-    (exact) against 3.09e-2 and 1.94e-2 with the prefill path, i.e. the two float32 paths land on the same error level
-    in different order.  In the exact configuration the dense factor holds (1.58).
+    with no GPU involved, LittleBit 2.20e-2 vs dense 8.31e-3, i.e. 2.65x already.  What carries it, isolated on the
+    pure CPU (5 prompts of 22..62 tokens): f16 rounding of keys / values in attention.  Flash attention gives the same
+    error with an f16 or an f32 KV cache (identical values), and with flash attention off the f16 KV cache alone gives the
+    same level (LittleBit 2.4e-2..1.1e-1, dense 5.5e-3..8.6e-3); with neither, LittleBit is at 1.3e-4..5.2e-4 (dense
+    1.7e-5..2.5e-5).  So the init-only LittleBit model amplifies that rounding far more than the dense model.  On the
+    GPU: 3.09e-2 vs dense 1.49e-2 (2.08x).  The LittleBit prefill path is not the carrier: with the CUDA op forced onto
+    the chunked decode kernels (temporary build) the same run gives 2.52e-2 (default) and 2.91e-2 (exact) against
+    3.09e-2 and 1.94e-2 with the prefill path, i.e. the two float32 paths land on the same error level in different
+    order.  In the exact configuration the dense factor holds for THIS prompt (1.58).
+
+    THESE GUARDS ARE COARSE, and the dense-factor one is not a sound detector in general (Task 13 fix round 1, measured):
+      * spread over correct paths: 5 prompts (this one and 4 more, 22..62 tokens) x {prefill path, forced chunked
+        path}: LittleBit / dense-floor ratios of 1.69..21.0 (default) and 1.58..25.1 (exact): the 2.0 factor FAILS on
+        correct code for most prompts; it holds only where this test applies it (PROMPT_LONG in both configurations,
+        PROMPT_PREFILL exact).  GPU / pure-CPU (default config) is 1.14..2.42 over
+        the same 10 correct runs (one above 2.0: the forced chunked path on a 48-token prompt).
+      * mutations of the prefill epilogue (residual term times 1.001, 1.01, 1.1, residual dropped) are all caught by both
+        guards on PROMPT_PREFILL (smallest effect, x1.001: default 0.172 = 7.8x the pure CPU, exact 0.163 = 13x the
+        dense floor).  The op-level tests (test-littlebit-ref, test-backend-ops, NMSE <= 1e-10) are the precise
+        detectors; this model-level test only catches gross integration errors, and its thresholds are an open decision.
     """
     b1, _ = ggufs
     dense = A.ensure_dense_floor_gguf()

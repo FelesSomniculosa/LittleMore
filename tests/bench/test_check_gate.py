@@ -11,7 +11,7 @@ import math
 
 import pytest
 
-from bench.run_bench import GATE_MODELS, check_gate
+from bench.run_bench import GATE_MODELS, check_gate, gate_status
 
 
 def _results(lb06: float | None, bf06: float | None, lb17: float | None, bf17: float | None,
@@ -84,3 +84,39 @@ def test_extra_models_and_variants_are_ignored():
     res["qwen3-4b"] = {"littlebit-0.55": {"tg128": 1.0}, "bf16": {"tg128": 99.0}}
     res["qwen3-0.6b"]["q4_k_m"] = {"tg128": 500.0}
     assert check_gate(res) is True
+
+
+# --- proxy weights (results of a base model rebuilt from a quantized GGUF; speed only, see bench/run_bench.py) -------
+
+def _with_proxy_17b() -> dict:
+    """The table of the Phase 1 run: Qwen3-0.6B on its original weights, Qwen3-1.7B only on proxy weights."""
+    res = _results(227.0, 120.0, 150.0, 60.0)
+    res["qwen3-1.7b-proxy"] = res.pop("qwen3-1.7b")
+    return res
+
+
+def test_proxy_results_do_not_pass_the_gate_by_default():
+    """A model measured only on proxy weights counts as not measured for the formal gate."""
+    assert check_gate(_with_proxy_17b()) is False
+
+
+def test_proxy_results_pass_only_when_allowed_and_are_reported_provisional():
+    res = _with_proxy_17b()
+    assert check_gate(res, allow_proxy=True) is True
+    assert gate_status(res) == "PASS (provisional: qwen3-1.7b on proxy weights)"
+
+
+def test_original_weights_take_precedence_over_proxy():
+    """With both, the original-weight result decides (a slower original run is not hidden by a faster proxy run)."""
+    res = _results(227.0, 120.0, 55.0, 60.0)          # 1.7B original: LittleBit slower
+    res["qwen3-1.7b-proxy"] = _results(227.0, 120.0, 150.0, 60.0)["qwen3-1.7b"]
+    assert check_gate(res, allow_proxy=True) is False
+    assert gate_status(res) == "FAIL"
+
+
+def test_gate_status_formal_pass_and_fail():
+    assert gate_status(_results(227.0, 120.0, 150.0, 60.0)) == "PASS"
+    assert gate_status(_results(227.0, 120.0, 55.0, 60.0)) == "FAIL"
+    res = _with_proxy_17b()
+    res["qwen3-1.7b-proxy"]["littlebit-0.55"]["tg128"] = 50.0   # slower on the proxy too
+    assert gate_status(res) == "FAIL"

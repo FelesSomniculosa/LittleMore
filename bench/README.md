@@ -22,6 +22,12 @@ default LittleBit file has the 16-bit (F16) embedding / output head, which is th
 in; the same rule is also reported for the files with a Q8_0 / Q6_K head (converter `--head-type`) and against F16
 instead of bf16.
 
+Proxy weights: a result measured on a base model rebuilt from a quantized GGUF (`tools/dev/dequant_gguf_to_hf.py`:
+right shapes and types, other weight values, valid for speed only) is stored under `<model>-proxy` with
+`"weights": "proxy"` (the plan entry carries both; `run_plan` refuses a mismatch). `check_gate` ignores such results
+unless called with `allow_proxy=True`, and then only for a model without an original-weight result; `gate_status` and
+the generated tables print such a pass as "PASS (provisional: <model> on proxy weights)".
+
 ## How a number is made
 
 - `run_bench(model_gguf, backend, n_gpu_layers)` runs `engine/build/bin/llama-bench -m <file> -ngl <n> -dev <device>
