@@ -4,3 +4,5 @@ engine/build/
 __pycache__/
 *.gguf
 *.safetensors
+.claude-flow/
+.swarm/
