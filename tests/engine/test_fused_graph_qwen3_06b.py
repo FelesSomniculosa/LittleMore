@@ -4,18 +4,23 @@ The checkpoint and the B1 GGUF come from tests/smoke/_assets.py (cached under .c
 tools/convert/lb_to_gguf.py); the Q1_0 slow-path baseline is derived from the B1 file (`b1_to_q1_0_gguf`).
 Compared with `reference.py` (fp32, CPU) on the engine's own token ids: one token ("Hello") and a 16-token prompt.
 
-Measured numbers behind the thresholds (logit rms about 2.5-2.9; max-abs over 151936 logits):
+Measured max-abs over 151936 logits against the fp32 reference (logit rms 2.5 / 2.9):
 
   config                              1 token      16 tokens
   CPU, default (flash attn, f16 KV)   1.35e-2      1.34e-2     <- the f16 attention path of flash attention
   CPU, -fa off, f32 KV                1.5e-4       9.8e-5      <- the fused op itself
   GPU (-ngl 99), default              1.45e-2      3.7e-2
-  GPU (-ngl 99), -fa off, f32 KV      4.9e-3       6.0e-2      <- the CUDA half of the graph (f16 matmuls)
+  GPU (-ngl 99), -fa off, f32 KV      4.9e-3       6.0e-2
+  GPU, -fa off, f32 KV, F32 head      1.1e-4       6.1e-2      <- control: B1 GGUF with the F16 head widened to F32
   slow path (Q1_0 chain), CPU         7.3e-1       1.36        <- 50x to 100x worse
 
-The default CPU error is NOT the fused op: switching off flash attention and keeping K/V in f32 brings it to 1e-4.
-With layers on the GPU, only the LittleBit linears stay on the CPU (see docs/engine-changes.md); the rest of the
-graph runs in CUDA's f16 kernels, which adds a few 1e-2 at the logits.
+Where the GPU error comes from (review item 3; numbers from tools/dev/dense_floor.py, table in docs/engine-changes.md):
+  * 1 token: the 4.9e-3 is the F16 output head on CUDA. With the head widened to F32 the same run is 1.1e-4.
+  * 16 tokens: NOT the LittleBit op. The DENSE Qwen3-0.6B (no LittleBit at all, F32 weights) run through the same CUDA
+    path against its own fp32 HF reference is 2.5e-2 (default) and 3.9e-2 (-fa off, f32 KV); LittleBit is 3.7e-2 and
+    6.0e-2, i.e. 1.46x and 1.56x the dense floor (rms 1.47x and 1.20x). The same dense model is 1.7e-5 at one token,
+    so the floor appears only with several tokens, i.e. in the CUDA batched matmuls. The 1.2x-1.6x excess over the dense floor is
+    NOT attributed (the LittleBit model has different activation magnitudes; not isolated).
 """
 from __future__ import annotations
 
@@ -69,6 +74,42 @@ def test_fused_matches_reference_and_beats_slow_path(ggufs, prompt, ngl):
         # teeth: the same engine logits against a reference without the residual path
         nores = metrics(exact, A.reference_logits(ids, drop_residual=True, quantize=False, kv_f16=False))
         assert nores["max_abs"] >= 100 * me["max_abs"]
+
+
+# GPU regression guards, from the dense-floor measurement (see the module docstring).
+# LittleBit-vs-reference / dense-vs-dense-reference at the same settings, 16 tokens, -ngl 99: measured 1.46 (default)
+# and 1.56 (-fa off, f32 KV); limit 2.0.
+GPU_OVER_DENSE_FLOOR_MAX = 2.0
+# One token, -ngl 99, -fa off, f32 KV: with the F16 head 4.9e-3 (limit 1e-2); with an F32 head 1.1e-4 (limit 1e-3).
+GPU_1TOK_F16_HEAD_MAX_ABS = 1e-2
+GPU_1TOK_F32_HEAD_MAX_ABS = 1e-3
+
+
+@pytest.mark.parametrize("cfg", ["default", "exact"])
+def test_gpu_error_is_within_dense_floor_factor(ggufs, cfg):
+    """16 tokens at -ngl 99: LittleBit's error stays within GPU_OVER_DENSE_FLOOR_MAX x the DENSE model's CUDA floor."""
+    b1, _ = ggufs
+    dense = A.ensure_dense_floor_gguf()
+    extra = () if cfg == "default" else EXACT_ARGS
+    lb, ids = A.engine_logits(b1, A.PROMPT_LONG, 99, extra)
+    dn, ids_d = A.engine_logits(dense, A.PROMPT_LONG, 99, extra)
+    assert ids == ids_d
+    e_lb = metrics(lb, A.reference_logits(ids))["max_abs"]
+    e_dense = metrics(dn, A.dense_reference_logits(ids))["max_abs"]
+    print(f"gpu {cfg}: LittleBit {e_lb:.2e}, dense floor {e_dense:.2e}, ratio {e_lb / e_dense:.2f}")
+    assert e_lb <= GPU_OVER_DENSE_FLOOR_MAX * e_dense
+
+
+def test_gpu_one_token_error_is_the_f16_head(ggufs):
+    """1 token at -ngl 99 without flash attention: F16 head 4.9e-3; the same file with an F32 head is exact to 1e-4."""
+    b1, _ = ggufs
+    f32head = A.ensure_b1_f32_head_gguf()
+    lg16, ids = A.engine_logits(b1, A.PROMPT_ONE, 99, EXACT_ARGS)
+    lg32, _ = A.engine_logits(f32head, A.PROMPT_ONE, 99, EXACT_ARGS)
+    want = A.reference_logits(ids)
+    e16, e32 = metrics(lg16, want)["max_abs"], metrics(lg32, want)["max_abs"]
+    print(f"1 token gpu exact: F16 head {e16:.2e}, F32 head {e32:.2e}")
+    assert e16 <= GPU_1TOK_F16_HEAD_MAX_ABS and e32 <= GPU_1TOK_F32_HEAD_MAX_ABS
 
 
 @pytest.mark.parametrize("ngl", [0, 99], ids=["cpu", "gpu"])

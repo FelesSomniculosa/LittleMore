@@ -571,6 +571,7 @@ def _build(ckpt: Path, params: dict[str, ref.LBLinearParams], tmp: Path, validat
     except Exception as e:
         raise ConversionError(f"llama.cpp's converter failed on metadata/vocabulary ({type(e).__name__}: {e}); "
                               "does the checkpoint directory contain the tokenizer files?") from e
+    _write_gemma3_swa_pattern(conv)
     report.written_names = sorted(n for shard in writer.tensors for n in shard)
     writer.write_header_to_file(path=tmp)
     writer.write_kv_data_to_file()
@@ -582,6 +583,35 @@ def _build(ckpt: Path, params: dict[str, ref.LBLinearParams], tmp: Path, validat
     # (6) Read back and check: counts first (nothing silently skipped), then numerics.
     _check_written(tmp, params, report, validate)
     return report
+
+
+def _write_gemma3_swa_pattern(conv: ModelBase) -> None:
+    """Gemma 3: tell the engine which layers use sliding-window attention, from the config's `layer_types`.
+
+    llama.cpp's Gemma3Model converter writes no per-layer pattern, and the engine then assumes the real
+    Gemma 3 layout (every 6th layer global, the others sliding-window with their own rope base).  A config
+    with any other `layer_types` (a custom or tiny model) would run silently wrong.  The engine does read
+    the array key `gemma3.attention.sliding_window_pattern` (bool per layer, true = sliding window) when present, so it is
+    written here from `layer_types`.  Without `layer_types` (older configs) the key is left out and the engine default (the
+    real 5:1 layout) applies; an integer `sliding_window_pattern` other than 6 is written as the integer.
+    An unknown layer type or a wrong list length is refused: guessing would give wrong logits.
+    """
+    if conv.model_arch != gguf.MODEL_ARCH.GEMMA3:
+        return
+    hp = conv.hparams
+    layer_types = hp.get("layer_types") or (hp.get("text_config") or {}).get("layer_types")
+    n_layer = conv.block_count
+    if layer_types:
+        known = {"sliding_attention", "full_attention"}
+        if len(layer_types) != n_layer or not set(layer_types) <= known:
+            raise ConversionError(
+                f"Gemma 3 layer_types {list(layer_types)} is not supported: expected {n_layer} entries, each "
+                f"'sliding_attention' or 'full_attention'")
+        conv.gguf_writer.add_sliding_window_pattern([t == "sliding_attention" for t in layer_types])
+        return
+    pattern = hp.get("sliding_window_pattern")
+    if isinstance(pattern, int) and pattern not in (1, 6):
+        conv.gguf_writer.add_sliding_window_pattern(pattern)
 
 
 def _check_written(path: Path, params: dict[str, ref.LBLinearParams], report: ConversionReport, validate: bool) -> None:

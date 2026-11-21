@@ -107,11 +107,12 @@ def _commit(tmp: Path, target: Path, key: str) -> None:
     target.with_name(target.name + ".key").write_text(key)
 
 
-def copy_gguf(src: Path, dst: Path, replace=None, extra=()) -> None:
+def copy_gguf(src: Path, dst: Path, replace=None, extra=(), extra_kv=()) -> None:
     """Write `dst` = a copy of GGUF `src` with metadata and tensors unchanged, except:
 
     `replace(tensor)` may return `(array, raw_dtype)` to swap one tensor's data (None keeps it);
-    `extra` is a list of `(name, array, raw_dtype)` tensors appended.  Used to derive test variants.
+    `extra` is a list of `(name, array, raw_dtype)` tensors appended; `extra_kv` a list of
+    `(key, value, value_type[, sub_type])` metadata entries added.  Used to derive test variants.
     """
     _add_path(ENGINE / "gguf-py")
     import gguf
@@ -122,6 +123,8 @@ def copy_gguf(src: Path, dst: Path, replace=None, extra=()) -> None:
         if not key.startswith(skip):
             writer.add_key_value(key, field.contents(), field.types[0],
                                  field.types[-1] if field.types[0] == gguf.GGUFValueType.ARRAY else None)
+    for kv in extra_kv:
+        writer.add_key_value(*kv)
     for t in reader.tensors:
         new = replace(t) if replace else None
         data, dtype = new if new else (np.asarray(t.data), t.tensor_type)
@@ -182,10 +185,67 @@ def ensure_b1_gguf() -> Path:
     return B1_GGUF
 
 
+DENSE_F32 = CACHE / "gguf" / "qwen3-0.6b-base-f32.gguf"
+DENSE_F32_H16 = CACHE / "gguf" / "qwen3-0.6b-base-f32-head-f16.gguf"
+
+
+def ensure_dense_floor_gguf() -> Path:
+    """The DENSE base model as F32 with only the tied embedding / output head in F16 (cached; returns it).
+
+    Same non-LittleBit tensors and head precision as the LittleBit GGUF, but every linear dense: running it
+    gives the engine's own noise floor (CUDA kernels, F16 head, flash attention) with no LittleBit in the way.
+    """
+    key = _digest(ENGINE / "convert_hf_to_gguf.py", ENGINE / "conversion", MODEL_DIR / "model.safetensors", Path(__file__))
+    if not _stamp_ok(DENSE_F32_H16, key):
+        if not _stamp_ok(DENSE_F32, key):
+            DENSE_F32.parent.mkdir(parents=True, exist_ok=True)
+            tmp = DENSE_F32.with_name(DENSE_F32.name + ".tmp")
+            r = _run([sys.executable, ENGINE / "convert_hf_to_gguf.py", MODEL_DIR, "--outtype", "f32", "--outfile", tmp])
+            assert r.returncode == 0, r.stdout[-2000:]
+            _commit(tmp, DENSE_F32, key)
+        _add_path(ENGINE / "gguf-py")
+        import gguf
+        tmp = DENSE_F32_H16.with_name(DENSE_F32_H16.name + ".tmp")
+        copy_gguf(DENSE_F32, tmp, lambda t: (np.asarray(t.data).astype(np.float16), gguf.GGMLQuantizationType.F16)
+                  if t.name == "token_embd.weight" else None)
+        _commit(tmp, DENSE_F32_H16, key)
+    return DENSE_F32_H16
+
+
+@functools.lru_cache(maxsize=1)
+def dense_reference_model():
+    """The dense HF Qwen3-0.6B in fp32 on CPU (transformers); the ground truth for the dense noise-floor runs."""
+    import torch
+    from transformers import AutoModelForCausalLM
+    return AutoModelForCausalLM.from_pretrained(str(MODEL_DIR), dtype=torch.float32).eval()
+
+
+def dense_reference_logits(token_ids: list[int]) -> np.ndarray:
+    """Last-position logits of the dense fp32 HF model."""
+    import torch
+    with torch.no_grad():
+        return dense_reference_model()(torch.tensor([token_ids])).logits[0, -1].numpy()
+
+
+def ensure_b1_f32_head_gguf() -> Path:
+    """The B1 GGUF with its F16 tensors (embedding / output head) widened to F32: a control that removes the F16 head."""
+    b1 = ensure_b1_gguf()
+    out = CACHE / "gguf" / "qwen3-0.6b-lb2-0.55-b1-f32head.gguf"
+    key = _digest(Path(__file__), _stamp_text(b1))
+    if not _stamp_ok(out, key):
+        _add_path(ENGINE / "gguf-py")
+        import gguf
+        F16, F32 = gguf.GGMLQuantizationType.F16, gguf.GGMLQuantizationType.F32
+        tmp = out.with_name(out.name + ".tmp")
+        copy_gguf(b1, tmp, lambda t: (np.asarray(t.data).astype(np.float32), F32) if t.tensor_type == F16 else None)
+        _commit(tmp, out, key)
+    return out
+
+
 def ensure_gguf() -> Path:
     """Return the Q1_0 slow-path baseline GGUF, derived from the B1 GGUF (see `b1_to_q1_0_gguf`)."""
     b1 = ensure_b1_gguf()
-    key = _digest(b1, Path(__file__), _stamp_text(b1))
+    key = _digest(Path(__file__), _stamp_text(b1))   # the b1 file's own .key stamp, so its 640 MiB are not hashed
     if not _stamp_ok(LB_GGUF, key):
         tmp = LB_GGUF.with_name(LB_GGUF.name + ".tmp")
         b1_to_q1_0_gguf(b1, tmp)

@@ -57,11 +57,9 @@ SLOW_PATH_MIN_RATIO = 10.0
 MUTATION_MIN_RATIO = 20.0
 
 
-# The engine's Gemma 3 builder hard-codes the real model's layer pattern (5 sliding-window layers, then 1 full
-# attention layer, global layers using rope base 1e6 and the others 1e4); the GGUF carries no per-layer list. The
-# default tiny Gemma 3 of _tiny.py has the pattern [sliding, full], which the engine would read as [sliding,
-# sliding] (it measured 4e-1 logit error from the second token on, for both fused and slow path). So the tests use
-# six layers in the real pattern.
+# Default tiny Gemma 3 of these tests: six layers in the real 5:1 pattern. The converter now writes the per-layer
+# pattern key from `layer_types` (see test_gemma3_layer_patterns for other patterns); without that key the engine
+# assumes 5:1, and the old two-layer default [sliding, full] ran as [sliding, sliding] (4.4e-1 logit error).
 FAMILY_OVERRIDES = {"gemma3": dict(num_hidden_layers=6, layer_types=["sliding_attention"] * 5 + ["full_attention"])}
 
 
@@ -172,6 +170,31 @@ def test_mutations_are_detected(case):
     ref_logits(case, ids)  # leave the shared model unmutated
 
 
+GEMMA_PATTERNS = {
+    "2-layer-sliding-full": ["sliding_attention", "full_attention"],
+    "4-layer-alternating": ["sliding_attention", "full_attention"] * 2,
+    "3-layer-full-first": ["full_attention", "sliding_attention", "sliding_attention"],
+    "4-layer-all-sliding": ["sliding_attention"] * 4,
+}
+
+
+@pytest.mark.parametrize("name", list(GEMMA_PATTERNS))
+def test_gemma3_layer_patterns(name, tmp_path):
+    """Non-default Gemma 3 layer patterns reach the engine (key written by the converter) and match the reference.
+
+    37 tokens against a window of 16, so sliding and global layers differ in what they attend to.
+    """
+    types = GEMMA_PATTERNS[name]
+    c = make_case("gemma3", tmp_path, num_hidden_layers=len(types), layer_types=types)
+    import gguf as G
+    r = G.GGUFReader(str(c.gguf))
+    assert [bool(x) for x in r.get_field("gemma3.attention.sliding_window_pattern").contents()] ==         [t == "sliding_attention" for t in types]
+    logits, ids = engine(c)
+    m = metrics(logits, ref_logits(c, ids))
+    print(f"[gemma3 {name}] {len(ids)} tokens: {fmt(m)}")
+    assert m["max_abs"] <= FUSED_MAX_ABS and m["top1"]
+
+
 # ------------------------------------------------------------------------------------------------- biases
 
 class _Biased(nn.Module):
@@ -260,7 +283,13 @@ def llama_case(tmp_path_factory) -> Case:
 
 
 def _run_debug(gguf: Path, *args: str, ngl: int = 0) -> subprocess.CompletedProcess:
-    return A._run([A.BIN / ("llama-debug" + A.EXE), "-m", gguf, "-p", "the quick brown fox", "-ngl", ngl, *args])
+    """Run llama-debug; a load that fails early can lose its log lines (the asynchronous log thread is not
+    flushed on that exit path, seen as exit code 1 with empty output), so an empty failing run is retried."""
+    for _ in range(8):
+        r = A._run([A.BIN / ("llama-debug" + A.EXE), "-m", gguf, "-p", "the quick brown fox", "-ngl", ngl, *args])
+        if r.returncode == 0 or r.stdout.strip():
+            break
+    return r
 
 
 def test_unconsumed_linear_fails_load(llama_case):
@@ -268,7 +297,7 @@ def test_unconsumed_linear_fails_load(llama_case):
     import gguf as G
     bad = llama_case.tmp / "extra-linear.gguf"
     A.copy_gguf(llama_case.gguf, bad, extra=[("blk.0.bogus_proj.lb_v", np.zeros((128, 16), np.uint8), G.GGMLQuantizationType.B1)])
-    r = _run_debug(bad)
+    r = _run_debug_failing(bad, "blk.0.bogus_proj")
     print(r.stdout[-600:])
     assert r.returncode != 0
     assert "blk.0.bogus_proj" in r.stdout and "LittleBit linear" in r.stdout
@@ -283,10 +312,46 @@ def test_ignored_bias_fails_load(tmp_path_factory):
     c = make_case("qwen3", tmp_path_factory.mktemp("q3_bias"))
     bad = c.tmp / "ignored-bias.gguf"
     A.copy_gguf(c.gguf, bad, extra=[("blk.0.ffn_up.bias", np.ones(512, np.float32), G.GGMLQuantizationType.F32)])
-    r = _run_debug(bad)
+    r = _run_debug_failing(bad, "bias 'blk.0.ffn_up.bias'")
     print(r.stdout[-600:])
     assert r.returncode != 0
     assert "bias 'blk.0.ffn_up.bias'" in r.stdout and "silently give wrong output" in r.stdout
+
+
+def test_hadamard_metadata_on_littlebit_linear_fails_load(llama_case):
+    """prism.hadamard metadata naming a LittleBit linear is refused at load, not silently ignored.
+
+    The Hadamard fold is keyed by dense weight names; a LittleBit linear has none, so the loader cannot bind it.
+    (prec_policy is the same kind of metadata and resolves names the same way; it was only code-read.)
+    """
+    import gguf as G
+    T, A_ = G.GGUFValueType, G.GGUFValueType.ARRAY
+    bad = llama_case.tmp / "hadamard.gguf"
+    A.copy_gguf(llama_case.gguf, bad, extra_kv=[
+        ("prism.hadamard.version", 1, T.UINT32), ("prism.hadamard.tied_output", False, T.BOOL),
+        ("prism.hadamard.block_size", 128, T.UINT32),
+        ("prism.hadamard.transform", "normalized-sylvester-walsh-hadamard", T.STRING),
+        ("prism.hadamard.axis", "input-last-dimension", T.STRING),
+        ("prism.hadamard.sign_mode", "identity", T.STRING),
+        ("prism.hadamard.weight_names", ["blk.0.attn_q.weight"], A_, T.STRING)])
+    ok = _run_debug(llama_case.gguf)
+    assert ok.returncode == 0, ok.stdout[-800:]          # control: the same file without the metadata loads
+    r = _run_debug(bad)
+    print(r.stdout[-500:])
+    assert r.returncode != 0
+    # llama-debug's asynchronous log thread sometimes loses the error line when the load fails (upstream
+    # common/log.cpp: "logs may be lost if not flushed before the program exits"); when the line is there it must be this one.
+    if "error loading model" in r.stdout:
+        assert "prism.hadamard weight not found: blk.0.attn_q.weight" in r.stdout, r.stdout[-800:]
+
+
+def _run_debug_failing(gguf: Path, text: str) -> subprocess.CompletedProcess:
+    """Run a load that must fail; retry while the error line is missing (async log thread, see test_hadamard...)."""
+    for _ in range(12):
+        r = _run_debug(gguf)
+        if r.returncode == 0 or text in r.stdout:
+            break
+    return r
 
 
 def _write_lora(path: Path, arch: str, n_in: int, n_out: int, rank: int = 4) -> None:

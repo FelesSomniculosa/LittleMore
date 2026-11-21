@@ -270,7 +270,7 @@ Size estimates (embeddings and head at 16-bit):
 
 ### 3. Fused op `GGML_OP_LITTLEBIT`
 - Signature: `ggml_littlebit(ctx, x, V, U, s_v2, s_mid, s_u1, [Vr, Ur, s_v2r, s_midr, s_u1r])`
-- It computes `y = u1⊙(Ubᵀ·(mid⊙(Vbᵀ·(v2⊙x)))) + residual`, replacing the 11-op chain.
+- It computes `y = u1⊙(Ubᵀ·(mid⊙(Vbᵀ·(v2⊙x)))) + residual`, replacing the 5-op-per-path chain (10 ops with a residual path, plus the add).
 - **Two-stage structure on every backend:**
   - **V-stage:** v2 is applied as input is loaded. Dot products run against packed sign rows, flipping signs by XOR on the float sign bit. Primary and residual ranks are concatenated, and `mid` goes in the epilogue.
   - **U-stage:** `u1`/`u1r` go in the epilogue, and both paths are summed.

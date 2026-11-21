@@ -138,7 +138,7 @@ because of its fp16 scale; LittleBit keeps all scales in separate F32 vectors).
 ## GGML_OP_LITTLEBIT (fused LittleBit linear, CPU reference)
 
 One op that computes a whole LittleBit linear straight from the B1 sign matrices and F32
-activations (no activation quantization, unlike the 11-op slow path in `build_lb_path`).
+activations (no activation quantization, unlike the slow path, a chain of 5 ops per path in `build_lb_path`).
 Added in the engine (`littlebit` work on branch `littlemore`); the graph builder uses it for B1 linears since Task 8
 (see "LittleBit in the graph" below).
 
@@ -176,7 +176,9 @@ Added in the engine (`littlebit` work on branch `littlemore`); the graph builder
   guard. Today only the CPU backend has one (`ggml-cpu.cpp`); CUDA and Vulkan still answer false, and
   the scheduler then runs the op on the CPU backend. Asserted in `tests/test-littlebit-ref.cpp`.
 - **Tests:** `test-backend-ops test -o LITTLEBIT` (each backend vs CPU, plus the CPU result vs an
-  independent double-precision reference in `tests/littlebit-ref.h`, tolerance 1e-4 of max|y|);
+  independent double-precision reference in `tests/littlebit-ref.h`, tolerance 1e-4 of max|y|; also with `-b CPU`, 328 cases); both it and `test-littlebit-ref` include
+  ragged `d_out` (1, 4, 16, 37, 100; `d_in` stays a multiple of 128) with and without residual, n in {1, 9, 512}, and thread counts 1/3/4/8
+  (worst relative error 1.8e-5 over 438 reference cases, 6e-7 for the ragged-by-thread cases, bit-identical across thread counts);
   `tests/test-littlebit-ref.cpp` (ctest `test-littlebit-ref`: reference grid, mutation checks,
   thread determinism, supports_op).
 
@@ -212,7 +214,8 @@ Added in the engine (`littlebit` work on branch `littlemore`); the graph builder
   weight; an ignored bias gives wrong output). Tested in `tests/engine/test_fused_graph_families.py`.
 - LoRA: adapters are not applied to LittleBit linears (the dense weight never exists). The adapter loader
   (`llama-adapter.cpp`) used to reject such an adapter with "does not exist in base model"; it now skips those
-  tensors and logs one warning ("LoRA adapters are not supported on LittleBit linears ..."). The skip is the only place the case
+  tensors and logs one warning ("LoRA adapters are not supported on LittleBit linears ..."). The warning is guarded by a function-level
+  `static std::once_flag`, so only the FIRST adapter loaded in a process warns; later adapters are skipped silently. The skip is the only place the case
   can happen: `get_weight(w)` in `build_lora_mm` never finds a delta for a LittleBit linear. Tested (warning printed
   once, logits unchanged).
 
@@ -222,8 +225,10 @@ Added in the engine (`littlebit` work on branch `littlemore`); the graph builder
 arrays) naming dense weights `blk.N.<x>.weight`; nothing else enables them. Our converter writes none of these
 keys, so for all four families they do not apply to a LittleBit GGUF. A file that did carry such metadata for a
 LittleBit linear fails loudly: the Hadamard loader looks the name up with `get_tensor` and throws "prism.hadamard
-weight not found" (the tensor is called `...lb_v`); `prec_policy` ignores names it cannot resolve. (Found by reading
-`llama-model.cpp`, the Hadamard loader and `llama_prec_policy::load`; not exercised by a test.)
+weight not found" (the tensor is called `...lb_v`); `prec_policy` ignores names it cannot resolve. The Hadamard loader also accepts only the
+architectures Llama, Qwen3, Qwen3 MoE, Qwen3.5 (+MoE) and Qwen3-Next, so Gemma 3 with such metadata is refused outright. Hadamard path tested
+(`test_hadamard_metadata_on_littlebit_linear_fails_load`: a LittleBit Llama GGUF with `prism.hadamard.*` metadata naming `blk.0.attn_q.weight` fails
+to load with that error); `prec_policy` found by reading `llama_prec_policy::load` only.
 
 ### Coverage: every linear of a transformer block goes through `build_lora_mm`
 
@@ -276,10 +281,54 @@ cache), **1e-4 with `-fa off -ctk f32 -ctv f32`**, 1.5e-2 .. 6e-2 with `-ngl 99`
 0.73 .. 1.6 for the slow path. Speed (CPU, informational): the CPU reference kernel generates 10 tokens/s against 89
 tokens/s for the Q1_0 chain; the kernel is a scalar reference, tuning is for Tasks 10+.
 
-**Gemma 3 note:** the engine's Gemma 3 builder hard-codes the layer pattern (5 sliding-window layers, then 1 global;
-rope base 1e4 / 1e6); the GGUF has no per-layer list. A tiny model with `layer_types=[sliding, full]` is therefore
-read as two sliding layers and is wrong (4e-1 logit error for fused and slow path alike, no LittleBit involvement).
-The real Gemma 3 pattern is fine. The tests use six layers.
+**Gemma 3 layer pattern:** the engine reads the per-layer sliding-window pattern from the array key
+`gemma3.attention.sliding_window_pattern` (bool per layer, true = sliding window; `load_swa_pattern`) and falls back to the real
+Gemma 3 layout (every 6th layer global) when the key is absent. llama.cpp's own `Gemma3Model` converter writes the key
+for no config, so a model whose `layer_types` is not 5:1 (a tiny or custom model) ran silently wrong: the two-layer
+`[sliding, full]` test model was read as `[sliding, sliding]` and was off by 4.4e-1 in the logits for fused and slow path alike (1 token exact, 2 tokens 1e-2, 37 tokens 4e-1).
+`tools/convert/lb_to_gguf.py` now writes the array from `layer_types` for every Gemma 3 conversion (an integer
+`sliding_window_pattern` other than 1 / 6 is written as the integer; an unknown layer type or a list of the wrong
+length is a `ConversionError`; configs without `layer_types` keep the engine default). Verified in llama.cpp against the reference
+(37 tokens, window 16, max-abs): `[sliding, full]` 3.8e-4, `[sliding, full] * 2` 4.6e-4, `[full, sliding, sliding]` 5.3e-4,
+four sliding layers 4.0e-4, the 6-layer 5:1 pattern 7.0e-4
+(`tests/engine/test_fused_graph_families.py::test_gemma3_layer_patterns`, `tests/convert/test_gemma_pattern.py`).
+
+### GPU offload error: how much is the CUDA noise floor (review item 3)
+
+`tools/dev/dense_floor.py` runs the DENSE Qwen3-0.6B (no LittleBit) through the same llama.cpp paths against its own fp32 HF
+(transformers, CPU) reference, next to the LittleBit file, on the same token ids and settings. max-abs over the vocabulary
+(`default` = flash attention + f16 KV, `exact` = `-fa off -ctk f32 -ctv f32`):
+
+| prompt | ngl | config | dense F16 | dense F32 | dense F32 + F16 head | LittleBit B1 vs its reference |
+|---|---|---|---|---|---|---|
+| 1 token | 0 | default | 5.3e-4 | 5.4e-4 | 5.4e-4 | 1.35e-2 |
+| 1 token | 0 | exact | 2.7e-5 | 1.5e-5 | 1.5e-5 | 1.5e-4 |
+| 1 token | 99 | default | 1.1e-2 | 4.9e-4 | 4.9e-4 | 1.45e-2 |
+| 1 token | 99 | exact | 1.1e-2 | 1.7e-5 | 1.7e-5 | 4.9e-3 |
+| 16 tokens | 0 | default | 7.1e-3 | 7.3e-3 | 8.6e-3 | 1.34e-2 |
+| 16 tokens | 0 | exact | 3.7e-5 | 4.3e-5 | 4.4e-5 | 9.8e-5 |
+| 16 tokens | 99 | default | 2.0e-2 | 2.5e-2 | 2.5e-2 | 3.7e-2 |
+| 16 tokens | 99 | exact | 2.9e-2 | 3.9e-2 | 3.9e-2 | 6.0e-2 |
+
+Control for the 1-token GPU case: the LittleBit file with its F16 tensors widened to F32 gives 1.1e-4 (exact) and 1.3e-2 (default),
+against 4.9e-3 and 1.45e-2 with the F16 head. The LittleBit run at `-ngl 99` differs from the same run at `-ngl 0` by exactly the same amount
+as it differs from the reference (the CPU-exact run is the reference to 1e-4).
+
+Conclusions, with what is and is not shown:
+- CPU: the fused path is exact to 1e-4 with `-fa off` + f32 KV; the 1.3e-2 default error is flash attention's f16 path
+  (the dense model has 5e-4 at 1 token, but the init-only LittleBit model is much more sensitive to it; not further isolated).
+- GPU, 1 token, exact config: the 4.9e-3 is the F16 output head on CUDA (F32 head: 1.1e-4). The dense F32+F16-head control does
+  **not** reproduce it (1.7e-5), so it depends on the LittleBit model's hidden state; the head itself is shown to be the carrier, the reason it
+  matters only for this model is not isolated.
+- GPU, 16 tokens: the floor exists without any LittleBit: dense F32 on CUDA is 2.5e-2 / 3.9e-2 against 1.7e-5 at one token, so it comes with several
+  tokens (batched CUDA matmuls; TF32 / f16 tensor-core use is the likely cause but was NOT tested). LittleBit is 1.46x / 1.56x the dense
+  floor by max-abs (rms 1.47x / 1.20x). **About 1.5x is not explained by the dense control** (unattributed residual). The LittleBit model has other activation
+  magnitudes than the dense one; that was not isolated.
+- For Tasks 10-12: when the CUDA kernel for `GGML_OP_LITTLEBIT` lands, compare with a CPU-exact run of the same file (not with the dense floor), use an F32
+  head or `-fa off` + F32 KV to separate its error from the rest, and watch the 16-token ratio to the dense floor (guard: `test_gpu_error_is_within_dense_floor_factor`, limit 2.0).
+
+Regression guards in `tests/engine/test_fused_graph_qwen3_06b.py`: LittleBit-vs-reference <= 2.0x dense-vs-dense-reference at 16 tokens, `-ngl 99`
+(measured 1.46 / 1.56); 1 token `-ngl 99` exact: F16 head <= 1e-2 (4.9e-3), F32 head <= 1e-3 (1.1e-4).
 
 ## Known gaps / TODO
 

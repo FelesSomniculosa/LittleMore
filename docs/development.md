@@ -100,6 +100,7 @@ tool sources that produced it change.
 | `check_env.py` | checks that all build tools and a CUDA-enabled PyTorch are installed (exit 0 = ready) |
 | `reference.py` | plain-PyTorch LittleBit model: loads a checkpoint and runs it; the ground truth for all other tests |
 | `make_lb2_init.py` | makes an init-only LittleBit-2 checkpoint from any Hugging Face causal language model (no training) |
+| `dense_floor.py` | runs the dense Qwen3-0.6B and the LittleBit file through llama.cpp (CPU / GPU, default / exact) against their fp32 references and prints the noise-floor table of docs/engine-changes.md |
 | `emulate_q8_slow_path.py` | the reference plus the int8 activation noise that llama.cpp adds, so engine and reference can be compared fairly |
 
 Example, making a checkpoint by hand:
