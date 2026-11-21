@@ -12,18 +12,25 @@ error divided by the fused default-config error on the same prompt (0.73 / 1.35e
   config                              1 token      16 tokens
   CPU, default (flash attn, f16 KV)   1.35e-2      1.34e-2     <- the f16 attention path of flash attention
   CPU, -fa off, f32 KV                1.5e-4       9.8e-5      <- the fused op itself
-  GPU (-ngl 99), default              1.45e-2      3.7e-2
-  GPU (-ngl 99), -fa off, f32 KV      4.9e-3       6.0e-2
-  GPU, -fa off, f32 KV, F32 head      1.1e-4       6.1e-2      <- control: B1 GGUF with the F16 head widened to F32
+  GPU (-ngl 99), default              1.38e-2      3.14e-2     (LittleBit linears on the CUDA kernels)
+  GPU (-ngl 99), -fa off, f32 KV      4.8e-3       5.53e-2
+  GPU, -fa off, f32 KV, F32 head      2.6e-5       -           <- control: B1 GGUF with the F16 head widened to F32
   slow path (Q1_0 chain), CPU         7.3e-1       1.36        <- 50x to 100x worse
 
+The GPU rows are with the LittleBit weights on the GPU and the fused op on the CUDA kernels (decode kernels for 1 token,
+chunked decode kernels for 16).  When this file was first written the LittleBit tensors were pinned to the CPU and the
+op ran there inside an otherwise offloaded graph; the GPU rows were then 1.45e-2 / 3.7e-2 (default), 4.9e-3 / 6.0e-2
+(-fa off, f32 KV) and 1.1e-4 (F32 head, 1 token).
+
 Where the GPU error comes from (numbers from `python tools/dev/dense_floor.py`, table in docs/engine-changes.md):
-  * 1 token: the 4.9e-3 is the F16 output head on CUDA. With the head widened to F32 the same run is 1.1e-4.
+  * 1 token: the 4.8e-3 is the F16 output head on CUDA. With the head widened to F32 the same run is 2.6e-5.
   * 16 tokens: NOT the LittleBit op. The DENSE Qwen3-0.6B (no LittleBit at all, F32 weights) run through the same CUDA
-    path against its own fp32 HF reference is 2.5e-2 (default) and 3.9e-2 (-fa off, f32 KV); LittleBit is 3.7e-2 and
-    6.0e-2, i.e. 1.46x and 1.56x the dense floor (rms 1.47x and 1.20x). The same dense model is 1.7e-5 at one token,
-    so the floor appears only with several tokens, i.e. in the CUDA batched matmuls. The 1.2x-1.6x excess over the dense floor is
-    NOT attributed (the LittleBit model has different activation magnitudes; not isolated).
+    path against its own fp32 HF reference is 2.5e-2 (default) and 3.9e-2 (-fa off, f32 KV); LittleBit is 3.14e-2 and
+    5.53e-2, i.e. 1.25x and 1.43x the dense floor (1.46x / 1.56x while the LittleBit op still ran on the CPU). The same
+    dense model is 1.7e-5 at one token, so the floor appears only with several tokens, i.e. in the CUDA batched matmuls
+    (ggml-cuda's cuBLAS handle allows TF32 for F32 matrix products; see docs/engine-changes.md). The LittleBit op itself
+    is float32 on CUDA (1e-6 relative in test-littlebit-ref); the 1.25x-1.43x excess over the dense floor is NOT
+    attributed (the LittleBit model has different activation magnitudes; not isolated).
 """
 from __future__ import annotations
 
@@ -42,7 +49,8 @@ EXACT_ARGS = ("-fa", "off", "-ctk", "f32", "-ctv", "f32")
 CPU_EXACT_MAX_ABS = 1e-3
 # Default configuration on CPU: measured 1.35e-2; limit 2.5e-2 (1.9x margin, 1% of the logit scale).
 CPU_DEFAULT_MAX_ABS = 2.5e-2
-# With GPU offload: measured up to 6.0e-2; limit 1.0e-1 (1.7x margin, 3.5% of the logit scale).
+# With GPU offload: measured up to 5.5e-2 (6.0e-2 while the LittleBit op ran on the CPU); limit 1.0e-1 (1.8x margin,
+# 3.5% of the logit scale).
 GPU_MAX_ABS = 1.0e-1
 # The Q1_0 slow path is at least 50x worse in every measurement; require at least 10x.
 SLOW_MIN_RATIO = 10.0
@@ -85,12 +93,13 @@ def test_fused_matches_reference_and_beats_slow_path(ggufs, prompt, ngl):
 
 
 # GPU regression guards, from the dense-floor measurement (see the module docstring).
-# LittleBit-vs-reference / dense-vs-dense-reference at the same settings, 16 tokens, -ngl 99: measured 1.46 (default)
-# and 1.56 (-fa off, f32 KV); limit 2.0.
+# LittleBit-vs-reference / dense-vs-dense-reference at the same settings, 16 tokens, -ngl 99: measured 1.25 (default)
+# and 1.43 (-fa off, f32 KV) with the LittleBit op on CUDA (1.46 / 1.56 when it ran on the CPU); limit 2.0.
 GPU_OVER_DENSE_FLOOR_MAX = 2.0
-# One token, -ngl 99, -fa off, f32 KV: with the F16 head 4.9e-3 (limit 1e-2); with an F32 head 1.1e-4 (limit 1e-3).
+# One token, -ngl 99, -fa off, f32 KV: with the F16 head 4.8e-3 (limit 1e-2); with an F32 head 2.6e-5 with the op on
+# CUDA (1.1e-4 when it ran on the CPU), limit 2.5e-4 (about 10x; was 1e-3).
 GPU_1TOK_F16_HEAD_MAX_ABS = 1e-2
-GPU_1TOK_F32_HEAD_MAX_ABS = 1e-3
+GPU_1TOK_F32_HEAD_MAX_ABS = 2.5e-4
 
 
 @pytest.mark.parametrize("cfg", ["default", "exact"])
@@ -109,7 +118,7 @@ def test_gpu_error_is_within_dense_floor_factor(ggufs, cfg):
 
 
 def test_gpu_one_token_error_is_the_f16_head(ggufs):
-    """1 token at -ngl 99 without flash attention: F16 head 4.9e-3; the same file with an F32 head is exact to 1e-4."""
+    """1 token at -ngl 99 without flash attention: F16 head 4.8e-3; the same file with an F32 head is exact to 3e-5."""
     b1, _ = ggufs
     f32head = A.ensure_b1_f32_head_gguf()
     lg16, ids = A.engine_logits(b1, A.PROMPT_ONE, 99, EXACT_ARGS)

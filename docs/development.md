@@ -129,8 +129,11 @@ explanation; pass `--assume-no-littlebit-config` to skip only the residual
 cross-check against that file. Gemma 3 is tested on the generic path only
 (identity permutations); Llama and Qwen3.5 exercise real permutations.
 
-These GGUFs run in the engine (fused `ggml_littlebit` op, CPU kernel; the LittleBit
-weights stay in host memory even with `-ngl 99`). The converter
+These GGUFs run in the engine (fused `ggml_littlebit` op: CPU kernel, and CUDA kernels for
+any batch size; with `-ngl 99` on CUDA the LittleBit weights live on the GPU, on a Vulkan
+device they stay in host memory and the op runs on the CPU). Linears with a residual path
+also get `lb_s_pkr`, the three residual scale vectors packed in the order the engine's op
+reads them (see [engine-changes.md](engine-changes.md)). The converter
 tests build tiny random models offline; the Qwen families need the cached
 Qwen3-0.6B tokenizer (they skip without it), Llama and Gemma 3 need nothing.
 
@@ -208,7 +211,8 @@ init-only checkpoint at `-ngl 0` and `-ngl 99`. The engine's own tests: from `en
 - **`supports_op`**: the function through which each backend tells the scheduler
   whether it can run a given op; the scheduler sends refused ops to another backend.
 - **`-ngl` / GPU offload**: the llama.cpp option `-ngl N` puts N layers (99 =
-  all) on the GPU. LittleBit weights stay on the CPU even then.
+  all) on the GPU. LittleBit weights go with their layer when its device can run the
+  fused op (CUDA); otherwise (Vulkan) they stay on the CPU.
 - **flash attention** (`-fa`): a fused attention implementation; it keeps
   intermediate values in f16, so switching it off (`-fa off`) removes that
   rounding.
