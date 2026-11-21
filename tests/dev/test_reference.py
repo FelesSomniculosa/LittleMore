@@ -78,19 +78,35 @@ def test_padded_rank_exact():
     g = torch.Generator().manual_seed(3)
     p, r = _params(8, 70, 33, g)
     for q in (p, r):
-        q["U_packed"] = ref.pack_signs(q["U"])
-        q["V_packed"] = ref.pack_signs(q["V"])
-        # dirty the padding bits of the last word (set them to 1 = -1)
-        for k, cols in (("U_packed", 33), ("V_packed", 70)):
-            pad = ~((1 << (cols % 32)) - 1) & 0xFFFFFFFF
-            last = q[k][:, -1].to(torch.int64) & 0xFFFFFFFF | pad
-            q[k][:, -1] = torch.where(last >= 2**31, last - 2**32, last).to(torch.int32)
-    for q in (p, r):
-        q["U"] = ref.unpack_signs(q["U_packed"], q["U"].shape)
-        q["V"] = ref.unpack_signs(q["V_packed"], q["V"].shape)
+        for m, cols in (("U", 33), ("V", 70)):
+            original = q[m]
+            packed = ref.pack_signs(original)
+            pad = ~((1 << (cols % 32)) - 1) & 0xFFFFFFFF  # bits beyond `cols`
+            last = (packed[:, -1].to(torch.int64) & 0xFFFFFFFF) | pad
+            packed[:, -1] = torch.where(last >= 2**31, last - 2**32, last).to(torch.int32)
+            # Prove the padding really is dirty (all ones) before unpacking.
+            assert ((packed[:, -1].to(torch.int64) & 0xFFFFFFFF & pad) == pad).all()
+            unpacked = ref.unpack_signs(packed, original.shape)
+            assert torch.equal(unpacked, original)
     layer = _make(p, r)
     x = torch.randn(2, 70, generator=g)
     torch.testing.assert_close(layer(x), x @ (_dense(p) + _dense(r)).T, rtol=1e-5, atol=1e-5)
+
+
+def test_unpack_chunked_matches(monkeypatch):
+    g = torch.Generator().manual_seed(9)
+    s = _signs(50, 100, g)
+    monkeypatch.setattr(ref, "_CHUNK_ELEMS", 256)  # force many row chunks
+    assert torch.equal(ref.unpack_signs(ref.pack_signs(s), (50, 100)), s)
+    assert ref.unpack_signs(ref.pack_signs(s), (50, 100), dtype=torch.int8).dtype == torch.int8
+
+
+def test_lblinear_sign_storage_is_one_byte():
+    g = torch.Generator().manual_seed(10)
+    p, r = _params(16, 40, 8, g)
+    layer = _make(p, r)
+    for name in ("U_0", "V_0", "U_1", "V_1"):
+        assert getattr(layer, name).element_size() == 1
 
 
 def _tensors(prefix, out_f, in_f, r, g, suffix=""):
@@ -141,22 +157,72 @@ def test_load_checkpoint_shape_mismatch_raises(tmp_path):
         ref.load_checkpoint(tmp_path)
 
 
-def test_build_model_swaps_linears(tmp_path, monkeypatch):
+def _tiny_base(tmp_path, **kw):
     from transformers import LlamaConfig, LlamaForCausalLM
     cfg = LlamaConfig(vocab_size=64, hidden_size=32, intermediate_size=64,
                       num_hidden_layers=2, num_attention_heads=4,
-                      num_key_value_heads=4, max_position_embeddings=64)
+                      num_key_value_heads=4, max_position_embeddings=64, **kw)
     base = LlamaForCausalLM(cfg)
     base_dir = tmp_path / "base"
     base.save_pretrained(base_dir)
+    return base_dir
+
+
+def _tiny_ckpt(tmp_path):
     g = torch.Generator().manual_seed(7)
     t = _tensors("model.layers.0.mlp.up_proj", 64, 32, 8, g)
     t.update(_tensors("model.layers.1.self_attn.q_proj", 32, 32, 8, g))
     _write(tmp_path / "ck", [t])
-    model = ref.build_model(str(base_dir), tmp_path / "ck")
+    return tmp_path / "ck"
+
+
+def test_build_model_swaps_linears(tmp_path):
+    base_dir = _tiny_base(tmp_path)
+    model = ref.build_model(str(base_dir), _tiny_ckpt(tmp_path))
     assert isinstance(model.model.layers[0].mlp.up_proj, ref.LBLinear)
     assert isinstance(model.model.layers[1].self_attn.q_proj, ref.LBLinear)
     assert isinstance(model.model.layers[0].mlp.down_proj, torch.nn.Linear)
     assert isinstance(model.lm_head, torch.nn.Linear)
+    # Remaining params are bf16 and real; replaced dense weights are not retained.
+    assert all(not t.is_meta and t.dtype == torch.bfloat16 for t in model.parameters())
+    assert not hasattr(model.model.layers[0].mlp.up_proj, "weight")
+    # embed+lm_head 4096, norms 160, attn 4*1024*2-1024, mlp 3*2048*2-2048
+    assert sum(t.numel() for t in model.parameters()) == 21664
     out = model(torch.tensor([[1, 2, 3]])).logits
     assert out.shape == (1, 3, 64) and torch.isfinite(out).all()
+
+
+def test_build_model_warns_on_dropped_bias(tmp_path):
+    base_dir = _tiny_base(tmp_path, attention_bias=True)
+    with pytest.warns(UserWarning, match="bias"):
+        ref.build_model(str(base_dir), _tiny_ckpt(tmp_path))
+
+
+def test_load_checkpoint_alias_packed_R(tmp_path):
+    g = torch.Generator().manual_seed(11)
+    t = _tensors("a.proj", 6, 10, 4, g)
+    for k, v in _tensors("a.proj", 6, 10, 4, g, "_R").items():
+        for m in "UV":  # U_R_packed -> U_packed_R alias spelling
+            k = k.replace(f".{m}_R_packed", f".{m}_packed_R").replace(f".{m}_R_shape", f".{m}_shape_R")
+        t[k] = v
+    _write(tmp_path, [t])
+    assert ref.load_checkpoint(tmp_path)["a.proj"].residual is not None
+
+
+def test_load_checkpoint_rank_mismatch_raises(tmp_path):
+    g = torch.Generator().manual_seed(12)
+    t = _tensors("a.proj", 6, 10, 4, g)
+    t["a.proj.V_packed"] = ref.pack_signs(_signs(5, 10, g))
+    t["a.proj.V_shape"] = torch.tensor([5, 10], dtype=torch.int32)
+    _write(tmp_path, [t])
+    with pytest.raises(ValueError, match="columns but V has"):
+        ref.load_checkpoint(tmp_path)
+
+
+def test_load_checkpoint_scale_length_raises(tmp_path):
+    g = torch.Generator().manual_seed(13)
+    t = _tensors("a.proj", 6, 10, 4, g)
+    t["a.proj.u1"] = torch.rand(1, 7, generator=g)
+    _write(tmp_path, [t])
+    with pytest.raises(ValueError, match="u1"):
+        ref.load_checkpoint(tmp_path)
