@@ -148,6 +148,10 @@ Qwen3-0.6B tokenizer (they skip without it), Llama and Gemma 3 need nothing.
 `llama-debug` and compare the last-position logits with `reference.py`; the Qwen3-0.6B file does the same on the real
 init-only checkpoint at `-ngl 0` and `-ngl 99`. The engine's own tests: from `engine/build`,
 `ctest -R "test-b1|test-gguf|test-alloc|test-littlebit"` (needs the MSVC environment on `PATH`).
+`test-littlebit-ref` also compares the CPU's AVX2 kernel of the fused op with its scalar reference kernel (they must be
+bit-identical), and `test-backend-ops test -o LITTLEBIT -b CPU` does the same through the test harness; see "CPU: AVX2
+kernel" in [engine-changes.md](engine-changes.md#cpu-avx2-kernel-of-ggml_op_littlebit) for the CPU speed measurements and
+`engine/tools/littlebit-bench/cpu_bench.cpp` for the benchmark program.
 
 ## Glossary
 

@@ -12,7 +12,7 @@ The engine is upstream llama.cpp plus these additions (details in the sections b
 | Addition | Where it is described |
 |---|---|
 | `GGML_TYPE_B1`: a ggml type that stores +1/-1 signs at exactly 1 bit each | [GGML_TYPE_B1](#ggml_type_b1-pure-1-bit-sign-weights) |
-| `GGML_OP_LITTLEBIT`: one fused op that computes a whole LittleBit linear (CPU kernel; CUDA kernels for any batch: decode kernels for 1..8 tokens, the same on 8-token chunks, a float32 GEMM prefill path) | [GGML_OP_LITTLEBIT](#ggml_op_littlebit-fused-littlebit-linear-cpu-reference), [CUDA backend](#cuda-backend-of-ggml_op_littlebit-decode-18-tokens), [CUDA batches above 8 tokens](#cuda-batches-above-8-tokens-chunked-decode-and-prefill-path) |
+| `GGML_OP_LITTLEBIT`: one fused op that computes a whole LittleBit linear (CPU kernels: scalar reference and AVX2; CUDA kernels for any batch: decode kernels for 1..8 tokens, the same on 8-token chunks, a float32 GEMM prefill path) | [GGML_OP_LITTLEBIT](#ggml_op_littlebit-fused-littlebit-linear-cpu-reference), [CPU: AVX2 kernel](#cpu-avx2-kernel-of-ggml_op_littlebit), [CUDA backend](#cuda-backend-of-ggml_op_littlebit-decode-18-tokens), [CUDA batches above 8 tokens](#cuda-batches-above-8-tokens-chunked-decode-and-prefill-path) |
 | Loader and graph hook: a linear whose `weight` is missing but whose `lb_v` factors exist is loaded as a LittleBit linear, and `build_lora_mm` builds the fused op for it | [LittleBit in the graph](#littlebit-in-the-graph) |
 | Per-backend rules: no backend may claim a B1 tensor except for the fused op; the LittleBit tensors of a layer live on the layer's device when that device can run the op (CUDA), else on the CPU (Vulkan) | the "Rule" bullet and the `supports_op` audit under GGML_TYPE_B1; "Loader" under LittleBit in the graph |
 | Pre-packed residual scales `lb_s_pkr` in the GGUF (no per-call CONCAT nodes) | "Loader" under LittleBit in the graph |
@@ -205,7 +205,114 @@ Added in the engine (`littlebit` work on branch `littlemore`); the graph builder
   8 tokens also n in {16, 33, 40, 48, 49, 64, 2048} on shapes with several prefill tiles. `tests/test-littlebit-ref.cpp`
   (ctest `test-littlebit-ref`): CPU reference grid (worst relative error 1.8e-5 over 438 cases), mutation checks of the
   reference, thread counts 1/3/4/8 (bit-identical; 6e-7 for the ragged-by-thread cases), supports_op per device and
-  batch size, the CUDA grid (see the CUDA section).
+  batch size, the CUDA grid (see the CUDA section), the CPU's AVX2 kernel against this reference kernel (next section).
+  With `-b CPU` the backend under test is the CPU's default kernel (AVX2 on an AVX2 machine) and the comparison
+  backend runs the reference kernel (the harness sets `ggml_backend_cpu_set_use_ref` on it).
+
+## CPU: AVX2 kernel of GGML_OP_LITTLEBIT
+
+`ggml/src/ggml-cpu/littlebit-x86.cpp` (the file header documents math, bit layout, blocking, work split and work
+buffer). It runs in the CPU backend variants built with AVX2 (`haswell`, `alderlake` and the AVX-512 variants, whose
+`/arch:AVX512` also defines `__AVX2__`); the scalar kernel in `ops.cpp` stays the reference and the fallback.
+
+- **Dispatch:** at the top of `ggml_compute_forward_littlebit`: the AVX2 kernel when the variant was compiled with AVX2
+  and the backend is not set to its reference implementations (`params->use_ref`, the upstream switch
+  `ggml_backend_cpu_set_use_ref`); otherwise, and for shapes the AVX2 kernel does not take (rows that are not whole
+  32-sign words, or row strides too large for 32-bit gather offsets; neither occurs with B1), the scalar kernel. Which
+  variant runs is chosen at load time from the CPU's features (`GGML_BACKEND_DL` + `GGML_CPU_ALL_VARIANTS`;
+  `ggml-cpu/arch/x86/cpu-feats.cpp` scores an AVX2 variant 0 on a CPU without AVX2, so it is never loaded there), so
+  the AVX2 code can only run on a CPU that has AVX2. The decision is the same for all threads of the op (both kernels
+  contain a barrier). A variant with the kernel lists the feature `LITTLEBIT_AVX2` in `ggml_backend_get_features`
+  (shown in llama.cpp's system info).
+- **How:** the 8 float lanes of a vector are 8 different rows (8 latent units in stage 1, 8 outputs in stage 2). One
+  gather loads the same 32-sign word of the 8 rows; for each of its 32 columns in ascending order the sign bit is moved
+  to bit 31 (`vpsllvd` by 31 - c, `vpand` with 0x80000000) and XORed onto the broadcast activation, which is an exact
+  negation where the sign is -1, then added. Up to 4 row groups (1 token) or up to 8 tokens per pass share the sign
+  masks and the broadcasts (block shapes G x T: 1..4 x 1, 1..2 x 2..4, 1 x 5..8). Stage 1 uses `x * s_v2` of the
+  current token tile, computed once per thread and tile into the work buffer (`ggml_littlebit_avx2_work_size`, called
+  by `ggml_graph_plan`). The ragged last group of stage 2 (`d_out` not a multiple of 8) uses masked gathers, loads and
+  stores, so rows past `d_out` are never read or written.
+- **Numerics: bit-identical to the reference kernel.** Each lane performs exactly the float operations of the
+  reference for its row, in the same order (start at +0.0f, add +a or -a for k ascending, then the scale; stage 2
+  `s_u1 * primary`, then `+ s_u1r * residual`); no reassociation, no FMA, activations stay float32. Measured:
+  `test-littlebit-ref` (7) 110 of 110 cases bit-identical (NMSE 0, bound 1e-6), d_in 128..5248, ragged d_out, n = 1..9,
+  16, 17, 33, 512, on 1, 3, 4, 7 and 16 threads; every number printed by `test-littlebit-ref` (CPU grid against the double
+  reference, CUDA against the CPU kernel) is the same as before the change; `llama-debug` logits of Qwen3-0.6B at
+  `-ngl 0 -dev none` are byte-identical before and after for 1, 16 and 38 tokens, default and `-fa off -ctk f32 -ctv f32`.
+  The bit-identity relies on the compiler not contracting `a * b + c` into an FMA differently in the two kernels:
+  MSVC does not contract by default, so `test-littlebit-ref` asserts identity for MSVC builds and asserts only
+  NMSE <= 1e-6 for other compilers (GCC and Clang contract by default in GNU mode; not built here).
+- **Tests:** `test-littlebit-ref` section (7): requires `LITTLEBIT_AVX2` whenever the variant reports AVX2 (otherwise the
+  comparison would compare the scalar kernel with itself), then the AVX2 kernel against the reference kernel as above.
+  RED before the kernel existed: the feature check failed (`AVX2 yes, LITTLEBIT_AVX2 no`, 1 failed check).
+  `test-backend-ops test -o LITTLEBIT -b CPU`: 446/446 (AVX2 kernel against the reference kernel with NMSE bound 1e-10,
+  against the double reference, determinism), 3 runs. Thread counts 1/3/4/8 still bit-identical (section 3 / 3b, now
+  on the AVX2 kernel). Fallback: the test programs run with only `ggml-cpu-sse42.dll` or only `ggml-cpu-x64.dll` next to
+  them (no AVX2: scalar kernel) pass, as with only `ggml-cpu-haswell.dll` (AVX2 without AVX-VNNI: AVX2 kernel, 110/110
+  bit-identical). The AVX-512 variants compile the same AVX2 code but cannot run on the test CPU (no AVX-512).
+- **Mutations** (each applied to `littlebit-x86.cpp`, the `alderlake` variant rebuilt, both test programs run): V
+  polarity (stage-1 result negated): all 110 AVX2-vs-reference cases fail (NMSE 1.2 .. 4), 682 failed checks; primary U
+  polarity: 110 cases (NMSE 1.2e-2 .. 5.1); MSB-first bit order: 110 (NMSE 0.29 .. 2.7); `s_mid` skipped: 110 (0.67 ..
+  43); residual dropped in stage 2: the 85 cases with a residual (NMSE 1.5e-2 .. 1.1); last row of the ragged group not
+  stored: the 61 cases with `d_out` not a multiple of 8 (NMSE 6.9e-4 ..); in a block of several row groups the odd
+  groups reading the even group's rows: 60 cases (3.6e-3 .. 1.8); every token of a stage-1 tile using the first token's
+  activations: the 101 cases with n >= 2 (0.32 .. 3.7); every token of a stage-2 tile using the first token's residual
+  t: 78 cases (1.7e-2 .. 3.3). `test-backend-ops -b CPU` failed on each (its CPU-vs-double-reference check exits on the
+  first wrong case). Flipping the sign masks of BOTH stages (`vpandn`) changed nothing, bit for bit: that is the
+  mathematical no-op already documented for the reference mutations (flipping V and U together cancels exactly).
+- **AVX-512:** not written. The test CPU (i7-13620H, Raptor Lake) has no AVX-512, so such a path could not be run or
+  tested here; the AVX-512 variants use the AVX2 kernel.
+
+### Measured speed (i7-13620H laptop, 6 P-cores + 4 E-cores, 16 threads; plugged in, informal)
+
+Op level, `cpu_bench.exe 6 <avx2|ref> 64 1,8` (`engine/tools/littlebit-bench`, 6 threads, every op with its own weights,
+64 MB per graph, i.e. cold caches like a model at decode time; G/s = sign multiply-adds per second, one per sign bit and
+token; ranges over 3 AVX2 runs and 2 reference runs, alternated):
+
+| d_in x d_out | r + r2 | n | reference kernel | AVX2 kernel | speed-up |
+|---|---|---|---|---|---|
+| 1024 x 2048 (Qwen3-0.6B q) | 256 + 256 | 1 | 774 .. 790 us (2.0 G/s) | 23.9 .. 25.2 us (62 .. 66 G/s) | 31x |
+| 1024 x 1024 (k, v) | 128 + 128 | 1 | 260 .. 262 us | 9.6 .. 10.0 us (52 .. 55 G/s) | 27x |
+| 1024 x 3072 (gate, up) | 256 + 256 | 1 | 956 .. 991 us | 31.1 .. 32.0 us | 30x |
+| 3072 x 1024 (down) | 256 + 256 | 1 | 1025 .. 1047 us | 30.7 .. 34.1 us | 32x |
+| 1024 x 2048 | 256 + 256 | 8 | 1939 .. 1987 us (6.4 G/s) | 88.6 .. 103 us (122 .. 142 G/s) | 20x |
+| 4096 x 4096 | 640 + 512 | 1 | 4566 .. 4731 us | 124 .. 150 us (63 .. 76 G/s) | 33x |
+| 5120 x 13824 | 1152 + 1024 | 1 | 19.2 .. 19.5 ms | 525 .. 604 us (68 .. 79 G/s) | 34x |
+| 13824 x 5120 | 1152 + 1024 | 8 | 82.1 .. 82.4 ms (4.0 G/s) | 2.18 .. 2.45 ms (135 .. 151 G/s) | 36x |
+
+`test-backend-ops perf -o LITTLEBIT -b CPU` (8 threads, one op repeated, weights in cache), reference -> AVX2:
+25x to 30x with 1 token (5120 x 13824: 16.5 ms -> 579 us), 18x to 32x with 8 tokens, 9.9x to 13.5x with 128 and 512 tokens
+(5120 x 13824, 512 tokens: 1.61 s -> 141 ms, 0.51 dense-equivalent TFLOPS, 2 n d_in d_out / time).
+
+What bounds it: with one token on 6 threads it reads about 9-10 GB/s of weights, while the same machine streams the
+dense F16 model at about 70 GB/s (1.40 GiB per token at 46.5 tokens/s, below), so the kernel is not bandwidth bound
+but instruction bound: 16 vector instructions per 32 sign-adds with one token, about 11 G sign-adds/s per thread
+measured (clocks and port use were not measured, so the gap to the instruction ceiling is not attributed). With 8
+tokens the sign masks and gathers are shared and the rate about doubles. Keeping the accumulators in registers
+mattered (see the comment at `lb_block_impl`: plain loops left them in memory under MSVC; one thread, 8 tokens: 10.5 ..
+15.1 against 22.6 .. 28.3 G/s).
+
+Model level, Qwen3-0.6B LittleBit B1 0.55 bpw (`qwen3-0.6b-lb2-0.55-b1.gguf`), `llama-bench -ngl 0 -dev none -t 6
+-p 128 -n 32 -r 5`, the engine before (scalar kernel) and after this change in alternating runs, 3 rounds each:
+
+| engine | pp128 (tokens/s) | tg32 (tokens/s) |
+|---|---|---|
+| before (scalar reference kernel) | 40.4 +- 0.9, 36.7 +- 1.0, 36.2 +- 1.3 | 7.37 +- 0.08, 7.24 +- 0.04, 7.17 +- 0.08 |
+| after (AVX2 kernel) | 420 +- 33, 391 +- 32, 360 +- 14 | 94.4 +- 4.5, 95.8 +- 1.7, 92.8 +- 2.0 |
+
+That is 12.9x faster decoding and about 10x faster prompt processing. Same settings, for context: dense F16 Qwen3-0.6B
+tg32 46.5 +- 1.1, pp128 264 +- 6; the Q1_0 slow path with the same F16 head tg32 91.9 +- 1.6, pp128 369 +- 19 (the fused
+op is now as fast as the int8 chain on the CPU, without its activation rounding). After, other settings: `-t 4` tg32
+84.9, `-t 8` 102.6, `-t 12` 96.0 (single runs); `-t 6 -p 512 -n 128 -r 3`: pp512 354 +- 8, tg128 93.2 +- 2.1. Where
+decode time goes now, estimated from the op-level times above (28 layers x q, k, v, o, gate, up, down): the 196
+LittleBit linears take about 4.6 ms of the 10.7 ms per token; the rest (the F16 output head, 311 MB per token,
+attention, norms) was not broken down.
+
+Reproduce: `test-littlebit-ref.exe`, `test-backend-ops.exe test -o LITTLEBIT -b CPU`, `test-backend-ops.exe perf -o
+LITTLEBIT -b CPU` from `engine/build/bin`; `cpu_bench.exe` as in `engine/tools/littlebit-bench/README.md`; the model rows
+with `llama-bench.exe -m <gguf> -ngl 0 -dev none -t 6 -p 128 -n 32 -r 5`. A laptop's CPU clocks depend on power mode,
+temperature and load, and the scheduler decides which threads run on P- or E-cores: compare kernels in alternating
+runs, as above.
 
 ## CUDA backend of GGML_OP_LITTLEBIT (decode, 1..8 tokens)
 
@@ -258,7 +365,7 @@ op repeated in one graph, so its small weights stay in the 24 MB L2. "cold" = on
 weights (96 MB or more per graph, like the layers of a model), `engine/tools/littlebit-bench/cold_bench.cpp` on the
 public ggml API. Bandwidth = weight bytes (signs + scales) / time. The F16 mat-vec is `MUL_MAT` with F16 weights of the same
 shape on the same GPU (cold; the harness gives the same within 5% from 4096 x 4096 up). CPU = the scalar reference
-kernel in the harness.
+kernel in the harness (measured before the AVX2 kernel existed, which is 25x to 30x faster with one token, see "CPU: AVX2 kernel").
 
 | d_in x d_out | r + r2 (padded) | n | weights | LittleBit harness | cold | cold GB/s | F16 mat-vec | speed-up | CPU kernel |
 |---|---|---|---|---|---|---|---|---|---|
@@ -541,6 +648,8 @@ slow path (these figures are the output of the tests in that file, run with `-s`
 Speed (CPU, informal and machine-dependent): `test_cpu_speed_fused_vs_chain_is_reported` measured the CPU reference kernel
 at 10 tokens/s against 89 tokens/s for the Q1_0 chain in one run, and 9.2 against 50.6 when repeated on 2026-11-21 (32 tokens
 from "Hello"); either way the scalar reference kernel is several times slower than the slow path, and it is not tuned.
+With the AVX2 kernel (see "CPU: AVX2 kernel") the fused op decodes at about 93-96 tokens/s (`llama-bench -t 6`), as fast
+as the Q1_0 chain with the same F16 head (91.9) and 2x the dense F16 model (46.5).
 
 **Gemma 3 layer pattern:** the engine reads the per-layer sliding-window pattern from the array key
 `gemma3.attention.sliding_window_pattern` (bool per layer, true = sliding window; `load_swa_pattern`) and falls back to the real
@@ -646,5 +755,7 @@ then `nsys stats -r cuda_gpu_kern_sum`.
 - [x] `lb_to_gguf.py` silently skipped unknown linears: the engine copy is deleted; `tools/convert/lb_to_gguf.py` validates every linear.
 - [x] CUDA kernel for `GGML_OP_LITTLEBIT`, 1..8 tokens, ragged `d_out` handled (see "CUDA backend").
 - [x] Use it in models: LittleBit tensors live on the GPU of an offloaded CUDA layer; CUDA paths for any batch.
+- [x] Fast CPU kernel: AVX2, bit-identical to the scalar reference (see "CPU: AVX2 kernel").
+- [ ] AVX-512 CPU path (the AVX-512 variants use the AVX2 kernel; no AVX-512 CPU to test on).
 - [ ] Vulkan kernel (Vulkan layers run the op on the CPU).
 - [ ] Prompt processing is 3x to 4x slower than F16 per large layer (float32 on CUDA cores vs f16 tensor cores).
