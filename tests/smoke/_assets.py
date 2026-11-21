@@ -13,8 +13,11 @@ Layout:
 """
 from __future__ import annotations
 
+import functools
+import hashlib
 import os
 import re
+import shutil
 import subprocess
 import sys
 from pathlib import Path
@@ -37,7 +40,15 @@ LB_GGUF = CACHE / "gguf" / "qwen3-0.6b-lb2-0.55-q1_0.gguf"
 LOGITS_DIR = CACHE / "logits"
 BPW = 0.55
 
+def _add_path(p: Path) -> None:
+    """Put `p` on sys.path once (the helpers may be called many times)."""
+    if str(p) not in sys.path:
+        sys.path.insert(0, str(p))
+
+
 PROMPT = "The capital of France is"
+PROMPT_LONG = "In 1969, the first humans landed on the Moon and said"
+PROMPT_ONE = "Hello"           # single token (9707): position 0, RoPE/attention trivial
 # Token ids of PROMPT for Qwen3 (no BOS); asserted against the engine's tokenizer.
 PROMPT_IDS = [785, 6722, 315, 9625, 374]
 
@@ -70,24 +81,63 @@ def _run(cmd: list[str], timeout: int = 900) -> subprocess.CompletedProcess:
                           stdout=subprocess.PIPE, stderr=subprocess.STDOUT, timeout=timeout)
 
 
+def _digest(*parts: object) -> str:
+    """sha256 over file contents (Paths) and literal values; keys the artifact cache."""
+    h = hashlib.sha256()
+    for p in parts:
+        if isinstance(p, Path):
+            files = sorted(p.rglob("*.py")) if p.is_dir() else [p]
+            for f in files:
+                h.update(f.name.encode())
+                h.update(f.read_bytes())
+        else:
+            h.update(repr(p).encode())
+    return h.hexdigest()
+
+
+def _stamp_ok(target: Path, key: str) -> bool:
+    """True when `target` exists and was built with exactly `key` (so a changed tool rebuilds it)."""
+    stamp = target.with_name(target.name + ".key")
+    return target.exists() and stamp.exists() and stamp.read_text() == key
+
+
+def _commit(tmp: Path, target: Path, key: str) -> None:
+    """Atomically publish `tmp` as `target` (a crash mid-build never leaves a half file)."""
+    if target.exists():
+        shutil.rmtree(target) if target.is_dir() else target.unlink()
+    os.replace(tmp, target)
+    target.with_name(target.name + ".key").write_text(key)
+
+
 def ensure_gguf() -> Path:
-    """Build (if absent) checkpoint -> base GGUF -> LittleBit Q1_0 GGUF; return the last."""
-    if not (CKPT_DIR / "model.safetensors").exists():
+    """Build (if absent or stale) checkpoint -> base GGUF -> LittleBit Q1_0 GGUF; return the last."""
+    maker = ROOT / "tools" / "dev" / "make_lb2_init.py"
+    ck_key = _digest(maker, MODEL_DIR / "model.safetensors", BPW, True, True, 0)
+    if not _stamp_ok(CKPT_DIR, ck_key):
         # Init-only: SVD + joint ITQ + dual-SVID, residual path on (LittleBit-2).
-        sys.path.insert(0, str(ROOT / "tools" / "dev"))
+        _add_path(ROOT / "tools" / "dev")
         from make_lb2_init import make_checkpoint
-        make_checkpoint(str(MODEL_DIR), CKPT_DIR, BPW, use_itq=True, residual=True)
-    if not BASE_GGUF.exists():
+        tmp = CKPT_DIR.with_name(CKPT_DIR.name + ".tmp")
+        shutil.rmtree(tmp, ignore_errors=True)
+        make_checkpoint(str(MODEL_DIR), tmp, BPW, use_itq=True, residual=True)
+        _commit(tmp, CKPT_DIR, ck_key)
+    base_key = _digest(ENGINE / "convert_hf_to_gguf.py", ENGINE / "conversion", MODEL_DIR / "model.safetensors")
+    if not _stamp_ok(BASE_GGUF, base_key):
         # F32 keeps embeddings exact so they do not add error to the logit comparison.
         # Needs the `sentencepiece` package: the Qwen converter imports it eagerly.
         BASE_GGUF.parent.mkdir(parents=True, exist_ok=True)
+        tmp = BASE_GGUF.with_name(BASE_GGUF.name + ".tmp")
         r = _run([sys.executable, ENGINE / "convert_hf_to_gguf.py", MODEL_DIR,
-                  "--outtype", "f32", "--outfile", BASE_GGUF])
+                  "--outtype", "f32", "--outfile", tmp])
         assert r.returncode == 0, r.stdout[-2000:]
-    if not LB_GGUF.exists():
+        _commit(tmp, BASE_GGUF, base_key)
+    lb_key = _digest(ENGINE / "tools" / "littlebit" / "lb_to_gguf.py", ck_key, base_key)
+    if not _stamp_ok(LB_GGUF, lb_key):
+        tmp = LB_GGUF.with_name(LB_GGUF.name + ".tmp")
         r = _run([sys.executable, ENGINE / "tools" / "littlebit" / "lb_to_gguf.py",
-                  CKPT_DIR, MODEL_DIR, BASE_GGUF, LB_GGUF])
+                  CKPT_DIR, MODEL_DIR, BASE_GGUF, tmp])
         assert r.returncode == 0, r.stdout[-2000:]
+        _commit(tmp, LB_GGUF, lb_key)
     return LB_GGUF
 
 
@@ -122,12 +172,61 @@ def engine_logits(gguf: Path, prompt: str, ngl: int) -> tuple[np.ndarray, list[i
     return logits, tokens
 
 
-def reference_logits(token_ids: list[int]) -> np.ndarray:
-    """Last-position logits from the pure-PyTorch reference, CPU, fp32 compute."""
-    import torch
-    sys.path.insert(0, str(ROOT / "tools" / "dev"))
+def engine_layer_sums(gguf: Path, prompt: str, ngl: int = 0) -> dict[int, float]:
+    """Sum of every element of each layer output `l_out-N` for a single-token prompt.
+
+    Uses llama-debug's tensor dump (`--verbose`, filtered), which prints a sum
+    per tensor, so no engine change is needed.  Only the final (real) pass has
+    a 1-token shape; the 2-token warmup pass is ignored.
+    """
+    r = _run([BIN / ("llama-debug" + EXE), "-m", gguf, "-p", prompt, "-ngl", ngl,
+              "--verbose", "--tensor-filter", "^l_out-"])
+    assert r.returncode == 0, r.stdout[-2000:]
+    sums: dict[int, float] = {}
+    for block in re.split(r"(?=common_debug_cb_eval:)", r.stdout):
+        m = re.match(r"common_debug_cb_eval:\s+l_out-(\d+) = .*\{1024, 1, 1, 1\}\n", block)
+        s = re.search(r"sum = (\S+)", block)
+        if m and s:
+            sums[int(m.group(1))] = float(s.group(1))
+    return sums
+
+
+@functools.lru_cache(maxsize=1)
+def reference_model():
+    """The reference model (fp32 compute, CPU); built once per session (it is slow)."""
+    _add_path(ROOT / "tools" / "dev")
     from reference import build_model
-    model = build_model(str(MODEL_DIR), CKPT_DIR).float().eval()
-    with torch.no_grad():
-        out = model(torch.tensor([token_ids], dtype=torch.long))
-    return out.logits[0, -1].float().numpy()
+    return build_model(str(MODEL_DIR), CKPT_DIR).float().eval()
+
+
+def reference_logits(token_ids: list[int], **emulate_kwargs) -> np.ndarray:
+    """Last-position logits of the reference, optionally with the Q8_0 emulation/mutations.
+
+    No kwargs -> plain fp32 `reference.py`; `emulate_kwargs` are forwarded to
+    `emulate_q8_slow_path.emulate` (quantize, kv_f16, drop_residual, permute_qk).
+    """
+    _add_path(ROOT / "tools" / "dev")
+    import emulate_q8_slow_path as E
+    model = reference_model()
+    E.emulate(model, **(emulate_kwargs or dict(quantize=False, kv_f16=False)))
+    return E.last_logits(model, token_ids)
+
+
+def layer_sums_reference(token_ids: list[int]) -> list[float]:
+    """Per-layer output sums of the Q8_0-emulated reference (matches `engine_layer_sums`)."""
+    import torch
+    _add_path(ROOT / "tools" / "dev")
+    import emulate_q8_slow_path as E
+    model = reference_model()
+    E.emulate(model)
+    outs: list[float] = []
+    hooks = [layer.register_forward_hook(
+        lambda mod, i, o: outs.append((o[0] if isinstance(o, tuple) else o).sum().item()))
+        for layer in model.model.layers]
+    try:
+        with torch.no_grad():
+            model(torch.tensor([token_ids], dtype=torch.long))
+    finally:
+        for h in hooks:
+            h.remove()
+    return outs
