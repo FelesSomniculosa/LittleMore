@@ -108,6 +108,23 @@ Example, making a checkpoint by hand:
 .venv\Scripts\python.exe tools/dev/make_lb2_init.py .cache/models/Qwen3-0.6B out/ckpt --bpw 0.55
 ```
 
+## 6. Converter in `tools/convert`
+
+| File | Purpose |
+|---|---|
+| `lb_to_gguf.py` | converts a Samsung-format LittleBit checkpoint directory to a GGUF whose sign matrices are `B1` (exactly 1 bit per sign); every linear is validated after writing |
+| `validate.py` | re-decodes the written GGUF tensors and compares each linear with `reference.py` |
+
+```powershell
+.venv\Scripts\python.exe -m tools.convert.lb_to_gguf .cache/ckpt/qwen3-0.6b-lb2-0.55 -o out/model.gguf
+.venv\Scripts\python.exe -m pytest tests/convert -q
+```
+
+Until the engine loader for `B1` exists (Task 8) these GGUFs cannot be run in
+llama.cpp; correctness is checked numerically by the validator. The converter
+tests build tiny random models offline; the Qwen families need the cached
+Qwen3-0.6B tokenizer (they skip without it), Llama and Gemma 3 need nothing.
+
 ## Glossary
 
 - **LittleBit / LittleBit-2**: methods that store a weight matrix as low-rank

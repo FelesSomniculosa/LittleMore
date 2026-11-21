@@ -1,0 +1,553 @@
+"""LittleBit checkpoint (Samsung format) -> GGUF with GGML_TYPE_B1 weights, with validation.
+
+What
+    `convert()` turns a directory holding a Samsung-format LittleBit checkpoint
+    (bit-packed sign matrices + scale vectors, plus the original HF config/tokenizer and the
+    non-LittleBit tensors) into ONE self-contained GGUF file that the LittleMore engine can
+    load: every LittleBit linear becomes five tensors `blk.N.<sub>.lb_v / lb_u / lb_s_v2 /
+    lb_s_mid / lb_s_u1` (plus the same five with an `r` suffix for the residual path), the
+    signs stored as the engine's pure 1-bit type B1 (exactly 1.0 bit per sign, no scale).
+Why
+    The sign matrices are the bulk of the model; B1 stores them at exactly 1 bit per sign
+    (the older Q1_0 slow path stored an unused per-block scale as well: 1.125 bits).  The
+    row/column permutations the HF-to-GGUF conversion applies (RoPE layout of Q/K, Qwen3.5
+    value-head reorder, ...) are NOT reimplemented here: see "Probes" below.
+
+Starting point and licence
+    The structure of this file (probe mechanism, scale folding, rank padding, naming) is
+    derived from `engine/tools/littlebit/lb_to_gguf.py` by Cybertiron (MIT licence,
+    "Architecture-generic LittleBit -> GGUF converter"), which wrote Q1_0 tensors from a
+    base GGUF.  Changes here: B1 output with the polarity flip, one self-contained input
+    directory (the base GGUF is produced inside, by llama.cpp's own converter classes),
+    per-layer numerical validation by reading the written file back, and an atomic write.
+    MIT licence notice of the original: Permission is hereby granted, free of charge, to
+    any person obtaining a copy of the software to deal in it without restriction,
+    subject to the inclusion of the original copyright and permission notice in all copies
+    or substantial portions.  The software is provided "as is", without warranty of any kind.
+
+Limitation (until Task 8)
+    The engine-side loader/graph that consumes B1 factors lands in Task 8.  Until then a
+    B1 GGUF cannot be RUN in llama.cpp (the old slow path multiplies with mul_mat, which
+    refuses B1).  Correctness is therefore established numerically here: every linear is
+    read back from the written file and compared with the PyTorch reference
+    (`validate.py`).  This module does not modify the engine.
+
+Naming map (checkpoint -> GGUF); the product v1*u2 is folded because nothing sits between
+the two rank-space scales (same table as reference.py):
+
+        reference/checkpoint   u1        v1 * u2     v2
+        GGUF tensor            lb_s_u1   lb_s_mid    lb_s_v2
+        sign matrices          U (out,r) -> lb_u [r, out]    V (r,in) -> lb_v [in, r]   (ggml order)
+
+    y = s_u1 * (Ub @ (s_mid * (Vb^T @ (s_v2 * x))))  [+ the `r` path]
+
+Choices for the non-LittleBit tensors (embeddings, norms, lm_head, small non-factored
+linears, biases): they come from the same checkpoint directory (the maker stores them as
+bf16) and go through llama.cpp's real converter class for the architecture, with
+`--outtype f16` semantics: 2-D+ weights (token embeddings, output head, any small dense
+linear) are written as F16, 1-D tensors (norms, biases, scale-like vectors) as F32.
+`head_type` is the hook for Q8_0/Q6_K heads (Task 13).  Terms (LittleBit, GGUF, rank, RoPE,
+GQA) are defined in docs/development.md (glossary).
+
+Usage: python -m tools.convert.lb_to_gguf <ckpt_dir> -o <out.gguf> [--head-type f16] [--no-validate]
+"""
+from __future__ import annotations
+
+import argparse
+import gc
+import json
+import logging
+import os
+import re
+import sys
+import tempfile
+from dataclasses import dataclass, field
+from pathlib import Path
+from typing import Any
+
+import numpy as np
+import torch
+from safetensors import safe_open
+
+# The engine's gguf-py (has GGMLQuantizationType.B1; the pip-installed gguf may not) and its
+# `conversion` package (llama.cpp's HF -> GGUF converter classes), and tools/dev/reference.py.
+_REPO = Path(__file__).resolve().parents[2]
+for _p in (_REPO / "tools" / "dev", _REPO / "engine", _REPO / "engine" / "gguf-py"):
+    if str(_p) not in sys.path:
+        sys.path.insert(0, str(_p))
+
+import gguf  # noqa: E402
+import reference as ref  # noqa: E402
+from conversion import get_model_class  # noqa: E402
+from conversion.base import ModelBase, ModelType, get_model_architecture  # noqa: E402
+
+from . import validate as _validate  # noqa: E402
+# Public alias so callers/tests can reach the validator as `lb_to_gguf.validate`.  Inside
+# `convert_checkpoint` the parameter `validate` shadows it, hence the private `_validate`.
+validate = _validate
+
+logger = logging.getLogger("littlemore.convert")
+
+QK = 128  # signs per B1 block (16 bytes); the rank and the input width must be multiples of it
+_HEAD_TYPES = ("f16", "q8_0", "q6_k")
+# Names the maker / Samsung tooling use for the scale tensors of a path; used to recognise
+# which checkpoint keys belong to LittleBit linears (everything else is a plain tensor).
+_LB_KEY = ref._KEY
+_LB_KEY_R = ref._KEY_R
+
+
+class ConversionError(Exception):
+    """The checkpoint cannot be converted correctly (bad input, unsupported layout, failed validation)."""
+
+
+@dataclass
+class Probe:
+    """Where the HF converter put one GGUF tensor made from a checkpoint linear.
+
+    `gguf_name`: GGUF tensor name (with `.weight`); GGUF output row i = checkpoint row
+    `row_idx[i]`, GGUF input column j = checkpoint column `col_idx[j]`.
+    """
+    gguf_name: str
+    row_idx: np.ndarray
+    col_idx: np.ndarray
+
+
+@dataclass
+class ConversionReport:
+    """What `convert_checkpoint` did (returned for tests and the CLI summary)."""
+    n_linears: int = 0                      # LittleBit linears listed in the checkpoint
+    n_validated: int = 0                    # ... of which read back and validated
+    max_rel_err: float = 0.0                # worst validation error over all linears
+    tolerance: float = 0.0                  # the (smallest) tolerance used
+    probes: dict[str, list[Probe]] = field(default_factory=dict)   # module -> GGUF tensors made from it
+    written_names: list[str] = field(default_factory=list)        # every tensor name in the GGUF
+    biases: list[str] = field(default_factory=list)               # checkpoint bias tensors carried over
+    dropped: list[str] = field(default_factory=list)              # source tensors the HF converter dropped
+    arch: str = ""
+    lb_bytes: int = 0                       # bytes of the B1 sign matrices written
+
+
+def pad_to(n: int, m: int = QK) -> int:
+    """Smallest multiple of `m` that is >= n (the rank is padded to a multiple of 128)."""
+    return (n + m - 1) // m * m
+
+
+def signs_to_b1(signs: np.ndarray) -> np.ndarray:
+    """Pack a (rows, cols) matrix of +1/-1 (int8) into B1 bytes, shape (rows, cols // 8).
+
+    THE POLARITY FLIP.  Samsung's checkpoints pack +1 as bit 0 and -1 as bit 1
+    (`reference.unpack_signs` documents this); the engine's B1 type packs +1 as bit 1 and
+    -1 as bit 0.  Both are least-significant-bit first (element i in byte i // 8, bit
+    i % 8).  We never touch the Samsung bits directly: the checkpoint is first decoded to
+    real +1/-1 values by `reference.unpack_signs` (inside `reference.load_checkpoint`),
+    and here the VALUES are re-encoded with the B1 convention, `bit = (value > 0)`.  That
+    is the flip, expressed as "encode the meaning, not the bits", so it cannot be
+    forgotten or applied twice by accident.  This equals `gguf.quants.quantize(x, B1)`
+    for x = +/-1 (checked in tests/convert).
+    """
+    if signs.ndim != 2 or signs.shape[1] % 8:
+        raise ValueError(f"signs must be (rows, cols) with cols % 8 == 0, got {signs.shape}")
+    return np.packbits(signs > 0, axis=-1, bitorder="little")
+
+
+def _f32(t: torch.Tensor) -> np.ndarray:
+    """A checkpoint scale tensor as a flat contiguous float32 array (stored scales may be bf16/f16)."""
+    return np.ascontiguousarray(t.float().numpy().reshape(-1), dtype=np.float32)
+
+
+def _build_path(p: ref.LBPathParams, ri: np.ndarray, ci: np.ndarray, where: str) -> dict[str, np.ndarray]:
+    """GGUF arrays of one path (primary or residual) of one linear, for the permutation (ri, ci).
+
+    Returns {"lb_v", "lb_u", "lb_s_v2", "lb_s_mid", "lb_s_u1"} (no residual suffix).
+
+    Row/column permutation: the HF converter may reorder the linear's output rows (`ri`:
+    GGUF row i = checkpoint row ri[i]) and input columns (`ci`).  For W = diag(u1) U diag(mid)
+    V diag(v2) a row permutation of W is the same permutation of the rows of U and of u1;
+    a column permutation of W is the same permutation of the columns of V and of v2.  The
+    rank dimension is untouched.
+
+    Rank padding: B1 rows are 128-sign blocks, and the fused kernel walks the rank in blocks
+    too, so the rank r is padded to rp = pad_to(r).  Padded V rows / U columns are filled with
+    +1 (any sign would do) and the padded `lb_s_mid` entries are exactly 0.  Every padded rank
+    index k then contributes  s_u1 * U[:, k] * (0 * (V[k] . (s_v2 * x)))  =  0  to the output,
+    so the padded layer computes bit-for-bit the same function as the unpadded one.  (The
+    padded products are exact zeros, not small numbers, so even float rounding is unchanged.)
+    """
+    r = p.V.shape[0]
+    rp = pad_to(r)
+    n_in, n_out = len(ci), len(ri)
+    if n_in % QK:
+        raise ConversionError(f"{where}: input width {n_in} is not a multiple of {QK}; B1 rows are 128-sign blocks")
+    V = p.V.numpy()  # int8 +/-1, (r, in), already decoded from the Samsung bits
+    U = p.U.numpy()  # int8 +/-1, (out, r)
+    Vp = np.ones((rp, n_in), dtype=np.int8)
+    Vp[:r] = V[:, ci]
+    Up = np.ones((n_out, rp), dtype=np.int8)
+    Up[:, :r] = U[ri]
+    # mid = v1 * u2, formed in float32 exactly like reference.LBLinear (v1 * u2), then zero-padded.
+    mid = np.zeros(rp, dtype=np.float32)
+    mid[:r] = _f32(p.v1) * _f32(p.u2)
+    return {
+        "lb_v": signs_to_b1(Vp),                          # ggml [n_in, rp]: rp rows of n_in/8 bytes
+        "lb_u": signs_to_b1(Up),                          # ggml [rp, n_out]: n_out rows of rp/8 bytes
+        "lb_s_v2": np.ascontiguousarray(_f32(p.v2)[ci]),
+        "lb_s_mid": mid,
+        "lb_s_u1": np.ascontiguousarray(_f32(p.u1)[ri]),
+    }
+
+
+def _convert_one(conv: ModelBase, name: str, data: torch.Tensor, bid: int | None) -> list[tuple[str, torch.Tensor]]:
+    """Push one tensor through the HF converter exactly as it would: filter_tensors, then modify_tensors."""
+    item = conv.filter_tensors((name, lambda: data))
+    if item is None:
+        return []
+    name, gen = item
+    return list(conv.modify_tensors(gen(), name, bid))
+
+
+def probe_linear(conv: ModelBase, name: str, bid: int | None, out_f: int, in_f: int) -> list[Probe]:
+    """Find where llama.cpp's converter puts the rows and columns of the HF linear `name`.
+
+    The probe mechanism.  The converter classes rename tensors and may permute, split or
+    merge rows/columns (Q/K rows for RoPE, Qwen3.5 V-head reorder, ...).  Instead of
+    copying that logic per architecture we feed the real converter two index tensors of
+    the linear's shape:  R[i, j] = i  (row probe)  and  C[i, j] = j  (column probe).  What
+    comes out says, for each output tensor, which source row / column sits at each position.
+    That is only meaningful when the transform is a *pure permutation*: it moves whole rows
+    and whole columns around (or selects a subset of them) without mixing values -- then
+    R comes out constant along each row and C constant along each column, and the factors
+    can be permuted the same way (see `_build_path`).  Anything else (a scaling, a
+    sum of rows, ...) would be mangled by us, so it is rejected.  Float32 holds integers
+    exactly up to 2**24, far beyond any layer dimension.
+    """
+    R = torch.arange(out_f, dtype=torch.float32)[:, None].expand(out_f, in_f).contiguous()
+    rows = _convert_one(conv, name, R, bid)
+    del R
+    C = torch.arange(in_f, dtype=torch.float32)[None, :].expand(out_f, in_f).contiguous()
+    cols = _convert_one(conv, name, C, bid)
+    del C
+    res: list[Probe] = []
+    if len(rows) != len(cols):
+        raise ConversionError(f"{name}: converter produced {len(rows)} tensors for the row probe but {len(cols)} for the column probe")
+    for (gn, r), (gn2, c) in zip(rows, cols):
+        if gn != gn2 or r.shape != c.shape or r.ndim != 2:
+            raise ConversionError(f"{name}: inconsistent probe outputs ({gn}, {gn2}, {tuple(r.shape)}, {tuple(c.shape)})")
+        ri = r[:, 0].round().long()
+        ci = c[0, :].round().long()
+        if not (torch.equal(r, ri[:, None].float().expand_as(r)) and torch.equal(c, ci[None, :].float().expand_as(c))):
+            raise ConversionError(f"{name}: converter transform is not a pure row/column permutation")
+        if len(torch.unique(ri)) != len(ri) or len(torch.unique(ci)) != len(ci):
+            raise ConversionError(f"{name}: converter repeats rows or columns (not a permutation)")
+        res.append(Probe(gn, ri.numpy(), ci.numpy()))
+    return res
+
+
+_LAYER_NAME = re.compile(r"^(?P<pre>.*?layers\.)(?P<bid>\d+)\.(?P<sub>.+)$")
+
+
+def _split_layer_name(mod: str) -> tuple[int | None, str]:
+    """('model.layers.3.mlp.up_proj') -> (3, 'mlp.up_proj'); (None, mod) when not inside a layer."""
+    m = _LAYER_NAME.match(mod)
+    return (int(m["bid"]), m["sub"]) if m else (None, mod)
+
+
+def _shard_files(ckpt: Path) -> list[Path]:
+    """The `*.safetensors` shards of the checkpoint directory (same rule as reference.load_checkpoint)."""
+    return sorted(ckpt.glob("*.safetensors"))
+
+
+def _checkpoint_keys(ckpt: Path) -> list[str]:
+    """All tensor keys of the checkpoint shards."""
+    keys: list[str] = []
+    for shard in _shard_files(ckpt):
+        with safe_open(str(shard), framework="pt") as f:
+            keys.extend(f.keys())
+    return keys
+
+
+def _lb_module_of(key: str) -> str | None:
+    """Module name if `key` is one of the LittleBit tensors (signs / shapes / scales), else None."""
+    m = _LB_KEY_R.match(key) or _LB_KEY.match(key)
+    return m["mod"] if m else None
+
+
+def _check_inputs(ckpt: Path, head_type: str) -> dict[str, Any]:
+    """Early, cheap checks: head_type, required config files, shards present.  Returns littlebit_config."""
+    if head_type not in _HEAD_TYPES:
+        raise ConversionError(f"unknown head_type {head_type!r}; expected one of {_HEAD_TYPES}")
+    if head_type != "f16":
+        raise NotImplementedError(f"head_type={head_type!r}: Task 13")
+    if not ckpt.is_dir():
+        raise ConversionError(f"checkpoint directory not found: {ckpt}")
+    for fn in ("config.json", "littlebit_config.json"):
+        if not (ckpt / fn).is_file():
+            raise ConversionError(f"{ckpt}: required file {fn} is missing (config.json: the HF architecture/hyper-parameters; "
+                                  "littlebit_config.json: how the checkpoint was made)")
+    if not _shard_files(ckpt):
+        raise ConversionError(f"{ckpt}: no *.safetensors files")
+    try:
+        return json.loads((ckpt / "littlebit_config.json").read_text(encoding="utf-8"))
+    except ValueError as e:
+        raise ConversionError(f"{ckpt / 'littlebit_config.json'}: not valid JSON ({e})") from e
+
+
+def _make_converter(ckpt: Path, tmp_out: Path) -> ModelBase:
+    """llama.cpp's converter class for the checkpoint's HF architecture, in F16 mode.
+
+    `_SHARED_INPUT_MERGES = ()` switches off the merging of tensors that share an input
+    (Qwen3.5 fuses in_proj_qkv+in_proj_z and in_proj_b+in_proj_a): a merged linear cannot be
+    factored, so each linear stays its own GGUF tensor (the loader accepts both layouts).
+    """
+    try:
+        hparams = ModelBase.load_hparams(ckpt, False)
+        arch = get_model_architecture(hparams, ModelType.TEXT)
+        cls = get_model_class(arch)
+        # MTP = multi-token-prediction head (speculative decoding), carried by some Qwen3.5 / Qwen3-Next
+        # models.  The engine has no use for it here, and without this flag the Qwen converters insist
+        # that the config declares one.  Set on the class only for the duration of construction.
+        had = "no_mtp" in cls.__dict__
+        old = cls.__dict__.get("no_mtp")
+        cls.no_mtp = True
+        try:
+            conv = cls(ckpt, gguf.LlamaFileType.MOSTLY_F16, tmp_out, hparams=hparams)
+        finally:
+            if had:
+                cls.no_mtp = old
+            else:
+                del cls.no_mtp
+    except ConversionError:
+        raise
+    except Exception as e:
+        raise ConversionError(f"cannot set up llama.cpp's converter for {ckpt} ({type(e).__name__}: {e})") from e
+    conv._SHARED_INPUT_MERGES = ()
+    logger.info("converter class %s (arch %s)", cls.__name__, conv.model_arch.name)
+    return conv
+
+
+def convert_checkpoint(ckpt_dir: Path, out: Path, head_type: str = "f16", validate: bool = True) -> ConversionReport:
+    """Convert and (by default) validate; same as `convert` but returns a `ConversionReport`.
+
+    Steps: (1) check the inputs; (2) load and cross-check the LittleBit params with
+    `reference.load_checkpoint` (duplicate keys, shape mismatches -> ConversionError naming
+    the layer); (3) run llama.cpp's converter over the NON-LittleBit tensors (this also writes
+    the metadata and vocabulary); (4) probe every LittleBit linear and add its B1/F32 tensors;
+    (5) write to a temp file next to `out`; (6) read it back and validate every linear against
+    the reference; (7) rename onto `out` only if everything passed.  On any failure no
+    output and no temp file remain.
+    """
+    ckpt_dir, out = Path(ckpt_dir), Path(out)
+    lbcfg = _check_inputs(ckpt_dir, head_type)
+    try:
+        params = ref.load_checkpoint(ckpt_dir)
+    except ValueError as e:
+        raise ConversionError(str(e)) from e
+    if not params:
+        raise ConversionError(f"{ckpt_dir}: no LittleBit linear found (no <module>.U_packed tensors)")
+    has_res = [m for m, p in params.items() if p.residual is not None]
+    if "residual" in lbcfg and bool(lbcfg["residual"]) != bool(has_res):
+        raise ConversionError(f"littlebit_config.json says residual={lbcfg['residual']} but "
+                              f"{len(has_res)} of {len(params)} linears have a residual path")
+    for mod, p in params.items():
+        if p.residual is not None and (p.residual.U.shape[0], p.residual.V.shape[1]) != (p.primary.U.shape[0], p.primary.V.shape[1]):
+            raise ConversionError(f"{mod}: residual path shape differs from the primary path")
+
+    out.parent.mkdir(parents=True, exist_ok=True)
+    fd, tmp_name = tempfile.mkstemp(prefix=out.name + ".", suffix=".partial", dir=out.parent)
+    os.close(fd)
+    tmp = Path(tmp_name)
+    try:
+        report = _build(ckpt_dir, params, tmp, validate)
+        gc.collect()  # drop any memory map of `tmp` before renaming it (Windows refuses otherwise)
+        os.replace(tmp, out)
+        return report
+    finally:
+        gc.collect()
+        try:
+            tmp.unlink()  # only still there when something failed
+        except FileNotFoundError:
+            pass
+
+
+def _build(ckpt: Path, params: dict[str, ref.LBLinearParams], tmp: Path, validate: bool) -> ConversionReport:
+    """Everything between 'inputs checked' and 'rename': build the GGUF in `tmp` and validate it."""
+    report = ConversionReport(n_linears=len(params))
+    conv = _make_converter(ckpt, tmp)
+    report.arch = conv.model_arch.name.lower()
+
+    # (3) Drop the LittleBit tensors from the converter's index so it only handles plain ones.
+    # `_source_tensor_names` maps each source key to the name the converter indexed it under.
+    lb_filtered: set[str] = set()
+    for src, filt in conv._source_tensor_names.items():
+        if _lb_module_of(src) in params and filt is not None:
+            lb_filtered.add(filt)
+    for filt in lb_filtered:
+        conv.model_tensors.pop(filt, None)
+    report.dropped = sorted(src for src, filt in conv._source_tensor_names.items()
+                            if filt is None and _lb_module_of(src) not in params)
+    keys = set(_checkpoint_keys(ckpt))
+    report.biases = sorted(f"{m}.bias" for m in params if f"{m}.bias" in keys)
+    if report.biases:
+        # Biases are plain tensors: the HF converter carries them over, but whether the engine's loader
+        # for this architecture READS a bias next to a factored weight is the loader's business (Qwen3's
+        # does not).  Say so loudly instead of letting it pass unnoticed.
+        logger.warning("checkpoint has %d bias tensor(s) on LittleBit linears (%s ...); they are written to the GGUF "
+                       "as ordinary bias tensors; make sure the engine loader for this architecture uses them",
+                       len(report.biases), report.biases[0])
+    layer_drops = [s for s in report.dropped if re.search(r"layers\.\d+\.", s) and not s.startswith("mtp.")]
+    if layer_drops:
+        raise ConversionError(f"llama.cpp's converter drops decoder-layer tensors that are not LittleBit linears "
+                              f"(would be silently missing): {layer_drops[:5]}")
+    try:
+        conv.prepare_tensors()
+    except Exception as e:
+        raise ConversionError(f"llama.cpp's converter failed on the non-LittleBit tensors ({type(e).__name__}: {e})") from e
+    writer = conv.gguf_writer
+
+    # (4) The LittleBit linears.
+    probe_cache: dict[tuple, list[tuple[str, np.ndarray, np.ndarray]]] = {}
+    layer_types = conv.hparams.get("layer_types") or (conv.hparams.get("text_config") or {}).get("layer_types")
+    for mod in sorted(params):
+        p = params[mod]
+        bid, sub = _split_layer_name(mod)
+        out_f, in_f = p.primary.U.shape[0], p.primary.V.shape[1]
+        ltype = layer_types[bid] if (layer_types and bid is not None and bid < len(layer_types)) else None
+        key = (ltype, sub, out_f, in_f)
+        if key not in probe_cache:
+            probes = probe_linear(conv, mod + ".weight", bid, out_f, in_f)
+            if not probes:
+                raise ConversionError(f"{mod}: llama.cpp's converter produced no GGUF tensor for this linear "
+                                      "(unsupported or dropped); refusing to continue without it")
+            # Store names with the layer index abstracted so other layers of the same kind reuse the probe.
+            probe_cache[key] = [(re.sub(r"^blk\.\d+\.", "blk.{}.", pr.gguf_name), pr.row_idx, pr.col_idx) for pr in probes]
+        report.probes[mod] = []
+        for tmpl, ri, ci in probe_cache[key]:
+            gname = tmpl.format(bid) if bid is not None else tmpl
+            base = gname.removesuffix(".weight")
+            report.probes[mod].append(Probe(gname, ri, ci))
+            for sfx, path in (("", p.primary), ("r", p.residual)):
+                if path is None:
+                    continue
+                arrays = _build_path(path, ri, ci, f"{mod}{'' if not sfx else ' (residual)'}")
+                for k, arr in arrays.items():
+                    name = f"{base}.{k}{sfx}"
+                    try:
+                        if k in ("lb_v", "lb_u"):
+                            writer.add_tensor(name, arr, raw_dtype=gguf.GGMLQuantizationType.B1)
+                            report.lb_bytes += arr.size
+                        else:
+                            writer.add_tensor(name, arr)
+                    except ValueError as e:
+                        raise ConversionError(f"{mod}: cannot add GGUF tensor {name} ({e})") from e
+
+    # (5) Metadata (incl. vocabulary) and file.
+    try:
+        conv.prepare_metadata(vocab_only=False)
+    except Exception as e:
+        raise ConversionError(f"llama.cpp's converter failed on metadata/vocabulary ({type(e).__name__}: {e}); "
+                              "does the checkpoint directory contain the tokenizer files?") from e
+    report.written_names = sorted(n for shard in writer.tensors for n in shard)
+    writer.write_header_to_file(path=tmp)
+    writer.write_kv_data_to_file()
+    writer.write_tensors_to_file(progress=False)
+    writer.close()
+    del conv, writer
+    gc.collect()
+
+    # (6) Read back and check: counts first (nothing silently skipped), then numerics.
+    _check_written(tmp, params, report, validate)
+    return report
+
+
+def _check_written(path: Path, params: dict[str, ref.LBLinearParams], report: ConversionReport, validate: bool) -> None:
+    """Read the written GGUF back and verify counts and (if `validate`) every linear numerically.
+
+    Why read back: the arrays the converter held in memory are not what the engine sees; the
+    file is.  Reading it with gguf-py's reader checks the shapes, types and byte layout
+    that actually reached the disk, and the validator decodes the B1 bytes independently.
+
+    The checking itself returns an error MESSAGE instead of raising: gguf-py memory-maps the
+    file, and an exception in flight keeps those mappings alive through its traceback, which
+    on Windows would stop `convert_checkpoint` from deleting the temp file.  So the mapping
+    is released first, then the error is raised.
+    """
+    msg = _verify(path, params, report, validate)
+    gc.collect()
+    if msg is not None:
+        raise ConversionError(msg)
+
+
+def _verify(path: Path, params: dict[str, ref.LBLinearParams], report: ConversionReport, validate: bool) -> str | None:
+    """The checks of `_check_written`; returns None when fine, else the error message."""
+    reader = gguf.GGUFReader(str(path))
+    by_name = {t.name: t for t in reader.tensors}
+    n_lb_v = sum(1 for n in by_name if n.endswith(".lb_v"))
+    expected = sum(len(v) for v in report.probes.values())
+    if n_lb_v != expected or set(report.probes) != set(params):
+        return (f"count check failed: {len(params)} checkpoint linears / {expected} expected GGUF linears, "
+                f"{n_lb_v} lb_v tensors found in the file")
+    for mod in sorted(params):
+        p = params[mod]
+        for pr in report.probes[mod]:
+            base = pr.gguf_name.removesuffix(".weight")
+            group: dict[str, Any] = {}
+            for sfx, path_ in (("", p.primary), ("r", p.residual)):
+                if path_ is None:
+                    continue
+                for k in ("lb_v", "lb_u", "lb_s_v2", "lb_s_mid", "lb_s_u1"):
+                    t = by_name.get(f"{base}.{k}{sfx}")
+                    if t is None:
+                        return f"{mod}: tensor {base}.{k}{sfx} is missing from the written file"
+                    group[k + sfx] = t
+            if f"{base}.lb_vr" in by_name and p.residual is None:
+                return f"{mod}: residual tensors written for a checkpoint linear without a residual path"
+            if not validate:
+                continue
+            tol = _validate.tolerance(p)
+            try:
+                err = _validate.validate_layer(p, group, row_idx=pr.row_idx, col_idx=pr.col_idx)
+            except ValueError as e:
+                return f"{mod}: {e}"
+            report.tolerance = tol if not report.tolerance else min(report.tolerance, tol)
+            report.max_rel_err = max(report.max_rel_err, err)
+            if not err <= tol:
+                return f"{mod} -> {pr.gguf_name}: max relative error {err:.3e} exceeds tolerance {tol:.3e}"
+            report.n_validated += 1
+    return None
+
+
+def convert(ckpt_dir: Path, out: Path, head_type: str = "f16", validate: bool = True) -> None:
+    """Convert the Samsung-format LittleBit checkpoint in `ckpt_dir` to a B1 GGUF at `out`.
+
+    `head_type`: precision of the embedding / output head; only "f16" is implemented
+    ("q8_0" / "q6_k" raise NotImplementedError, Task 13).  With `validate=True` (default)
+    every LittleBit linear is read back from the written file and compared with the PyTorch
+    reference; any error above tolerance, a missing/skipped linear or a bad input raises
+    `ConversionError` and leaves no file at `out` (the file is written to a temp name and
+    renamed only after validation).
+    """
+    convert_checkpoint(ckpt_dir, out, head_type, validate)
+
+
+def main(argv: list[str] | None = None) -> int:
+    """Command-line entry: `python -m tools.convert.lb_to_gguf <ckpt_dir> -o <out.gguf>`."""
+    ap = argparse.ArgumentParser(description="Convert a Samsung-format LittleBit checkpoint to a B1 GGUF.")
+    ap.add_argument("ckpt", type=Path, help="checkpoint directory (safetensors + config.json + tokenizer + littlebit_config.json)")
+    ap.add_argument("-o", "--out", type=Path, required=True, help="output .gguf path")
+    ap.add_argument("--head-type", default="f16", choices=_HEAD_TYPES, help="embedding/output precision (only f16 for now)")
+    ap.add_argument("--no-validate", action="store_true", help="skip the per-layer read-back validation (not recommended)")
+    args = ap.parse_args(argv)
+    logging.basicConfig(level=logging.INFO, format="%(message)s")
+    try:
+        report = convert_checkpoint(args.ckpt, args.out, args.head_type, not args.no_validate)
+    except ConversionError as e:
+        print(f"error: {e}", file=sys.stderr)
+        return 1
+    print(f"wrote {args.out}: {args.out.stat().st_size / 2**20:.1f} MiB, {report.n_linears} LittleBit linears "
+          f"({report.lb_bytes / 2**20:.1f} MiB of B1 signs), validated {report.n_validated}, "
+          f"max rel err {report.max_rel_err:.2e} (tolerance {report.tolerance:.2e})"
+          + (f"; WARNING {len(report.biases)} bias tensors on LittleBit linears carried over" if report.biases else ""))
+    return 0
+
+
+if __name__ == "__main__":
+    sys.exit(main())
