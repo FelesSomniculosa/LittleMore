@@ -5,6 +5,28 @@ The engine lives in `engine/`, which is its **own git repository** (a plain
 local clone of upstream) and is listed in the outer repo's `.gitignore`, so the
 outer repo does not track it. The pin is recorded here instead.
 
+## What is LittleBit
+
+LittleBit stores each weight matrix of a language model as two matrices of
++1/-1 signs (1 bit per entry) of low rank, plus a few small scale vectors, which
+brings a model below 1 bit per weight.  A second "residual" path (LittleBit-2)
+repeats the idea on the error left by the first path.  Papers: LittleBit,
+https://arxiv.org/abs/2506.13771 ; LittleBit-2, https://arxiv.org/abs/2603.00042 .
+Other terms in this project are explained in the glossary of
+[development.md](development.md#glossary).
+
+## Glossary
+
+- **cherry-pick**: copy one commit from another git branch or repository onto the current branch.
+- **pin**: fix the exact upstream version (tag and commit) the engine is based on, so builds are reproducible.
+- **GGUF**: the single-file model format used by llama.cpp (tensors plus metadata).
+- **Q1_0**: a ggml storage type for weights with 1 bit per value (a sign) and a scale per block.
+- **Q8_0**: a ggml storage type with 8-bit integers and one scale per block of 32 values; llama.cpp also uses it to quantize activations before an integer dot product.
+- **backend plugin**: a separate library (`ggml-cuda.dll`, `ggml-vulkan.dll`, `ggml-cpu-*.dll`) that llama.cpp loads at run time to compute on GPU or CPU (built with `GGML_BACKEND_DL`).
+- **Hadamard transform**: a fixed orthogonal mixing of the input values that some quantisation schemes apply before a matrix product.
+- **build_lora_mm**: llama.cpp's graph helper that builds the matrix multiplication for a linear layer (including LoRA adapters); LittleBit hooks in here.
+- **tensor split**: distributing the tensors of a model over several GPUs or devices.
+
 ## Pin
 
 | Item | Value |
@@ -77,7 +99,7 @@ cmake --build build -j 6
 plugins (`ggml-cuda.dll`, `ggml-vulkan.dll`, `ggml-cpu-*.dll`) land in
 `engine/build/bin`.
 
-## Known gaps (TODO for Task 8)
+## Known gaps / TODO
 
 - [ ] LoRA adapters are bypassed on LittleBit linears (`build_lora_mm` returns early).
 - [ ] The Hadamard input transform (`build_hadamard_input`) is skipped for LittleBit linears.

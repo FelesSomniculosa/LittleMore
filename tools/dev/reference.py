@@ -14,10 +14,14 @@ with Vq the (r, in) sign matrix, Uq the (out, r) sign matrix, and scales
 u1 (1,out), u2 (1,r), v1 (1,r), v2 (1,in).
 
 Memory (the 16 GB / 8B-model goal): signs are held as int8 (1 byte/element),
-never as fp32, and the dense W is never built.  A LittleBit model has roughly
-0.55 sign elements per original parameter, so about 0.55 GB per 1B parameters
-for signs, plus 2 bytes/param (bf16) for the non-LittleBit tensors
-(embeddings, norms, lm_head), plus small scale vectors.  build_model creates
+never as fp32, and the dense W is never built.  At a budget of B bits per
+weight a LittleBit model has a little under B sign elements per original
+parameter (the rest of the budget pays for the scale vectors), so the signs
+take about B bytes per 1B parameters (B GB per 1B), e.g. about 0.5 GB per 1B
+at the 0.55 setting used by the smoke test.  On top of that come 2 bytes/param
+(bf16) for the non-LittleBit tensors (embeddings, norms, lm_head) and the
+small scale vectors.  Terms such as "LittleBit" and "GGUF" are defined in
+docs/development.md (glossary).  build_model creates
 the base model with parameters on the meta device, so the dense weights of the
 replaced Linears are never allocated.  forward() casts one layer's int8 signs
 to fp32 transiently (4 bytes/element of that single layer) -- on purpose, to
@@ -98,6 +102,8 @@ class LBLinearParams:
     residual: LBPathParams | None = None
 
 
+# Order of the six tensors of one path; used for both constructor arguments and
+# the buffer names `<name>_<path index>` (shared with emulate_q8_slow_path.py).
 _NAMES = ("U", "V", "u1", "u2", "v1", "v2")
 
 
@@ -130,7 +136,15 @@ class LBLinear(nn.Module):
         return cls(*tup(p.primary), residual=tup(p.residual) if p.residual else None)
 
     def forward(self, x: Tensor) -> Tensor:
-        """Sum over paths of ((((x*v2) @ Vq.T) * (v1*u2)) @ Uq.T) * u1, computed in fp32."""
+        """Sum over paths of ((((x*v2) @ Vq.T) * (v1*u2)) @ Uq.T) * u1, computed in fp32.
+
+        The product v1*u2 is the single "mid" scale between the two sign matmuls.
+        The GGUF converter pre-multiplies it and the engine stores it as one
+        tensor, `lb_s_mid`.  Name mapping to the engine tensors:
+
+            reference   u1       v1 * u2    v2
+            engine      lb_s_u1  lb_s_mid   lb_s_v2
+        """
         xf = x.to(torch.float32)
         y = 0
         for i in range(self.n_paths):
@@ -141,12 +155,23 @@ class LBLinear(nn.Module):
         return y.to(x.dtype)
 
 
+# Checkpoint keys come in two spellings for the residual path, so two patterns:
+#   _KEY   : `<module>.U_packed`, `<module>.u1`, and the scale form `<module>.u1_R`
+#            (also the alias `U_packed_R`, accepted for tolerance);
+#   _KEY_R : the sign form `<module>.U_R_packed` that the maker writes.
+# load_checkpoint normalises both to the same internal name.
 _KEY = re.compile(r"^(?P<mod>.+)\.(?P<name>U_packed|U_shape|V_packed|V_shape|u1|u2|v1|v2)(?P<res>_R)?$")
 # Residual variants are stored as `U_R_packed`, `u1_R`, ...; normalise both spellings.
 _KEY_R = re.compile(r"^(?P<mod>.+)\.(?P<name>U|V)_R_(?P<kind>packed|shape)$")
 
 
 def _build_path(mod: str, t: dict[str, Tensor], res: str) -> LBPathParams:
+    """Build one path (`res` is "" for primary, "_R" for residual) from raw tensors.
+
+    Unpacks the sign matrices to int8 and validates every shape: packed word
+    count vs `*_shape`, equal rank of U and V, and each scale's length.
+    Raises ValueError with the module name on any mismatch.
+    """
     signs = {}
     for m in ("U", "V"):
         packed, shape = t[f"{m}{res}_packed"], t[f"{m}{res}_shape"].tolist()

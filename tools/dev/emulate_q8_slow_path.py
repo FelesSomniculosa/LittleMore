@@ -24,7 +24,10 @@ For each block of 32 consecutive elements of the activation row:
     x' = q * fp16(d)                              # the scale is stored in fp16
 Applied to the vector entering each binary matmul: (x * v2) before V, and
 ((.) * v1*u2) before U.  The rank dimension is zero-padded (as the converter
-pads it to a multiple of 128); zero padding never changes a block's max.
+pads it to a multiple of 128).  This emulation only pads to a multiple of 32
+(its block size), which is equivalent: the padded entries of the middle scale
+v1*u2 are zero, so the padded values entering the second matmul are zero and a
+block's max |x| never grows; padding amount therefore does not matter.
 Everything else (norms, softmax, scale vectors) stays fp32, except the KV
 cache: the engine stores K (after RoPE) and V in f16 and feeds Q to flash
 attention as f16, so q/k/v are rounded through f16 (`kv_f16=True`).  This is NOT
@@ -34,8 +37,8 @@ Verified on layer 0 of the smoke model: with f16-rounded V the emulated o_proj
 first binary matmul output equals the engine's to 6 digits (-42.98644 vs
 -42.98641); without it the match is only ~3 digits.
 
-Mutations (for tests that prove a check has teeth)
---------------------------------------------------
+Mutations (for tests that prove a check fails when the code is wrong)
+-----------------------------------------------------------
 `drop_residual` removes the LittleBit-2 residual path; `permute_qk` applies a
 wrong RoPE-style row permutation (interleaved <-> half-split within each head)
 to q_proj / k_proj outputs.  Both should make the engine agree clearly worse.
@@ -44,6 +47,7 @@ from __future__ import annotations
 
 import types
 
+import numpy as np
 import torch
 from torch import Tensor, nn
 
@@ -92,6 +96,7 @@ def _forward(self: R.LBLinear, x: Tensor) -> Tensor:
 
 
 def _f16(t: Tensor) -> Tensor:
+    """Round to half precision (fp16) and back to fp32: emulates the engine's f16 storage."""
     return t.half().float()
 
 
@@ -99,7 +104,13 @@ _ORIG_ROPE = None
 
 
 def _patch_rope(enable: bool) -> None:
-    """Round q and k (post-RoPE) through f16 to mimic the engine's f16 K cache / FA Q."""
+    """Round q and k (post-RoPE) through f16 to mimic the engine's f16 K cache / FA Q.
+
+    Qwen3 only: it replaces `apply_rotary_pos_emb` in transformers' Qwen3 module,
+    a process-wide global, so it affects every Qwen3 model in this process until
+    called again with enable=False (emulate() calls it on every use).  RoPE is
+    rotary position embedding, see docs/development.md.
+    """
     global _ORIG_ROPE
     from transformers.models.qwen3 import modeling_qwen3 as mq
     if _ORIG_ROPE is None:
@@ -129,7 +140,7 @@ def emulate(model: nn.Module, quantize: bool = True, drop_residual: bool = False
 
 
 @torch.no_grad()
-def last_logits(model: nn.Module, token_ids: list[int]) -> "numpy.ndarray":  # noqa: F821
+def last_logits(model: nn.Module, token_ids: list[int]) -> np.ndarray:
     """Last-position logits (fp32 numpy) for `token_ids` on CPU."""
     out = model(torch.tensor([token_ids], dtype=torch.long))
     return out.logits[0, -1].float().numpy()

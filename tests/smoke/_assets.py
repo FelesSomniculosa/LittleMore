@@ -5,7 +5,7 @@ weights or GGUFs).  Each `ensure_*` function is a no-op when its output exists,
 so a second run only pays for the llama.cpp invocations.
 
 Layout:
-    .cache/models/Qwen3-0.6B/                      base HF model (downloaded by hand/Task 5 setup)
+    .cache/models/Qwen3-0.6B/                      base HF model (download command: docs/development.md)
     .cache/ckpt/qwen3-0.6b-lb2-0.55/               init-only LittleBit-2 checkpoint (tools/dev/make_lb2_init.py)
     .cache/gguf/qwen3-0.6b-base-f32.gguf           plain F32 GGUF; lb_to_gguf copies embeddings/metadata from it
     .cache/gguf/qwen3-0.6b-lb2-0.55-q1_0.gguf      the LittleBit GGUF under test
@@ -56,7 +56,7 @@ PROMPT_IDS = [785, 6722, 315, 9625, 374]
 def missing_assets() -> str | None:
     """Return a human-readable skip reason, or None when everything needed exists."""
     if not (MODEL_DIR / "model.safetensors").exists():
-        return f"base model not cached at {MODEL_DIR} (download Qwen/Qwen3-0.6B there)"
+        return f"base model not cached at {MODEL_DIR} (download it with: .venv/Scripts/hf.exe download Qwen/Qwen3-0.6B --local-dir .cache/models/Qwen3-0.6B)"
     for tool in ("llama-cli", "llama-completion", "llama-debug"):
         if not (BIN / (tool + EXE)).exists():
             return f"engine binary {tool} not built in {BIN} (see docs/engine-changes.md)"

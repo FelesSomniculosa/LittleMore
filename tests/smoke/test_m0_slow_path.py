@@ -24,7 +24,7 @@ reproduced.  Three levels of evidence:
 
 1. Single token ("Hello", position 0: RoPE and attention are trivial).  The
    whole computation is deterministic and identical on both sides, so engine ==
-   emulation to ~4e-6 on CPU and GPU, and all 28 layer outputs agree to <1e-3
+   emulation to ~4e-6 on CPU and GPU, and all 28 layer outputs agree to <2e-3 (sum per layer)
    (vs errors up to 5.5 against fp32).  This isolates conversion, scales, rank
    padding and the residual path.
 2. Multi-token prompts.  Attention and softmax now differ at the last bit
@@ -33,7 +33,7 @@ reproduced.  Three levels of evidence:
    engine and emulation can only agree to the "noise floor": the distance
    between two emulations that differ by nothing but f16-vs-f32 KV rounding.
    We assert engine-vs-emulation rms <= 2x that floor.
-3. Mutation teeth: the same comparison against a reference with the residual
+3. Mutation check (deliberately broken references): the same comparison against a reference with the residual
    path removed, or with q/k rows wrongly permuted (a RoPE-layout error), must
    be at least 2x worse than against the correct reference (measured 2.5x-20x).
 
@@ -55,7 +55,7 @@ import _assets as A
 
 pytestmark = pytest.mark.smoke
 
-# --- thresholds, tied to measured values (see task-5 report) -------------------
+# --- thresholds, tied to measured values -------------------
 # Single token, engine vs emulation, max-abs over 151936 logits.  Measured
 # 3.9e-6 on CPU and 3.8e-6 on GPU; 1e-4 leaves headroom for kernel/thread-order jitter.
 SINGLE_TOKEN_MAX_ABS = 1e-4

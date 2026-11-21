@@ -30,6 +30,12 @@ residual variants `<name>.U_R_packed/.U_R_shape/.V_R_packed/.V_R_shape/.u1_R
 .u2_R .v1_R .v2_R`.  Signs are bit-packed int32 (see `reference.pack_signs`),
 scales float32.  Non-LittleBit tensors (embeddings, norms, lm_head) are copied
 in bf16 into the same file so the checkpoint directory is self-contained.
+
+Naming: this file uses the paper's names inside the algorithm (h, g, urk, vrk)
+and the checkpoint / reference names when storing: h -> u1 (per output row),
+g -> v2 (per input column), urk -> u2 and vrk -> v1 (the two rank-space
+scales).  See `_path`.  Terms used above (SVD, Joint-ITQ, Dual-SVID, QAT, GQA)
+are defined in the glossary of docs/development.md.
 """
 from __future__ import annotations
 
@@ -126,6 +132,10 @@ def rank_for_bits(d_out: int, d_in: int, bpw: float, residual: bool = True) -> i
     16(d_in+d_out) + r(d_in+d_out+16).  Rounded down to a multiple of 8 (kernel
     alignment).  If the formula gives r < 8 the rank is padded up to 8, so for
     tiny matrices the real bpw can exceed the target.
+
+    The budget assumes 16-bit scales (the paper's accounting), but this tool
+    writes the scales as float32, so a checkpoint file is somewhat larger than
+    `bpw` suggests; the GGUF converter stores them as float32 as well.
     """
     n, s = d_in * d_out, d_in + d_out
     if residual:
@@ -137,6 +147,13 @@ def rank_for_bits(d_out: int, d_in: int, bpw: float, residual: bool = True) -> i
 
 def _layer_rank(name: str, d_out: int, d_in: int, bpw: float, residual: bool,
                 kv_factor: float) -> int:
+    """Rank for one linear layer called `name`: the budget rank, adjusted.
+
+    k_proj / v_proj are multiplied by `kv_factor` because with GQA (grouped-query
+    attention) they are much smaller than the other matrices.  The result never
+    exceeds the largest multiple of 8 within min(d_out, d_in), since a matrix
+    cannot have a higher rank than its smaller side.
+    """
     r = rank_for_bits(d_out, d_in, bpw, residual)
     if name.endswith(("k_proj", "v_proj")):  # GQA K/V are small: per-tensor rank
         r = max(8, int(r * kv_factor) // 8 * 8)
@@ -145,7 +162,16 @@ def _layer_rank(name: str, d_out: int, d_in: int, bpw: float, residual: bool,
 
 
 def _path(W: Tensor, r: int, use_itq: bool, seed: int):
-    """One path's init: returns (dense reconstruction, tensors to store)."""
+    """Initialise one path of a (d_out, d_in) weight `W` at rank `r`.
+
+    Returns (dense reconstruction of the path, dict of tensors to store).  The
+    dict keys are the checkpoint names: Ub/Vb signs, and the scales
+    u1=h (per output row), v2=g (per input column), u2=urk, v1=vrk.  The
+    algorithm's (h, g, urk, vrk) map to (u1, v2, u2, v1) because the reference
+    computes ((x*v2) @ V.T * (v1*u2)) @ U.T * u1: g scales the input side and h
+    the output side.  The dense matrix is returned so the caller can fit the
+    residual path to what is left over.
+    """
     U, S, Vt = _svd(W)
     sq = S[:r].sqrt()  # even sqrt(S) split between the two factors
     Uh, Vh = U[:, :r] * sq, Vt[:r].T * sq
@@ -159,6 +185,12 @@ def _path(W: Tensor, r: int, use_itq: bool, seed: int):
 
 
 def _emit(out: dict, name: str, t: dict, res: str) -> None:
+    """Add one path's tensors to the checkpoint dict `out` under the layer `name`.
+
+    `res` is "" for the primary path or "_R" for the residual.  Signs are
+    bit-packed (reference.pack_signs) with an int64 `*_shape` tensor; the four
+    scales are stored as float32 row vectors of shape (1, n).
+    """
     for m, key in (("U", "Ub"), ("V", "Vb")):
         out[f"{name}.{m}{res}_packed"] = pack_signs(t[key].cpu())
         out[f"{name}.{m}{res}_shape"] = torch.tensor(t[key].shape, dtype=torch.int64)
@@ -200,7 +232,7 @@ def make_checkpoint(hf_id: str, out_dir: Path, bpw: float, use_itq: bool = True,
                     dense, t = _path(w, r, use_itq, seed)
                     _emit(tensors, name, t, "")
                     if residual:
-                        # New tensor: `w` is our own fp32 copy, but keep it for clarity.
+                        # Residual path: fit whatever the primary path missed.
                         _, t2 = _path(w - dense, r, use_itq, seed)
                         del dense
                         _emit(tensors, name, t2, "_R")

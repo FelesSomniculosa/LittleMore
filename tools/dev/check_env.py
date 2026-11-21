@@ -23,6 +23,7 @@ import sys
 from pathlib import Path
 from typing import Callable, Optional
 
+# Repository root (two levels above tools/dev); used to find the project venv.
 REPO_ROOT = Path(__file__).resolve().parents[2]
 
 # Why: a freshly installed tool is not on PATH in an already-open terminal
@@ -140,6 +141,7 @@ def check_vs() -> tuple[bool, str]:
                "-property", "installationPath"]).strip()
     if not out:
         return False, "VS Build Tools with C++ x64 tools not found"
+    # vswhere prints one property per call, so it is run a second time for the version.
     ver = run([VSWHERE, "-products", "*", "-latest",
                "-requires", "Microsoft.VisualStudio.Component.VC.Tools.x86.x64",
                "-property", "installationVersion"]).strip()
@@ -171,6 +173,7 @@ def check_torch() -> tuple[bool, str]:
     return True, f"torch {lines[0]} cuda=True ({lines[2]})"
 
 
+# (name shown in the report, check function) in the order they are run.
 CHECKS: list[tuple[str, Callable[[], tuple[bool, str]]]] = [
     ("nvcc", check_nvcc),
     ("cmake", check_cmake),
