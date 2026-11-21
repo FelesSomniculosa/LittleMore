@@ -1,6 +1,6 @@
 .venv/
 .superpowers/
-engine/build/
+engine/
 __pycache__/
 *.gguf
 *.safetensors
