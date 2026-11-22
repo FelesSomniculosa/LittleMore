@@ -293,6 +293,12 @@ def engine_logits(gguf: Path, prompt: str, ngl: int, extra_args: tuple = (),
     `extra_args` are appended to the command line (e.g. `("-ctk", "f32")`); `out_dir` overrides the
     default `.cache/logits/ngl<N>` (the file name inside it is derived from the GGUF's stem).
     """
+    if ngl == 0 and "-dev" not in extra_args and "--device" not in extra_args:
+        # A CUDA build with plain `-ngl 0` still offloads the matmuls of prompts of >= 32 tokens to the GPU (ggml's
+        # op offload), so "CPU" runs would not be CPU runs.  `-dev none` removes every GPU device (measured on the
+        # tiny Llama / Gemma 3 models, 37 tokens: logits differ by up to 7e-4 with and without it; prompts under
+        # 32 tokens are bit-identical either way).
+        extra_args = ("-dev", "none", *extra_args)
     out = out_dir or LOGITS_DIR / f"ngl{ngl}"
     # llama-debug names its files after the model's `general.name`, not the file; start from an empty
     # directory so the files found afterwards are this run's.

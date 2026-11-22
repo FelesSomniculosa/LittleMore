@@ -18,7 +18,10 @@ Why `-dev none` for the CPU run: with only `-ngl 0` the CUDA build still offload
 weight matmuls of every batch of >= 32 tokens to the GPU (ggml's "op offload"), so a
 512-token chunk would NOT run on the CPU kernels.  Measured on this model (rms logit
 difference to the reference at 64 tokens, CPU exact settings): 2.9e-2 with op offload,
-8.6e-5 with `--no-op-offload`/`-dev none`.  `-dev none` runs everything on the CPU.
+8.6e-5 with `--no-op-offload`/`-dev none`.  `-dev none` runs everything on the CPU.  The test does not assume
+this: it runs llama-perplexity with `-v` and `assert_device_use` checks the log (a CPU run must show no `CUDA0` line
+and a `CPU compute buffer`; the CUDA run must show a `CUDA0 compute buffer`), and `test_cpu_guard_detects_gpu_use`
+shows the check fails for `-ngl 0` without `-dev none`.
 
 The model is untrained (no QAT), so its perplexity is enormous (millions).  That is
 fine: the point is that two independent implementations of the same function give the
@@ -48,9 +51,13 @@ Diagnosis aids
 per-chunk mean NLL is recovered and compared chunk by chunk, so a failure shows which
 chunk (and by how much) the two sides disagree on.
 
-Mutation test proves the comparison can fail: a perturbed scale vector in the
+Mutation test proves the comparison can fail (run on the CUDA engine result and the first 2 chunks only, not on the
+CPU runs): a perturbed scale vector in the
 reference, and a one-token shift of the reference's token stream, must both exceed the
 1 % bound.
+
+Sensitivity: a 2 % error on one scale vector moved the perplexity by 6.3 % (about 3x amplification), so the 1 %
+bound catches roughly a 0.3 % error on a single scale vector (the exact-attention CPU bound of 0.1 % catches ~0.03 %).
 
 Skips (never fails) when the dataset, base model, GGUF or engine binaries are absent.
 Run:  .venv\\Scripts\\python.exe -m pytest tests/e2e -m smoke -v -s
@@ -107,7 +114,7 @@ def n_chunks() -> int:
 def wiki_raw():
     """Path of the pinned WikiText-2 raw test text; rebuilt from the pinned parquet if only that is cached."""
     if not RAW.exists() and PARQUET.exists():
-        import pyarrow.parquet as pq
+        pq = pytest.importorskip("pyarrow.parquet", reason="pyarrow is needed to rebuild the raw text from the parquet")
         assert _sha256(PARQUET) == PARQUET_SHA256, "cached parquet differs from the pinned WikiText-2 test split"
         rows = pq.read_table(PARQUET).column("text").to_pylist()
         RAW.write_bytes("".join(rows).encode("utf-8"))
@@ -133,6 +140,7 @@ def assets(wiki_raw):
 @pytest.fixture(scope="module")
 def hf_ids(wiki_raw):
     """Token ids of the whole text from the Hugging Face tokenizer (no special tokens: Qwen3 has no BOS)."""
+    pytest.importorskip("transformers", reason="transformers is needed for the Hugging Face tokenizer")
     from transformers import AutoTokenizer
     tk = AutoTokenizer.from_pretrained(str(A.MODEL_DIR))
     text = wiki_raw.read_bytes().decode("utf-8")
@@ -173,8 +181,24 @@ def ref_run(chunks, assets):
 
 
 # --- engine side -----------------------------------------------------------------------------------------------
-def engine_chunk_nlls(assets, wiki_raw, n: int, device_args: tuple) -> tuple[list[float], float, float]:
-    """Run llama-perplexity; returns (per-chunk mean NLL, final perplexity, seconds).
+def assert_device_use(log: str, device_args: tuple) -> None:
+    """Check from the engine's `-v` log which devices really computed, instead of trusting the command line.
+
+    GPU run (`-ngl > 0`): a `CUDA0 compute buffer` line must exist.  CPU run: no line may mention `CUDA0` (the
+    scheduler prints one when it uses the GPU, e.g. for op offload with plain `-ngl 0`) and a `CPU compute buffer`
+    line must exist.  (`ggml_cuda_init` lines only show that the backend library loaded, so they are not checked.)
+    """
+    gpu = "CUDA0 compute buffer" in log
+    if device_args[1] > 0:
+        assert gpu, "GPU run did not use CUDA0 (no 'CUDA0 compute buffer' line in the log)"
+    else:
+        lines = [ln.strip() for ln in log.splitlines() if "CUDA0" in ln]
+        assert not lines, f"CPU run touched the GPU: {lines[:3]}"
+        assert "CPU compute buffer" in log, "no 'CPU compute buffer' line in the log: cannot confirm a CPU run"
+
+
+def engine_chunk_nlls(assets, wiki_raw, n: int, device_args: tuple) -> tuple[list[float], float, float, str]:
+    """Run llama-perplexity; returns (per-chunk mean NLL, final perplexity, seconds, log) and checks the devices.
 
     The tool prints the running perplexity after each chunk, `[k]ppl,`; the cumulative NLL after k chunks is
     k * ln(ppl_k) (in units of one chunk's mean), so the per-chunk means follow by differencing.  The printed values
@@ -182,15 +206,17 @@ def engine_chunk_nlls(assets, wiki_raw, n: int, device_args: tuple) -> tuple[lis
     """
     gguf, ppl_exe, _ = assets
     t0 = time.time()
-    proc = A._run([ppl_exe, "-m", gguf, "-f", wiki_raw, "-c", N_CTX, "--chunks", n, *device_args], timeout=3600)
+    proc = A._run([ppl_exe, "-m", gguf, "-f", wiki_raw, "-c", N_CTX, "--chunks", n, "-v", *device_args],
+                 timeout=3600)
     dt = time.time() - t0
     assert proc.returncode == 0, proc.stdout[-2000:]
     running = [float(m) for m in re.findall(r"\[\d+\]([0-9.eE+-]+),", proc.stdout)]
     assert len(running) == n, f"expected {n} running perplexities, got {len(running)}: {proc.stdout[-800:]}"
     cum = [math.log(p) * (k + 1) for k, p in enumerate(running)]       # cumulative mean-NLL * chunk index
     per_chunk = [cum[0]] + [cum[k] - cum[k - 1] for k in range(1, n)]
+    assert_device_use(proc.stdout, device_args)
     final = float(re.search(r"Final estimate: PPL = ([0-9.eE+-]+)", proc.stdout).group(1))
-    return per_chunk, final, dt
+    return per_chunk, final, dt, proc.stdout
 
 
 def ppl(nlls) -> float:
@@ -220,7 +246,8 @@ CPU = ("-ngl", 0, "-dev", "none")   # see the module docstring: `-ngl 0` alone s
 # CPU with every f16 rounding of the attention path removed (no flash attention, f32 KV cache).  The engine's default
 # attention path rounds Q/K/V to f16, which the reference (fp32) does not; that rounding is the ~0.3 % default-settings
 # gap on the CPU (measured over 8 chunks: default 3.4e-3, exact 2.7e-5).  In this configuration the two sides compute
-# the same function, so a much tighter bound applies (1e-3, >10x the measured gap).
+# the same function, so a much tighter bound applies: 1e-3, about 55x the gap measured over the 32 default chunks
+# (1.8e-5; 2.7e-5 over the first 8).
 CPU_EXACT = CPU + ("-fa", "off", "-ctk", "f32", "-ctv", "f32")
 EXACT_TOL = 1e-3
 
@@ -232,17 +259,27 @@ def test_perplexity_parity(assets, wiki_raw, chunks, ref_run, device, tol):
 
     The bound is 1 % for the engine's default settings; the exact-attention CPU run must agree to 0.1 %."""
     ref_nll, ref_secs = ref_run
-    eng_nll, eng_ppl, eng_secs = engine_chunk_nlls(assets, wiki_raw, len(chunks), device)
+    eng_nll, eng_ppl, eng_secs = engine_chunk_nlls(assets, wiki_raw, len(chunks), device)[:3]
     ref_ppl, eng_ppl_recomputed = ppl(ref_nll), ppl(eng_nll)
     rel = abs(eng_ppl - ref_ppl) / ref_ppl
     per_chunk = [abs(math.exp(e - r) - 1) for e, r in zip(eng_nll, ref_nll)]   # per-chunk perplexity ratio - 1
-    print(f"\n[ppl parity] device={" ".join(map(str, device))} chunks={len(chunks)} scored={len(chunks) * SCORED_PER_CHUNK} "
+    print(f"\n[ppl parity] device={' '.join(map(str, device))} chunks={len(chunks)} scored={len(chunks) * SCORED_PER_CHUNK} "
           f"reference={ref_ppl:.6g} ({ref_secs:.0f}s) engine={eng_ppl:.6g} ({eng_secs:.0f}s) rel={rel:.3e} "
           f"worst-chunk rel={max(per_chunk):.3e} (chunk {int(np.argmax(per_chunk))})")
     # The differenced running values must reproduce the tool's own final number (guards the parsing above).
     assert abs(eng_ppl_recomputed - eng_ppl) / eng_ppl < 1e-4
     assert rel <= tol, f"perplexity differs by {rel:.3%} (> {tol:.1%}); per-chunk rel: " \
                            f"{[f'{x:.1e}' for x in per_chunk]}"
+
+
+def test_cpu_guard_detects_gpu_use(assets, wiki_raw):
+    """Mutation check of the device assertion: plain `-ngl 0` (no `-dev none`) offloads to CUDA0, and it must fail."""
+    gguf, ppl_exe, _ = assets
+    proc = A._run([ppl_exe, "-m", gguf, "-f", wiki_raw, "-c", N_CTX, "--chunks", 1, "-v", "-ngl", 0], timeout=900)
+    assert proc.returncode == 0, proc.stdout[-500:]
+    with pytest.raises(AssertionError, match="CPU run touched the GPU"):
+        assert_device_use(proc.stdout, ("-ngl", 0))
+    assert_device_use(proc.stdout, ("-ngl", 99))        # the same log is a valid GPU run, so the check is not blanket
 
 
 def _mutated_rel(model, chunk_ids, eng_nll, n_mut: int) -> float:
@@ -260,7 +297,7 @@ def test_mutations_fail_the_bound(assets, wiki_raw, chunks, ref_run):
     un-mutated reference must pass on the same 2 chunks, so the failure is caused by the mutation alone.
     """
     n_mut = min(2, len(chunks))
-    eng_nll, _, _ = engine_chunk_nlls(assets, wiki_raw, n_mut, CUDA)
+    eng_nll = engine_chunk_nlls(assets, wiki_raw, n_mut, CUDA)[0]
     ref_nll, _ = ref_run
     assert abs(ppl(eng_nll) - ppl(ref_nll[:n_mut])) / ppl(ref_nll[:n_mut]) <= REL_TOL      # control: clean passes
 

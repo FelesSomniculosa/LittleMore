@@ -192,9 +192,40 @@ by the test from the parquet if missing). The test skips with a reason when the 
 What it proves: the whole engine (converter, CPU and CUDA fused op, graph, attention, head) computes the same function as
 the independent PyTorch reference over thousands of tokens. Limits: the weights are untrained (init only), so the
 perplexity is in the tens of millions and says nothing about quality; parity is the point. Only a subset of the test
-split is scored (the first 32 of 583 chunks), and a single sequence length (512). Individual chunks differ by up to
-a few percent (CUDA) because ppl is exp(NLL) of an extremely flat distribution and the CUDA prefill path rounds
-differently; these errors are independent and average out (aggregate gap 0.05 % over 32 chunks, 0.13 % over 64).
+split is scored (the first 32 of 583 chunks), and a single sequence length (512). The 1 % bound catches roughly a 0.3 %
+error on one scale vector (a 2 % error moved the perplexity by 6.3 %, measured on 2 chunks of the CUDA run).
+
+What the per-chunk numbers show (measured, 64 chunks, CUDA; `std` = spread of the per-chunk NLL difference to the
+reference, in nats):
+
+| CUDA configuration | std | mean gap, 32 chunks | mean gap, 64 chunks |
+|---|---|---|---|
+| default (tensor-core prefill, f16 attention) | 0.0156 | -4.5e-4 | +1.27e-3 |
+| `GGML_CUDA_LITTLEBIT_F32_PREFILL=1` | 0.0121 | -6.4e-4 | +1.4e-4 |
+| `-fa off -ctk f32 -ctv f32` | 0.0101 | +8.7e-4 | -2.7e-4 |
+| both | 0.0099 | -1.1e-3 | -7.9e-4 |
+
+On the CPU the same per-chunk gap is 5e-5 with exact attention settings, and the dense Qwen3-0.6B F32 GGUF on CUDA
+differs from its HF reference by only 1.2e-4 nats per chunk (CPU: 1.0e-4). So the per-chunk scatter (about 1 %, up to a
+few percent of the perplexity of single chunks) is specific to the LittleBit model on CUDA; neither the f16 attention nor
+the tensor-core prefill path, alone or together, removes it (they reduce it by up to a third). Its cause is not decided
+(hypotheses: rounding in the CUDA LittleBit kernels or the float32 GEMM path, amplified by the very flat output
+distribution of an untrained model; not tested). The sign of the per-chunk scatter is random, so the aggregate error
+shrinks with the number of chunks; the mean gap of 64 chunks (+1.27e-3) is smaller than the mean of the 32-chunk run only
+by chance: its standard error is 0.0156/sqrt(64) = 2e-3, so +1.27e-3 and -4.5e-4 are both within one standard error of 0
+(no systematic bias is visible). On the CPU the default-settings gap (about 0.3 %) is the f16 rounding of Q/K/V in
+attention: with `-fa off -ctk f32 -ctv f32` it is 1.8e-5.
+
+Gotcha (`-ngl 0` is not a CPU run on a CUDA build): llama.cpp offloads the matmuls of every batch of 32 tokens or
+more to the GPU ("op offload") even with `-ngl 0`. A "CPU" run must pass `-dev none` (or `--no-op-offload`). The test
+asserts it from the `-v` log (no `CUDA0` line, a `CPU compute buffer` line); `tests/smoke/_assets.engine_logits` adds
+`-dev none` itself for `ngl == 0`; `bench/run_bench.py` already does for its `cpu` backend. Found by the perplexity test:
+at 64 tokens the logits differ from the reference by 2.9e-2 rms with offload and 8.6e-5 without; the tiny Llama and
+Gemma 3 models of `tests/engine/test_fused_graph_families.py` (37-token prompts) differed by up to 7e-4 (bitwise
+different logits) between the two.
+
+Test selection: a plain `pytest` also runs the smoke-marked tests, including this file (about 3.3 minutes extra when the
+assets exist; they skip otherwise). `pytest -m "not smoke"` is the fast subset.
 
 ## 8. Speed benchmarks and the speed gate
 
