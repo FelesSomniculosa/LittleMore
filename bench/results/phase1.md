@@ -35,6 +35,11 @@ this run, interleaved): LittleBit 0.55 142.9 vs 143.1 tokens/s (-0.17 %), bf16 5
 - VRAM: from a separate pass of the same plan without the warm-up load (`--warmup 0`, 1 round, 3 repetitions;
   [phase1_vram.json](phase1_vram.json)): with the load, its memory stays visible in nvidia-smi for a moment after it
   exits (the speed run showed e.g. 2158 instead of 1609 MiB for bf16 Qwen3-0.6B), so the speed run stores no VRAM.
+  (Task 13b: the harness was modified after this run. The speed run's JSON had kept the inflated readings in `vram_mb`;
+  they are now nulled in [phase1.json](phase1.json) (see its `vram_note`), so `phase1_vram.json` is the only VRAM
+  source. The SM clock columns below were sampled with the harness of this run, from 1 s after the load stopped to the
+  end, so their minima include llama-bench's untimed warm-up pass, e.g. 735 MHz; the clock at the first timed
+  repetition is the line above. The current harness samples only the timed repetitions.)
   Value = peak of nvidia-smi's `memory.used` during the run minus the value before it (weights, KV cache, compute
   buffers, CUDA context); identical to Task 13's first run for every file measured in both. The bf16 Qwen3-1.7B (3881
   MiB file) fits the 6 GB GPU: 3763 MiB.
@@ -62,7 +67,7 @@ head). Ranks after padding to multiples of 128 (per path; the residual path has 
 
 ### qwen3-0.6b
 
-| variant | file MiB | tg128 t/s (mean of the round medians; min..max of them) | pp512 t/s (same) | VRAM MiB (separate pass) | SM clock MHz (min..max sampled while measuring) |
+| variant | file MiB | tg128 t/s (mean of the round medians; min..max of them) | pp512 t/s (same) | VRAM MiB (separate pass) | SM clock MHz (min..max sampled from 1 s after the load stopped, incl. the untimed warm-up pass) |
 |---|---|---|---|---|---|
 | littlebit-0.55 | 642 | 212.9 (205.6..219.6) | 3113 (3020..3286) | 821 | 735..2340 |
 | bf16 | 1439 | 126.9 (126.5..127.4) | 8295 (7638..9489) | 1609 | 1125..2340 |
@@ -75,7 +80,7 @@ head). Ranks after padding to multiples of 128 (per path; the residual path has 
 
 ### qwen3-1.7b
 
-| variant | file MiB | tg128 t/s (mean of the round medians; min..max of them) | pp512 t/s (same) | VRAM MiB (separate pass) | SM clock MHz (min..max sampled while measuring) |
+| variant | file MiB | tg128 t/s (mean of the round medians; min..max of them) | pp512 t/s (same) | VRAM MiB (separate pass) | SM clock MHz (min..max sampled from 1 s after the load stopped, incl. the untimed warm-up pass) |
 |---|---|---|---|---|---|
 | littlebit-0.55 | 1322 | 142.9 (142.2..143.5) | 1475 (1449..1490) | 1223 | 945..2325 |
 | bf16 | 3881 | 51.1 (51.0..51.1) | 3284 (3228..3370) | 3763 | 1125..2325 |
@@ -86,7 +91,7 @@ head). Ranks after padding to multiples of 128 (per path; the residual path has 
 
 ### qwen3-1.7b-proxy (PROXY weights: speed only, not the original model)
 
-| variant | file MiB | tg128 t/s (mean of the round medians; min..max of them) | pp512 t/s (same) | VRAM MiB (separate pass) | SM clock MHz (min..max sampled while measuring) |
+| variant | file MiB | tg128 t/s (mean of the round medians; min..max of them) | pp512 t/s (same) | VRAM MiB (separate pass) | SM clock MHz (min..max sampled from 1 s after the load stopped, incl. the untimed warm-up pass) |
 |---|---|---|---|---|---|
 | littlebit-0.55 | 729 | 143.1 (142.9..143.5) | 1484 (1457..1531) | 1223 | 990..2325 |
 | bf16 | 3288 | 51.1 (51.0..51.1) | 3452 (3265..3814) | 3763 | 1110..2325 |

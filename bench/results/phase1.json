@@ -95,8 +95,8 @@
     3272.23
    ],
    "clock_low": false,
-   "vram_mb": 821.0,
-   "vram_peak_mb": 821.0,
+   "vram_mb": null,
+   "vram_peak_mb": null,
    "vram_base_mb": 0.0,
    "sm_clock_mhz": [
     735.0,
@@ -189,8 +189,8 @@
     7648.66
    ],
    "clock_low": false,
-   "vram_mb": 2158.0,
-   "vram_peak_mb": 2158.0,
+   "vram_mb": null,
+   "vram_peak_mb": null,
    "vram_base_mb": 0.0,
    "sm_clock_mhz": [
     1245.0,
@@ -283,8 +283,8 @@
     3153.92
    ],
    "clock_low": false,
-   "vram_mb": 683.0,
-   "vram_peak_mb": 683.0,
+   "vram_mb": null,
+   "vram_peak_mb": null,
    "vram_base_mb": 0.0,
    "sm_clock_mhz": [
     630.0,
@@ -377,8 +377,8 @@
     3034.01
    ],
    "clock_low": false,
-   "vram_mb": 647.0,
-   "vram_peak_mb": 647.0,
+   "vram_mb": null,
+   "vram_peak_mb": null,
    "vram_base_mb": 0.0,
    "sm_clock_mhz": [
     825.0,
@@ -471,8 +471,8 @@
     3928.19
    ],
    "clock_low": false,
-   "vram_mb": 801.0,
-   "vram_peak_mb": 801.0,
+   "vram_mb": null,
+   "vram_peak_mb": null,
    "vram_base_mb": 0.0,
    "sm_clock_mhz": [
     765.0,
@@ -566,8 +566,8 @@
     4795.34
    ],
    "clock_low": false,
-   "vram_mb": 663.0,
-   "vram_peak_mb": 663.0,
+   "vram_mb": null,
+   "vram_peak_mb": null,
    "vram_base_mb": 0.0,
    "sm_clock_mhz": [
     885.0,
@@ -660,8 +660,8 @@
     8133.7
    ],
    "clock_low": false,
-   "vram_mb": 1609.0,
-   "vram_peak_mb": 1609.0,
+   "vram_mb": null,
+   "vram_peak_mb": null,
    "vram_base_mb": 0.0,
    "sm_clock_mhz": [
     1035.0,
@@ -755,8 +755,8 @@
     10367.5
    ],
    "clock_low": false,
-   "vram_mb": 1102.0,
-   "vram_peak_mb": 1102.0,
+   "vram_mb": null,
+   "vram_peak_mb": null,
    "vram_base_mb": 0.0,
    "sm_clock_mhz": [
     1440.0,
@@ -849,8 +849,8 @@
     1640.79
    ],
    "clock_low": false,
-   "vram_mb": 1223.0,
-   "vram_peak_mb": 1223.0,
+   "vram_mb": null,
+   "vram_peak_mb": null,
    "vram_base_mb": 0.0,
    "sm_clock_mhz": [
     945.0,
@@ -943,8 +943,8 @@
     3234.92
    ],
    "clock_low": false,
-   "vram_mb": 3763.0,
-   "vram_peak_mb": 3763.0,
+   "vram_mb": null,
+   "vram_peak_mb": null,
    "vram_base_mb": 0.0,
    "sm_clock_mhz": [
     1140.0,
@@ -1037,8 +1037,8 @@
     1589.78
    ],
    "clock_low": false,
-   "vram_mb": 945.0,
-   "vram_peak_mb": 945.0,
+   "vram_mb": null,
+   "vram_peak_mb": null,
    "vram_base_mb": 0.0,
    "sm_clock_mhz": [
     1170.0,
@@ -1132,8 +1132,8 @@
     1651.28
    ],
    "clock_low": false,
-   "vram_mb": 873.0,
-   "vram_peak_mb": 873.0,
+   "vram_mb": null,
+   "vram_peak_mb": null,
    "vram_base_mb": 0.0,
    "sm_clock_mhz": [
     1110.0,
@@ -1226,8 +1226,8 @@
     3453.63
    ],
    "clock_low": false,
-   "vram_mb": 3922.0,
-   "vram_peak_mb": 3922.0,
+   "vram_mb": null,
+   "vram_peak_mb": null,
    "vram_base_mb": 0.0,
    "sm_clock_mhz": [
     555.0,
@@ -1320,8 +1320,8 @@
     4633.56
    ],
    "clock_low": false,
-   "vram_mb": 1517.0,
-   "vram_peak_mb": 1517.0,
+   "vram_mb": null,
+   "vram_peak_mb": null,
    "vram_base_mb": 0.0,
    "sm_clock_mhz": [
     1170.0,
@@ -1414,8 +1414,8 @@
     1569.85
    ],
    "clock_low": true,
-   "vram_mb": 1223.0,
-   "vram_peak_mb": 1223.0,
+   "vram_mb": null,
+   "vram_peak_mb": null,
    "vram_base_mb": 0.0,
    "sm_clock_mhz": [
     990.0,
@@ -1509,8 +1509,8 @@
     3256.27
    ],
    "clock_low": false,
-   "vram_mb": 4310.0,
-   "vram_peak_mb": 4310.0,
+   "vram_mb": null,
+   "vram_peak_mb": null,
    "vram_base_mb": 0.0,
    "sm_clock_mhz": [
     1155.0,
@@ -1603,8 +1603,8 @@
     3290.83
    ],
    "clock_low": false,
-   "vram_mb": 1106.0,
-   "vram_peak_mb": 1106.0,
+   "vram_mb": null,
+   "vram_peak_mb": null,
    "vram_base_mb": 0.0,
    "sm_clock_mhz": [
     1020.0,
@@ -1697,8 +1697,8 @@
     7777.96
    ],
    "clock_low": false,
-   "vram_mb": 1609.0,
-   "vram_peak_mb": 1609.0,
+   "vram_mb": null,
+   "vram_peak_mb": null,
    "vram_base_mb": 0.0,
    "sm_clock_mhz": [
     1125.0,
@@ -1791,8 +1791,8 @@
     3157.62
    ],
    "clock_low": false,
-   "vram_mb": 683.0,
-   "vram_peak_mb": 683.0,
+   "vram_mb": null,
+   "vram_peak_mb": null,
    "vram_base_mb": 0.0,
    "sm_clock_mhz": [
     705.0,
@@ -1885,8 +1885,8 @@
     2815.01
    ],
    "clock_low": false,
-   "vram_mb": 647.0,
-   "vram_peak_mb": 647.0,
+   "vram_mb": null,
+   "vram_peak_mb": null,
    "vram_base_mb": 0.0,
    "sm_clock_mhz": [
     915.0,
@@ -1979,8 +1979,8 @@
     4751.96
    ],
    "clock_low": false,
-   "vram_mb": 1342.0,
-   "vram_peak_mb": 1342.0,
+   "vram_mb": null,
+   "vram_peak_mb": null,
    "vram_base_mb": 0.0,
    "sm_clock_mhz": [
     915.0,
@@ -2073,8 +2073,8 @@
     4078.5
    ],
    "clock_low": false,
-   "vram_mb": 663.0,
-   "vram_peak_mb": 663.0,
+   "vram_mb": null,
+   "vram_peak_mb": null,
    "vram_base_mb": 0.0,
    "sm_clock_mhz": [
     840.0,
@@ -2168,8 +2168,8 @@
     8008.61
    ],
    "clock_low": false,
-   "vram_mb": 1609.0,
-   "vram_peak_mb": 1609.0,
+   "vram_mb": null,
+   "vram_peak_mb": null,
    "vram_base_mb": 0.0,
    "sm_clock_mhz": [
     1305.0,
@@ -2262,8 +2262,8 @@
     12235.2
    ],
    "clock_low": false,
-   "vram_mb": 829.0,
-   "vram_peak_mb": 829.0,
+   "vram_mb": null,
+   "vram_peak_mb": null,
    "vram_base_mb": 0.0,
    "sm_clock_mhz": [
     1410.0,
@@ -2357,8 +2357,8 @@
     1632.61
    ],
    "clock_low": false,
-   "vram_mb": 1223.0,
-   "vram_peak_mb": 1223.0,
+   "vram_mb": null,
+   "vram_peak_mb": null,
    "vram_base_mb": 0.0,
    "sm_clock_mhz": [
     1140.0,
@@ -2451,8 +2451,8 @@
     3270.76
    ],
    "clock_low": false,
-   "vram_mb": 3763.0,
-   "vram_peak_mb": 3763.0,
+   "vram_mb": null,
+   "vram_peak_mb": null,
    "vram_base_mb": 0.0,
    "sm_clock_mhz": [
     1125.0,
@@ -2545,8 +2545,8 @@
     1637.52
    ],
    "clock_low": false,
-   "vram_mb": 945.0,
-   "vram_peak_mb": 945.0,
+   "vram_mb": null,
+   "vram_peak_mb": null,
    "vram_base_mb": 0.0,
    "sm_clock_mhz": [
     1140.0,
@@ -2640,8 +2640,8 @@
     1619.58
    ],
    "clock_low": false,
-   "vram_mb": 1136.0,
-   "vram_peak_mb": 1136.0,
+   "vram_mb": null,
+   "vram_peak_mb": null,
    "vram_base_mb": 0.0,
    "sm_clock_mhz": [
     1125.0,
@@ -2735,8 +2735,8 @@
     3351.08
    ],
    "clock_low": false,
-   "vram_mb": 3765.0,
-   "vram_peak_mb": 3765.0,
+   "vram_mb": null,
+   "vram_peak_mb": null,
    "vram_base_mb": 0.0,
    "sm_clock_mhz": [
     675.0,
@@ -2829,8 +2829,8 @@
     4793.48
    ],
    "clock_low": false,
-   "vram_mb": 1517.0,
-   "vram_peak_mb": 1517.0,
+   "vram_mb": null,
+   "vram_peak_mb": null,
    "vram_base_mb": 0.0,
    "sm_clock_mhz": [
     1200.0,
@@ -2923,8 +2923,8 @@
     1632.65
    ],
    "clock_low": false,
-   "vram_mb": 1223.0,
-   "vram_peak_mb": 1223.0,
+   "vram_mb": null,
+   "vram_peak_mb": null,
    "vram_base_mb": 0.0,
    "sm_clock_mhz": [
     1170.0,
@@ -3018,8 +3018,8 @@
     3281.83
    ],
    "clock_low": false,
-   "vram_mb": 3763.0,
-   "vram_peak_mb": 3763.0,
+   "vram_mb": null,
+   "vram_peak_mb": null,
    "vram_base_mb": 0.0,
    "sm_clock_mhz": [
     1110.0,
@@ -3113,8 +3113,8 @@
     2841.93
    ],
    "clock_low": false,
-   "vram_mb": 821.0,
-   "vram_peak_mb": 821.0,
+   "vram_mb": null,
+   "vram_peak_mb": null,
    "vram_base_mb": 0.0,
    "sm_clock_mhz": [
     855.0,
@@ -3208,8 +3208,8 @@
     7802.58
    ],
    "clock_low": false,
-   "vram_mb": 1609.0,
-   "vram_peak_mb": 1609.0,
+   "vram_mb": null,
+   "vram_peak_mb": null,
    "vram_base_mb": 0.0,
    "sm_clock_mhz": [
     1260.0,
@@ -3302,8 +3302,8 @@
     3081.72
    ],
    "clock_low": false,
-   "vram_mb": 683.0,
-   "vram_peak_mb": 683.0,
+   "vram_mb": null,
+   "vram_peak_mb": null,
    "vram_base_mb": 0.0,
    "sm_clock_mhz": [
     870.0,
@@ -3397,8 +3397,8 @@
     3322.29
    ],
    "clock_low": false,
-   "vram_mb": 647.0,
-   "vram_peak_mb": 647.0,
+   "vram_mb": null,
+   "vram_peak_mb": null,
    "vram_base_mb": 0.0,
    "sm_clock_mhz": [
     795.0,
@@ -3491,8 +3491,8 @@
     4575.35
    ],
    "clock_low": false,
-   "vram_mb": 801.0,
-   "vram_peak_mb": 801.0,
+   "vram_mb": null,
+   "vram_peak_mb": null,
    "vram_base_mb": 0.0,
    "sm_clock_mhz": [
     1035.0,
@@ -3585,8 +3585,8 @@
     3903.21
    ],
    "clock_low": false,
-   "vram_mb": 663.0,
-   "vram_peak_mb": 663.0,
+   "vram_mb": null,
+   "vram_peak_mb": null,
    "vram_base_mb": 0.0,
    "sm_clock_mhz": [
     1125.0,
@@ -3679,8 +3679,8 @@
     8839.57
    ],
    "clock_low": false,
-   "vram_mb": 1609.0,
-   "vram_peak_mb": 1609.0,
+   "vram_mb": null,
+   "vram_peak_mb": null,
    "vram_base_mb": 0.0,
    "sm_clock_mhz": [
     1140.0,
@@ -3773,8 +3773,8 @@
     10698.0
    ],
    "clock_low": false,
-   "vram_mb": 1394.0,
-   "vram_peak_mb": 1394.0,
+   "vram_mb": null,
+   "vram_peak_mb": null,
    "vram_base_mb": 0.0,
    "sm_clock_mhz": [
     1350.0,
@@ -3867,8 +3867,8 @@
     1682.82
    ],
    "clock_low": false,
-   "vram_mb": 1486.0,
-   "vram_peak_mb": 1486.0,
+   "vram_mb": null,
+   "vram_peak_mb": null,
    "vram_base_mb": 0.0,
    "sm_clock_mhz": [
     1020.0,
@@ -3961,8 +3961,8 @@
     3170.28
    ],
    "clock_low": false,
-   "vram_mb": 3763.0,
-   "vram_peak_mb": 3763.0,
+   "vram_mb": null,
+   "vram_peak_mb": null,
    "vram_base_mb": 0.0,
    "sm_clock_mhz": [
     1200.0,
@@ -4055,8 +4055,8 @@
     1593.29
    ],
    "clock_low": true,
-   "vram_mb": 945.0,
-   "vram_peak_mb": 945.0,
+   "vram_mb": null,
+   "vram_peak_mb": null,
    "vram_base_mb": 0.0,
    "sm_clock_mhz": [
     1020.0,
@@ -4150,8 +4150,8 @@
     1659.13
    ],
    "clock_low": false,
-   "vram_mb": 873.0,
-   "vram_peak_mb": 873.0,
+   "vram_mb": null,
+   "vram_peak_mb": null,
    "vram_base_mb": 0.0,
    "sm_clock_mhz": [
     1230.0,
@@ -4244,8 +4244,8 @@
     3397.59
    ],
    "clock_low": false,
-   "vram_mb": 3765.0,
-   "vram_peak_mb": 3765.0,
+   "vram_mb": null,
+   "vram_peak_mb": null,
    "vram_base_mb": 0.0,
    "sm_clock_mhz": [
     600.0,
@@ -4338,8 +4338,8 @@
     4721.19
    ],
    "clock_low": false,
-   "vram_mb": 1517.0,
-   "vram_peak_mb": 1517.0,
+   "vram_mb": null,
+   "vram_peak_mb": null,
    "vram_base_mb": 0.0,
    "sm_clock_mhz": [
     1275.0,
@@ -4432,8 +4432,8 @@
     1576.28
    ],
    "clock_low": false,
-   "vram_mb": 1223.0,
-   "vram_peak_mb": 1223.0,
+   "vram_mb": null,
+   "vram_peak_mb": null,
    "vram_base_mb": 0.0,
    "sm_clock_mhz": [
     1275.0,
@@ -4526,8 +4526,8 @@
     3077.7
    ],
    "clock_low": false,
-   "vram_mb": 3763.0,
-   "vram_peak_mb": 3763.0,
+   "vram_mb": null,
+   "vram_peak_mb": null,
    "vram_base_mb": 0.0,
    "sm_clock_mhz": [
     1170.0,
@@ -4535,5 +4535,6 @@
     2325.0
    ]
   }
- ]
+ ],
+ "vram_note": "vram_mb / vram_peak_mb nulled on 2026-11-22 (Task 13b): this speed run used the warm-up load, whose memory lingers in nvidia-smi, so its readings were inflated; the valid VRAM values are in phase1_vram.json (a separate pass with --warmup 0). The harness (bench/run_bench.py) was changed after this run: it now stores no VRAM when the load is used, and samples the SM clock only during the timed repetitions (this file's sm_clock_mhz still covers 1 s after the load stopped to the end, including llama-bench's untimed warm-up pass)."
 }

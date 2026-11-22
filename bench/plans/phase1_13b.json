@@ -1,0 +1,10 @@
+[
+  {"model": "qwen3-0.6b", "variant": "littlebit-0.55", "file": ".cache/gguf/qwen3-0.6b-lb2-0.55-b1.gguf"},
+  {"model": "qwen3-0.6b", "variant": "littlebit-0.55-f32prefill", "file": ".cache/gguf/qwen3-0.6b-lb2-0.55-b1.gguf", "env": {"GGML_CUDA_LITTLEBIT_F32_PREFILL": "1"}},
+  {"model": "qwen3-0.6b", "variant": "f16", "file": ".cache/gguf/qwen3-0.6b-base-f16.gguf"},
+  {"model": "qwen3-0.6b", "variant": "bf16", "file": ".cache/gguf/qwen3-0.6b-base-bf16.gguf"},
+  {"model": "qwen3-1.7b", "variant": "littlebit-0.55", "file": ".cache/gguf/qwen3-1.7b-lb2-0.55-b1.gguf"},
+  {"model": "qwen3-1.7b", "variant": "littlebit-0.55-f32prefill", "file": ".cache/gguf/qwen3-1.7b-lb2-0.55-b1.gguf", "env": {"GGML_CUDA_LITTLEBIT_F32_PREFILL": "1"}},
+  {"model": "qwen3-1.7b", "variant": "f16", "file": ".cache/gguf/qwen3-1.7b-base-f16.gguf"},
+  {"model": "qwen3-1.7b", "variant": "bf16", "file": ".cache/gguf/qwen3-1.7b-base-bf16.gguf"}
+]

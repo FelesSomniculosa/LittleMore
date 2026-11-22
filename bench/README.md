@@ -73,3 +73,9 @@ From the repository root, with the engine built (docs/development.md) and the GG
 
 Every number depends on the GPU, its clocks, power limit and temperature, the driver, and the CPU (llama.cpp's host
 side matters at these speeds); compare files only within one run of the plan.
+
+A plan entry may carry `"env": {"NAME": "value"}`, passed to llama-bench (and stored in the record): e.g.
+`bench/plans/phase1_13b.json` runs the same LittleBit file once with the engine's default and once with
+`GGML_CUDA_LITTLEBIT_F32_PREFILL=1` (the float32 GEMM prefill path) in the same interleaved rounds. Since Task 13b the
+SM clock range is sampled only during llama-bench's timed repetitions (`"clock_window": "timed_repetitions"` in the
+JSON); older results sampled from 1 s after the warm-up load stopped, including the untimed warm-up pass.

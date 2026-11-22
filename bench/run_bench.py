@@ -19,12 +19,16 @@ Why
     repetitions, the rounds are interleaved, and the clock is recorded.
 Clocks
     `llama-bench` runs one untimed warm-up pass per test and then the timed repetitions.  Before each measured
-    invocation this harness starts a GPU load (bench/gpu_load.py, float16 matrix products) for `warmup_s` seconds
+    invocation this harness starts a GPU load (bench/gpu_load.py: by default memory-bound copies of a 256 MiB buffer;
+    float16 matrix products with GPU_LOAD_ARGS = ["--mode", "gemm"]) for `warmup_s` seconds
     (default 3 s), keeps it running while llama-bench loads the model, and stops it when llama-bench starts its own
     warm-up pass, so the GPU never idles between the warm-up and the measurement; the SM clock at the start of the first
     timed repetition is recorded and a run below BOOST_MIN_MHZ is flagged and repeated once; generation is measured
-    before prompt processing (see `run_bench`).  The SM clock sampled during the measured run is stored (`sm_clock_mhz`: min / median / max) so a run at a low
-    clock is visible in the results instead of silently lowering a number.
+    before prompt processing (see `run_bench`).  The SM clock sampled during the timed repetitions (from llama-bench's
+    first timed repetition to its end; the untimed warm-up pass and the model load are not included) is stored
+    (`sm_clock_mhz`: min / median / max) so a run at a low clock is visible in the results instead of silently lowering
+    a number.  (Results written before 2026-11-22 15:00, e.g. bench/results/phase1.json, sampled from 1 s after the load
+    stopped, i.e. they include the warm-up pass.)
 
 Usage
     python -m bench.run_bench --plan bench/plans/phase1.json --rounds 3 --out bench/results/phase1.json
@@ -62,9 +66,11 @@ PROXY_SUFFIX = "-proxy"
 _DEVICES = {"cuda": "CUDA0", "vulkan": "Vulkan0", "cpu": "none"}
 
 
-def _env() -> dict[str, str]:
-    """Environment for the engine programs: CUDA 12.9 first on PATH."""
+def _env(extra: dict[str, str] | None = None) -> dict[str, str]:
+    """Environment for the engine programs: CUDA 12.9 first on PATH, plus `extra` (a plan entry's "env", e.g.
+    {"GGML_CUDA_LITTLEBIT_F32_PREFILL": "1"} to measure the engine's float32 prefill path next to its default)."""
     env = dict(os.environ)
+    env.update(extra or {})
     if CUDA_BIN.exists():
         env["PATH"] = str(CUDA_BIN) + os.pathsep + env.get("PATH", "")
     return env
@@ -154,16 +160,18 @@ VRAM_SETTLE_S = 1.0
 GPU_LOAD_ARGS: list[str] = []
 
 
-def _bench_with_load(cmd: list[str], warmup_s: float, use_load: bool) -> tuple[subprocess.CompletedProcess, dict]:
+def _bench_with_load(cmd: list[str], warmup_s: float, use_load: bool,
+                     env: dict[str, str] | None = None) -> tuple[subprocess.CompletedProcess, dict]:
     """Run one llama-bench command with the GPU kept busy until llama-bench's own warm-up pass starts.
 
     With `use_load`, bench/gpu_load.py runs first for `warmup_s` seconds, then llama-bench is started while the load
     keeps running (so the GPU stays at its boost clock while llama-bench loads the model), and the load is stopped the
     moment llama-bench reports its untimed warm-up pass (`--progress`).  The SM clock is read when llama-bench reports
     its first timed repetition.  Returns the completed llama-bench process and
-    {"clock_at_start_mhz", "load_s", "load_stop_t"} (load_stop_t: time.perf_counter() when the load was stopped).
+    {"clock_at_start_mhz", "load_s", "load_stop_t", "run1_t"} (load_stop_t: time.perf_counter() when the load was
+    stopped; run1_t: when llama-bench reported its first timed repetition, None if it did not).
     """
-    info: dict = {"clock_at_start_mhz": None, "load_s": 0.0, "load_stop_t": time.perf_counter()}
+    info: dict = {"clock_at_start_mhz": None, "load_s": 0.0, "load_stop_t": time.perf_counter(), "run1_t": None}
     load = None
     if use_load:
         t0 = time.perf_counter()
@@ -176,7 +184,7 @@ def _bench_with_load(cmd: list[str], warmup_s: float, use_load: bool) -> tuple[s
         while time.perf_counter() - t0 < warmup_s:
             time.sleep(0.05)
     stop_load = lambda: (load.terminate(), load.wait(timeout=30)) if load is not None and load.poll() is None else None  # noqa: E731
-    proc = subprocess.Popen([*cmd, "--progress"], cwd=BIN, env=_env(), stdout=subprocess.PIPE, stderr=subprocess.PIPE,
+    proc = subprocess.Popen([*cmd, "--progress"], cwd=BIN, env=_env(env), stdout=subprocess.PIPE, stderr=subprocess.PIPE,
                             stdin=subprocess.DEVNULL, text=True, encoding="utf-8", errors="replace")
     out_chunks: list[str] = []
     reader = threading.Thread(target=lambda: out_chunks.append(proc.stdout.read()), daemon=True)
@@ -191,6 +199,7 @@ def _bench_with_load(cmd: list[str], warmup_s: float, use_load: bool) -> tuple[s
                 info["load_stop_t"] = time.perf_counter()
                 info["load_s"] = info["load_stop_t"] - t0
             if " run 1/" in line and info["clock_at_start_mhz"] is None:
+                info["run1_t"] = time.perf_counter()
                 q = _GpuSampler.query()
                 info["clock_at_start_mhz"] = q[1] if q else None
         proc.wait(timeout=3600)
@@ -203,7 +212,8 @@ def _bench_with_load(cmd: list[str], warmup_s: float, use_load: bool) -> tuple[s
 
 
 def run_bench(model_gguf: Path, backend: str, n_gpu_layers: int, *, reps: int = 10, n_prompt: int = 512,
-              n_gen: int = 128, warmup_s: float = 3.0, extra_args: Iterable[str] = ()) -> dict[str, Any]:
+              n_gen: int = 128, warmup_s: float = 3.0, extra_args: Iterable[str] = (),
+              env: dict[str, str] | None = None) -> dict[str, Any]:
     """Benchmark one GGUF with llama-bench; returns a dict with at least the keys `pp512`, `tg128` and `vram_mb`.
 
     `backend`: "cuda", "vulkan" or "cpu" (cpu = no GPU device at all, `-dev none -ngl 0`).  `n_gpu_layers`: llama.cpp's
@@ -238,10 +248,14 @@ def run_bench(model_gguf: Path, backend: str, n_gpu_layers: int, *, reps: int = 
             cmd = _bench_cmd(model_gguf, backend, n_gpu_layers,
                              ["-p", str(p), "-n", str(n), "-r", str(reps), "-o", "json", *extra_args])
             out["cmd"].append(cmd)
-            r, info = _bench_with_load(cmd, warmup_s, use_load)
-            # memory and clock samples count from VRAM_SETTLE_S after the load was stopped: nvidia-smi still shows the
-            # load's memory for a moment after it exited (measured: +549 MiB on one bf16 run without this delay)
-            windows.append((info["load_stop_t"] + (VRAM_SETTLE_S if use_load else 0.0), time.perf_counter()))
+            r, info = _bench_with_load(cmd, warmup_s, use_load, env)
+            # memory and clock samples count from the first timed repetition (so the clock range is that of the measured
+            # repetitions, not of the warm-up pass), and at least VRAM_SETTLE_S after the load was stopped: nvidia-smi
+            # still shows the load's memory for a moment after it exited (measured: +549 MiB on one bf16 run)
+            start = info["load_stop_t"] + (VRAM_SETTLE_S if use_load else 0.0)
+            if info["run1_t"] is not None:
+                start = max(start, info["run1_t"])
+            windows.append((start, time.perf_counter()))
             out["warmup_s"].append(info["load_s"])
             out[key + "_clock_at_start_mhz"] = info["clock_at_start_mhz"]
             if r.returncode != 0:
@@ -376,6 +390,8 @@ def run_plan(plan: list[dict], rounds: int, out_json: Path, backend: str = "cuda
     """Run every plan entry ({"model", "variant", "file"}) once per round, rounds interleaved; save raw runs as JSON.
 
     An entry may carry "weights": "proxy" (its model key must then end in "-proxy"); it is copied into the record.
+    An entry may carry "env": {name: value} for the engine programs (copied into the record), e.g. to run the same file
+    once with the engine's default and once with GGML_CUDA_LITTLEBIT_F32_PREFILL=1 in the same interleaved rounds.
     The JSON is rewritten after every run, so an interrupted plan keeps what was measured.  An entry that fails (e.g.
     out of GPU memory) is recorded with its error instead of aborting the plan.  A run flagged `clock_low` (the GPU was
     below BOOST_MIN_MHZ when a measurement started) is repeated once; the repeat replaces it and carries
@@ -393,10 +409,14 @@ def run_plan(plan: list[dict], rounds: int, out_json: Path, backend: str = "cuda
             rec = {"model": entry["model"], "variant": entry["variant"], "file": entry["file"], "round": rnd,
                    "weights": weights,
                    "time": time.strftime("%Y-%m-%d %H:%M:%S")}
+            if entry.get("env"):
+                rec["env"] = dict(entry["env"])
             try:
-                rec.update(run_bench(ROOT / entry["file"], backend, n_gpu_layers, reps=reps, warmup_s=warmup_s))
+                rec.update(run_bench(ROOT / entry["file"], backend, n_gpu_layers, reps=reps, warmup_s=warmup_s,
+                                         env=entry.get("env")))
                 if rec.get("clock_low"):
-                    rec.update(run_bench(ROOT / entry["file"], backend, n_gpu_layers, reps=reps, warmup_s=warmup_s))
+                    rec.update(run_bench(ROOT / entry["file"], backend, n_gpu_layers, reps=reps, warmup_s=warmup_s,
+                                         env=entry.get("env")))
                     rec["retried_after_clock_low"] = True
                 print(f"round {rnd} {entry['model']:<12} {entry['variant']:<26} tg128 {rec['tg128']:8.1f} "
                       f"pp512 {rec['pp512']:8.1f}  vram {rec['vram_mb']}  clock {rec['sm_clock_mhz']}  at start "
@@ -407,7 +427,8 @@ def run_plan(plan: list[dict], rounds: int, out_json: Path, backend: str = "cuda
                 print(f"round {rnd} {entry['model']} {entry['variant']}: FAILED {str(e)[:300]}", flush=True)
             runs.append(rec)
             out_json.write_text(json.dumps({"backend": backend, "n_gpu_layers": n_gpu_layers, "reps": reps,
-                                            "warmup_s": warmup_s, "provenance": prov, "runs": runs}, indent=1),
+                                            "warmup_s": warmup_s, "provenance": prov,
+                                            "clock_window": "timed_repetitions", "runs": runs}, indent=1),
                                 encoding="utf-8")
     return runs
 
@@ -427,11 +448,15 @@ def render_markdown(raw: dict, vram_raw: dict | None = None) -> str:
             for name, v in variants.items():
                 v["vram_mb"] = vagg.get(model, {}).get(name, {}).get("vram_mb")
         vram_note = " (separate pass)"
+    # where the SM clock samples come from: the timed repetitions (current harness), or, in results written before that
+    # change (no "clock_window" key), from 1 s after the warm-up load stopped, which includes llama-bench's warm-up pass
+    clock_note = (" during the timed repetitions" if raw.get("clock_window") == "timed_repetitions"
+                  else " from 1 s after the load stopped, incl. the untimed warm-up pass")
     lines: list[str] = []
     for model, variants in agg.items():
         proxy = any(v.get("weights") == "proxy" for v in variants.values())
         lines += [f"### {model}" + (" (PROXY weights: speed only, not the original model)" if proxy else ""), "",
-                  f"| variant | file MiB | tg128 t/s (mean of the round medians; min..max of them) | pp512 t/s (same) | VRAM MiB{vram_note} | SM clock MHz (min..max sampled while measuring) |",
+                  f"| variant | file MiB | tg128 t/s (mean of the round medians; min..max of them) | pp512 t/s (same) | VRAM MiB{vram_note} | SM clock MHz (min..max sampled{clock_note}) |",
                   "|---|---|---|---|---|---|"]
         for name, v in variants.items():
             clk = v.get("sm_clock_range_mhz")

@@ -159,6 +159,10 @@ Qwen3-0.6B tokenizer (they skip without it), Llama and Gemma 3 need nothing.
 `llama-debug` and compare the last-position logits with `reference.py`; the Qwen3-0.6B file does the same on the real
 init-only checkpoint at `-ngl 0` and `-ngl 99`. The engine's own tests: from `engine/build`,
 `ctest -R "test-b1|test-gguf|test-alloc|test-littlebit"` (needs the MSVC environment on `PATH`).
+On a GPU with the tensor-core prefill path (compute capability 8.0+, the CUDA backend reports `LITTLEBIT_BP_PREFILL`),
+run `bin	est-littlebit-ref.exe` and `bin	est-backend-ops.exe test -o LITTLEBIT -b CUDA0` a second time with
+`GGML_CUDA_LITTLEBIT_F32_PREFILL=1` set: that forces the float32 GEMM prefill path and its chunk bands, which the
+default run no longer reaches on such a GPU.
 `test-littlebit-ref` also compares the CPU's AVX2 kernel of the fused op with its scalar reference kernel (they must be
 bit-identical when neither kernel is FP-contracted, i.e. no a*b + c fused into an FMA by the compiler; asserted for MSVC
 builds), and `test-backend-ops test -o LITTLEBIT -b CPU` does the same through the test harness; see "CPU: AVX2
@@ -175,7 +179,9 @@ kernel" in [engine-changes.md](engine-changes.md#cpu-avx2-kernel-of-ggml_op_litt
 `bench/run_bench.py` wraps `llama-bench` (warm-up, repetitions, interleaved rounds, GPU memory and clock); the gate is
 "LittleBit 0.55 bpw generates faster than bf16 on CUDA for Qwen3-0.6B and Qwen3-1.7B" (Phase 1 status: PASS on
 the original weights of both models). See [bench/README.md](../bench/README.md)
-and the results in [bench/results/phase1.md](../bench/results/phase1.md).
+and the results in [bench/results/phase1.md](../bench/results/phase1.md). Prompt processing after the tensor-core
+prefill path (Task 13b; `bench/plans/phase1_13b.json` measures LittleBit with and without it, `"env"` in a plan entry):
+[bench/results/phase1_13b.md](../bench/results/phase1_13b.md).
 
 ## Glossary
 

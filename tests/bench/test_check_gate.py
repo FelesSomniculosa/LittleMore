@@ -140,3 +140,13 @@ def test_committed_phase1_results_pass_the_formal_gate():
     prov = raw["provenance"]
     assert prov["engine_dirty"] is False
     assert prov["engine_commit"][:9] in prov["llama_bench_version"]
+
+
+def test_env_of_a_plan_entry_reaches_the_engine_programs():
+    """A plan entry's "env" is merged into the environment of llama-bench (and CUDA 12.9 stays on PATH)."""
+    from bench import run_bench as rb
+    env = rb._env({"GGML_CUDA_LITTLEBIT_F32_PREFILL": "1"})
+    assert env["GGML_CUDA_LITTLEBIT_F32_PREFILL"] == "1"
+    assert "PATH" in env
+    import os
+    assert rb._env().get("GGML_CUDA_LITTLEBIT_F32_PREFILL") == os.environ.get("GGML_CUDA_LITTLEBIT_F32_PREFILL")  # no leak
