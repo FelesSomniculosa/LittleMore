@@ -241,10 +241,31 @@ if (LITTLEMORE_BUILD_TESTS)
     if (GGML_CUDA AND DEFINED CUDAToolkit_BIN_DIR)
         set(_lm_env_cuda "PATH=path_list_prepend:${CUDAToolkit_BIN_DIR}")
     endif()
+    #
+    # "devices = none touches no GPU": the CPU-mode runs print the engine's info log (LITTLEMORE_LOG=info) and
+    # fail if any buffer (weights, KV cache, compute, pinned host memory) is allocated on a GPU backend, or any
+    # graph node is scheduled on one. test-api-gpu-log-control runs the CUDA mode with the same log and must
+    # match the pattern, which shows that the pattern does detect GPU use.
+    set(_lm_gpu_use_regex "CUDA[0-9]+ (compute|KV|model) buffer|CUDA_Host|Vulkan[0-9]+ (compute|KV|model) buffer|[[]CUDA[0-9]")
+    if (GGML_CUDA)
+        add_test(NAME test-api-gpu-log-control COMMAND test_api "${LITTLEMORE_TEST_MODEL}" cuda)
+        set_tests_properties(test-api-gpu-log-control PROPERTIES SKIP_RETURN_CODE 77 TIMEOUT 120
+                             PASS_REGULAR_EXPRESSION "${_lm_gpu_use_regex}")
+        if (LITTLEMORE_PYTHON)
+            set_tests_properties(test-api-gpu-log-control PROPERTIES FIXTURES_REQUIRED lm_tiny_gguf)
+        endif()
+        list(APPEND _lm_api_tests test-api-gpu-log-control)
+    endif()
     foreach(_t IN LISTS _lm_api_tests)
         set(_env ${_lm_env_cuda})
         if (_t STREQUAL "test-api-plugin-dir")
             list(APPEND _env "PATH=path_list_prepend:$<TARGET_FILE_DIR:littlemore>")
+        endif()
+        if (_t STREQUAL "test-api-cpu" OR _t STREQUAL "test-api-plugin-dir" OR _t STREQUAL "test-api-gpu-log-control")
+            list(APPEND _env "LITTLEMORE_LOG=set:info")
+        endif()
+        if (_t STREQUAL "test-api-cpu" OR _t STREQUAL "test-api-plugin-dir")
+            set_tests_properties(${_t} PROPERTIES FAIL_REGULAR_EXPRESSION "${_lm_gpu_use_regex}")
         endif()
         if (_env)
             set_tests_properties(${_t} PROPERTIES ENVIRONMENT_MODIFICATION "${_env}")

@@ -182,9 +182,10 @@ typedef struct lm_model_options {
      *       file (its weights plus its KV cache at fit_n_ctx tokens), keeps a reserve per GPU device for compute
      *       buffers (sized for the default 512-token batch, i.e. lm_session_options.n_batch = 0 or 512), and
      *       offloads as many layers as fit into the free memory of the GPU devices, summed over all of them (or
-     *       into vram_budget). If not even one fits, the model gets 0 GPU layers. The chosen value is reported by
-     *       lm_model_get_info().
-     *   0: weights stay in host memory (but see "GPU use at 0 GPU layers" at `devices`).
+     *       into vram_budget). If not even one fits, the model gets 0 GPU layers; the GPU is then still used
+     *       for large prompt batches (see "GPU use at 0 GPU layers" at `devices`; devices = "none" is the switch
+     *       for no GPU at all). The chosen value is reported by lm_model_get_info().
+     *   0: weights stay in host memory (same note: "GPU use at 0 GPU layers" at `devices`).
      *   N > 0: the last N layers go to the GPU, as llama.cpp's -ngl N. As in llama.cpp the output head counts as
      *       one extra layer: a model with L blocks is fully offloaded at N >= L + 1.
      * Which device a LittleBit (B1) weight finally lives on is decided by the engine per device capability: on a
@@ -200,14 +201,22 @@ typedef struct lm_model_options {
      * Which devices to use, by the names lm_backends_info() prints.
      *   NULL or "" (default): every GPU device, without duplicates (when one GPU is seen by two backends, e.g.
      *       CUDA0 and Vulkan0, the first backend's device is used, as llama.cpp does).
-     *   "none": no GPU at all. Weights, KV cache and every computation stay on the CPU.
+     *   "none": the CPU-only switch. No GPU at all: weights, KV cache and every computation stay on the CPU,
+     *       and no GPU memory is allocated (asserted by the tests from the engine's allocation log).
      *   "CUDA0" or "CUDA0,CUDA1": exactly these devices (GPU devices only; the CPU is always used).
      *
-     * GPU use at 0 GPU layers (the one place this is described): with any GPU device in this list, the engine
-     * still runs large prompt batches (32 tokens or more) on the GPU even when no layer is offloaded, copying
-     * the weights there for the duration of the batch (llama.cpp's behaviour). This needs GPU memory (measured
-     * 0.6 to 0.9 GiB for 0.6B to 1.7B models) and speeds up prompt reading. Use "none" for a run that does not
-     * touch the GPU at all.
+     * GPU use at 0 GPU layers (the one place this is described; intended, supported behaviour): with any GPU
+     * device in this list, the engine still runs large prompt batches on the GPU when no layer is offloaded
+     * (explicit n_gpu_layers = 0 or an auto-fit that fits nothing), copying the weights there for the duration
+     * of the batch, as llama.cpp does. This costs GPU memory and makes reading a prompt much faster; generation
+     * itself runs on the CPU either way. Measured on one RTX 4050 Laptop GPU (6 GiB), 0 GPU layers, GPU kept vs
+     * devices = "none":
+     *     GPU memory:              0.7 to 1.0 GiB          vs 0
+     *     prompt, 512 tokens:      0.6B LittleBit 5936 vs 354 tokens/s; 1.7B LittleBit 2824 vs 123 tokens/s
+     *     first token, 512 tokens: 0.6B LittleBit  120 vs 1449 ms;      1.7B LittleBit  202 vs 4192 ms
+     *     generation:              unchanged (87.7 vs 85.7 and 34.7 vs 34.2 tokens/s)
+     * Use devices = "none" when the GPU must not be touched (no GPU memory at all); keep the default to have the
+     * GPU speed up prompts even when the weights do not fit on it. Full table: docs/c-api.md.
      */
     const char * devices;
 

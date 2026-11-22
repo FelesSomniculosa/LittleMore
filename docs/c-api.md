@@ -129,19 +129,37 @@ The estimate is 330 to 350 MiB above the real use in every case (on the safe sid
 
 Known limits, measured:
 
-- **Python (3.8+) hosts do not search `PATH` for DLLs**: loaded with `ctypes` from `python.exe`, the library
-  found every plugin in its directory, but the CUDA plugin could not load its CUDA runtime DLLs although the
-  CUDA 12.9 `bin` directory was first on `PATH` (no CUDA0 device; CPU and Vulkan only). With
-  `os.add_dll_directory(<CUDA bin directory>)` before loading, CUDA0 appeared. A Python binding must add the
-  directory that holds the CUDA runtime DLLs (the toolkit's `bin`, or wherever a package bundles them).
-- **0 GPU layers is not "no GPU"**: as in llama.cpp, the engine still sends large prompt batches to a GPU
-  of the model's device list. Measured with a 601-token prompt and 0 layers: 616 MiB (0.6B LittleBit) to
-  944 MiB (1.7B f16) of GPU memory. Use `devices = "none"` for a run that touches no GPU.
+- **Python hosts**: see "Python / ctypes on Windows" below (CUDA runtime DLLs and `os.add_dll_directory`).
+- **0 GPU layers still uses the GPU (intended), `devices = "none"` is the CPU-only switch.** With a GPU in the
+  device list, the engine runs large prompt batches on the GPU even when no layer is offloaded (explicit
+  `n_gpu_layers = 0`, or an auto-fit that fits nothing), as llama.cpp does: it costs GPU memory and makes
+  prompts much faster. `devices = "none"` uses no GPU and allocates no GPU memory; the CPU-mode CTest runs assert
+  this from the engine's allocation log (no GPU buffer, no node on a GPU), and a control run in CUDA mode shows
+  the same check detects GPU use. Measured on one RTX 4050 Laptop GPU (6 GiB), 0 GPU layers, GPU kept vs
+  `"none"` (3 interleaved rounds, median of 15; llama-bench with 4 threads and batch 512, first-token time
+  through the C API):
+
+  | Model | GPU memory | prompt 512 tok/s | first token, 512-token prompt | generation tok/s |
+  |---|---|---|---|---|
+  | Qwen3-0.6B LittleBit 0.55 | 723 MiB vs 0 | 5936 vs 354 | 120 vs 1449 ms | 87.7 vs 85.7 |
+  | Qwen3-1.7B LittleBit 0.55 | 1033 MiB vs 0 | 2824 vs 123 | 202 vs 4192 ms | 34.7 vs 34.2 |
+  | Qwen3-0.6B f16 | 749 MiB vs 0 | 3456 vs 195 | 179 vs 2630 ms | 41.9 vs 42.3 |
+  | Qwen3-1.7B f16 | 1053 MiB vs 0 | 1378 vs 65 | 443 vs 8046 ms | 15.2 vs 15.1 |
+
+  Shorter prompts gain less (128 tokens: 3.6x to 10.9x; 32 tokens: 1.7x to 3.2x for LittleBit, none for f16).
   The header describes this in one place, at `lm_model_options.devices` ("GPU use at 0 GPU layers").
 - **Windows (WDDM) does not report other processes' GPU memory**: while another process held 3.6 GiB of the
   6 GiB (allocated and written), `cudaMemGetInfo` in a new process still reported 5.0 GiB free, the fit
   offloaded all of Qwen3-1.7B f16, and generation succeeded with the GPU memory oversubscribed (the driver
   pages it to system memory). Set `vram_budget` when other programs use the GPU.
+
+## Python / ctypes on Windows
+
+Python 3.8 and later do not search `PATH` for the DLLs that a loaded DLL depends on. Loaded with `ctypes` from
+`python.exe`, `littlemore.dll` finds all plugins in its own directory, but the CUDA plugin cannot load its CUDA
+runtime DLLs even with the CUDA 12.9 `bin` directory first on `PATH` (measured: no CUDA0 device, only CPU and
+Vulkan). Call `os.add_dll_directory(<directory with the CUDA runtime DLLs>)` (the toolkit's `bin`, or wherever a
+package bundles them) before loading the library; then CUDA0 appears.
 
 ## Tests
 
@@ -159,7 +177,9 @@ the auto-fit (all layers on CUDA, 0 with a 1-byte budget, head + one block with 
 an older smaller `lm_model_info`, tokenize/detokenize (including the `special` flag), streaming, template
 application, stopping, determinism, context overflow and a generation that fills the context, re-entrant
 calls from a token callback, two threads on one session, and memory growth over 20 load/chat/free cycles.
-Each API test has a 120-second timeout, so a deadlock fails instead of hanging.
+Each API test has a 120-second timeout, so a deadlock fails instead of hanging. The CPU-mode runs also print the engine's info log
+(`LITTLEMORE_LOG=info`) and fail if it shows any GPU buffer or any node scheduled on a GPU (so `"none"` really
+touches no GPU); `test-api-gpu-log-control` (CUDA mode, same log) must show such lines, proving the check works.
 
 Mutation checks (each made the test fail, then was reverted): not freeing the model (private memory grew
 17 MiB on the CPU, 7.5 MiB on CUDA, limit 4 MiB) or the session (more than 480 MiB); not storing error
