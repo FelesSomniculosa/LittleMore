@@ -1,9 +1,11 @@
 # Engine changes (llama.cpp fork)
 
 LittleMore runs Samsung LittleBit (sub-1-bit) models through a patched llama.cpp.
-The engine lives in `engine/`, which is its **own git repository** (a plain
-local clone of upstream) and is listed in the outer repo's `.gitignore`, so the
-outer repo does not track it. The pin is recorded here instead.
+The engine lives in `engine/`, which is its **own git repository**: in the public
+repository it is a git submodule that points to a fork of llama.cpp (branch
+`littlemore`), so clone with `git clone --recurse-submodules` (or run
+`git submodule update --init --recursive`). The exact commit is recorded by the
+submodule pointer; the upstream pin is recorded below.
 
 ## What this fork adds and where to find it
 

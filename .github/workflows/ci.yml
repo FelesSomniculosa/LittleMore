@@ -1,0 +1,229 @@
+# Continuous integration for LittleMore.
+#
+# What this workflow proves on every push and pull request:
+#   1. cpu-build-test (Windows x64 and Linux x64)
+#        builds the C API library and the engine's CPU backends from source, runs the C API tests and the engine's
+#        own LittleBit tests (CTest), runs `test-backend-ops` for the fused LITTLEBIT op on the CPU backend, runs the
+#        Python tests that need no GPU and no model download, and builds the Python wheel and imports it.
+#   2. cuda-compile-linux / cuda-compile-windows
+#        compile-only checks of the CUDA backend. GitHub-hosted runners have no GPU, so nothing CUDA is *run*
+#        here; the CUDA kernels are tested on a real GPU by the maintainer (see docs/development.md).
+#
+# What it does NOT cover (stated honestly): CUDA/Vulkan execution, ARM, Metal, Android, iOS, and every test marked
+# `smoke` or `engine_run` in pytest.ini (they need cached model files and a full engine build).
+#
+# The engine (`engine/`) is a git submodule (a fork of llama.cpp, branch `littlemore`), so every checkout below
+# uses `submodules: recursive`.
+
+name: CI
+
+on:
+  push:
+  pull_request:
+
+# Least privilege: the jobs only read the repository.
+permissions:
+  contents: read
+
+# A newer push to the same branch cancels the older, now pointless, run.
+concurrency:
+  group: ci-${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  # ---------------------------------------------------------------------------------------------------------------
+  # CPU build + tests + wheel, on both operating systems.
+  # ---------------------------------------------------------------------------------------------------------------
+  cpu-build-test:
+    name: CPU build, tests, wheel (${{ matrix.os }})
+    runs-on: ${{ matrix.os }}
+    timeout-minutes: 120
+    strategy:
+      fail-fast: false            # one OS failing must not hide the result of the other
+      matrix:
+        os: [windows-2022, ubuntu-22.04]
+    env:
+      # Where the CMake build lands (relative to the repository root). `build/bin` is also where the wheel build
+      # (python/setup.py) looks for the native libraries by default.
+      BUILD_DIR: build
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          submodules: recursive   # engine/ is a submodule
+
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.13"
+          cache: pip
+
+      # Python test dependencies. torch comes from PyTorch's CPU-only index (a small download instead of GBs of
+      # CUDA libraries). The converter uses the engine's own gguf-py (engine/gguf-py), which has the B1 type this
+      # project adds; the `gguf` package is installed as well because the engine's scripts import it.
+      # `ninja` from PyPI gives both runners the same generator.
+      - name: Install Python dependencies
+        shell: bash
+        run: |
+          python -m pip install --upgrade pip
+          python -m pip install torch --index-url https://download.pytorch.org/whl/cpu
+          python -m pip install safetensors numpy pytest transformers gguf sentencepiece build setuptools wheel ninja
+
+      # Ninja builds need the MSVC compiler on PATH; the runner image has Visual Studio but not in the
+      # environment. This action sets that environment up.
+      - name: Set up the MSVC environment (Windows)
+        if: runner.os == 'Windows'
+        uses: ilammy/msvc-dev-cmd@v1
+        with:
+          arch: x64
+
+      # CMake >= 3.22 is required by CMakeLists.txt; both runner images ship a newer one. Printed for the log.
+      - name: Show tool versions
+        shell: bash
+        run: |
+          cmake --version
+          ninja --version
+          python --version
+
+      # CPU-only configure. The CPU backend is built as one plugin per instruction-set level
+      # (GGML_CPU_ALL_VARIANTS, the default for x86-64 in CMakeLists.txt). LLAMA_BUILD_TESTS (and the `common`
+      # library it needs) also builds the engine's own tests, test-backend-ops among them.
+      # LITTLEMORE_PYTHON is the interpreter CTest uses to build the tiny test model.
+      - name: Configure (CPU backends only)
+        shell: bash
+        run: |
+          PY="$(python -c 'import sys; print(sys.executable.replace(chr(92), "/"))')"
+          cmake -G Ninja -B "$BUILD_DIR" \
+            -DCMAKE_BUILD_TYPE=Release \
+            -DGGML_CUDA=OFF -DGGML_VULKAN=OFF \
+            -DLLAMA_BUILD_COMMON=ON -DLLAMA_BUILD_TESTS=ON -DLLAMA_CURL=OFF \
+            -DLITTLEMORE_PYTHON="$PY"
+
+      # Only the targets the tests need (not the whole engine with all its tools).
+      - name: Build
+        shell: bash
+        run: |
+          cmake --build "$BUILD_DIR" --parallel \
+            --target littlemore test_api test_utf8 \
+            test-backend-ops test-b1 test-gguf test-alloc
+
+      # CTest: the C API tests (the tiny test model is built first by tests/c/make_tiny_gguf.py, a CTest fixture)
+      # and the engine's B1 / GGUF / allocator tests. (The engine's test-littlebit-ref is left out on purpose: it
+      # insists on finding a CUDA device, which these runners do not have; the CPU side of the fused op is covered by
+      # test-backend-ops below.)
+      - name: CTest (C API and engine unit tests)
+        shell: bash
+        run: |
+          ctest --test-dir "$BUILD_DIR" --output-on-failure --timeout 600 \
+            -R "test-utf8|test-api|littlemore-tiny-gguf|test-b1|test-gguf|test-alloc"
+
+      # The correctness gate for the fused op: the CPU backend's LITTLEBIT op against the reference
+      # implementation, through llama.cpp's backend-ops test harness.
+      - name: test-backend-ops (LITTLEBIT, CPU)
+        shell: bash
+        run: |
+          if [ -f "$BUILD_DIR/bin/test-backend-ops.exe" ]; then exe="$BUILD_DIR/bin/test-backend-ops.exe"; else exe="$BUILD_DIR/bin/test-backend-ops"; fi
+          "$exe" test -o LITTLEBIT -b CPU
+
+      # The Python tests that need no model download and no GPU. `-m "not smoke and not engine_run"` leaves out
+      # the end-to-end tests (see pytest.ini); the rest (reference model, converter on tiny random models, SDK
+      # unit tests, speed-gate logic) is self-contained.
+      - name: Python tests (no model download)
+        shell: bash
+        run: python -m pytest -m "not smoke and not engine_run" -q
+
+      # Wheel: python/setup.py copies the libraries from build/bin into the wheel (no CUDA runtime is bundled).
+      - name: Build the wheel
+        shell: bash
+        run: python -m build --wheel --outdir dist python
+
+      # Install the wheel from a clean directory (so the source tree is not importable) and check that the
+      # bundled library loads and reports the CPU backend.
+      - name: Install the wheel and import it
+        shell: bash
+        run: |
+          python -m pip install dist/littlemore-*.whl
+          cd "$RUNNER_TEMP"
+          python -c "import littlemore, sys; names=[b['name'] for b in littlemore.backends_info()]; print(names); sys.exit(0 if 'CPU' in names else 1)"
+
+      - uses: actions/upload-artifact@v4
+        with:
+          name: wheel-${{ matrix.os }}
+          path: dist/*.whl
+          if-no-files-found: error
+
+  # ---------------------------------------------------------------------------------------------------------------
+  # CUDA compile-only check, Linux. The official NVIDIA development image has nvcc and the CUDA libraries; no GPU
+  # is needed to compile. The project targets CUDA 12.x (docs/setup-windows.md), hence a 12.9 image.
+  # ---------------------------------------------------------------------------------------------------------------
+  cuda-compile-linux:
+    name: CUDA compile-only (Linux, CUDA 12.9)
+    runs-on: ubuntu-22.04
+    timeout-minutes: 120
+    container:
+      image: nvidia/cuda:12.9.1-devel-ubuntu22.04
+    steps:
+      # The bare container has no git, and actions/checkout needs it to fetch submodules.
+      - name: Install build tools
+        run: |
+          apt-get update
+          apt-get install -y --no-install-recommends git cmake ninja-build ca-certificates build-essential python3
+
+      - uses: actions/checkout@v4
+        with:
+          submodules: recursive
+
+      # Architectures: 75 (Turing), 80/86 (Ampere), 89 (Ada, the maintainer's GPU). The LittleBit tensor-core
+      # prefill path needs compute capability 8.0+, so 80/86/89 are the ones that matter.
+      - name: Configure
+        run: |
+          cmake -G Ninja -B build \
+            -DCMAKE_BUILD_TYPE=Release \
+            -DGGML_CUDA=ON -DGGML_VULKAN=OFF \
+            -DCMAKE_CUDA_ARCHITECTURES="75;80;86;89" \
+            -DLLAMA_CURL=OFF
+
+      # Builds the CUDA plugin and the C library. Nothing is run: the runner has no GPU.
+      - name: Build
+        run: cmake --build build --parallel 4 --target ggml-cuda littlemore
+
+  # ---------------------------------------------------------------------------------------------------------------
+  # CUDA compile-only check, Windows (the platform the CUDA backend is developed and measured on).
+  # `continue-on-error`: the CUDA toolkit installer action below could not be tried before publishing, so a
+  # failure here is reported but does not turn the whole workflow red until it has been seen working once.
+  # ---------------------------------------------------------------------------------------------------------------
+  cuda-compile-windows:
+    name: CUDA compile-only (Windows, CUDA 12.9)
+    runs-on: windows-2022
+    timeout-minutes: 120
+    continue-on-error: true
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          submodules: recursive
+
+      - uses: ilammy/msvc-dev-cmd@v1
+        with:
+          arch: x64
+
+      # Installs only the compiler and the libraries needed to build (no driver).
+      - name: Install the CUDA toolkit
+        uses: Jimver/cuda-toolkit@v0.2.24
+        with:
+          cuda: "12.9.1"
+          method: network
+          sub-packages: '["nvcc", "cudart", "cublas", "cublas_dev", "visual_studio_integration", "thrust"]'
+
+      - name: Install Ninja
+        run: python -m pip install ninja
+
+      - name: Configure
+        shell: bash
+        run: |
+          cmake -G Ninja -B build \
+            -DCMAKE_BUILD_TYPE=Release \
+            -DGGML_CUDA=ON -DGGML_VULKAN=OFF \
+            -DCMAKE_CUDA_ARCHITECTURES="80;86;89" \
+            -DLLAMA_CURL=OFF
+
+      - name: Build
+        shell: bash
+        run: cmake --build build --parallel 4 --target ggml-cuda littlemore

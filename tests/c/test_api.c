@@ -707,7 +707,7 @@ static void * error_job_main(void * arg) {
 
 static void test_error_per_thread(void) {
     error_job job;
-    char      mine[256];
+    char      mine[1024];
     lm_model * m = NULL;
     memset(&job, 0, sizeof(job));
     lm_model_load("main-thread-missing.gguf", NULL, &m);
