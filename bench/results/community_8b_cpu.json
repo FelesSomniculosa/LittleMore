@@ -1,0 +1,91 @@
+{
+ "backend": "cpu",
+ "n_gpu_layers": 0,
+ "reps": 3,
+ "warmup_s": 3.0,
+ "provenance": {
+  "engine_commit": "3da27de1b14eb9d97a84d58abcfda2d56121cec9",
+  "engine_dirty": false,
+  "llama_bench_version": "version: 1.0.0-dev (build 20, commit 2d9b9e98b)",
+  "repo_commit": "1866985874e8a58ce7b5a6fbf6df5da1bab28897"
+ },
+ "clock_window": "timed_repetitions",
+ "runs": [
+  {
+   "model": "qwen3-8b",
+   "variant": "littlebit-0.55-community",
+   "file": ".cache/gguf/littlebit-qwen3-8b-0.55bpw-b1.gguf",
+   "round": 0,
+   "weights": "original",
+   "time": "2026-11-22 17:49:25",
+   "file_mib": 2904.5562133789062,
+   "backend": "cpu",
+   "n_gpu_layers": 0,
+   "cmd": [
+    [
+     "C:\\Vibe Coding\\LittleMore\\engine\\build\\bin\\llama-bench.exe",
+     "-m",
+     "C:\\Vibe Coding\\LittleMore\\.cache\\gguf\\littlebit-qwen3-8b-0.55bpw-b1.gguf",
+     "-ngl",
+     "0",
+     "-dev",
+     "none",
+     "-p",
+     "0",
+     "-n",
+     "128",
+     "-r",
+     "3",
+     "-o",
+     "json"
+    ],
+    [
+     "C:\\Vibe Coding\\LittleMore\\engine\\build\\bin\\llama-bench.exe",
+     "-m",
+     "C:\\Vibe Coding\\LittleMore\\.cache\\gguf\\littlebit-qwen3-8b-0.55bpw-b1.gguf",
+     "-ngl",
+     "0",
+     "-dev",
+     "none",
+     "-p",
+     "512",
+     "-n",
+     "0",
+     "-r",
+     "3",
+     "-o",
+     "json"
+    ]
+   ],
+   "warmup_s": [
+    0.0,
+    0.0
+   ],
+   "tg128_clock_at_start_mhz": 210.0,
+   "tg128": 13.4144,
+   "tg128_mean": 13.327366666666668,
+   "tg128_sd": 0.15361290093391672,
+   "tg128_samples": [
+    13.4177,
+    13.4144,
+    13.15
+   ],
+   "build_commit": "2d9b9e98b",
+   "gpu_info": "NVIDIA GeForce RTX 4050 Laptop GPU, NVIDIA GeForce RTX 4050 Laptop GPU, Intel(R) UHD Graphics",
+   "pp512_clock_at_start_mhz": 1605.0,
+   "pp512": 41.1627,
+   "pp512_mean": 41.0918,
+   "pp512_sd": 0.1610168624709848,
+   "pp512_samples": [
+    41.1627,
+    41.2052,
+    40.9075
+   ],
+   "clock_low": false,
+   "vram_mb": null,
+   "vram_peak_mb": null,
+   "vram_base_mb": null,
+   "sm_clock_mhz": null
+  }
+ ]
+}

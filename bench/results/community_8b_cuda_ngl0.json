@@ -1,0 +1,95 @@
+{
+ "backend": "cuda",
+ "n_gpu_layers": 0,
+ "reps": 3,
+ "warmup_s": 0.0,
+ "provenance": {
+  "engine_commit": "3da27de1b14eb9d97a84d58abcfda2d56121cec9",
+  "engine_dirty": false,
+  "llama_bench_version": "version: 1.0.0-dev (build 20, commit 2d9b9e98b)",
+  "repo_commit": "1866985874e8a58ce7b5a6fbf6df5da1bab28897"
+ },
+ "clock_window": "timed_repetitions",
+ "runs": [
+  {
+   "model": "qwen3-8b",
+   "variant": "littlebit-0.55-community",
+   "file": ".cache/gguf/littlebit-qwen3-8b-0.55bpw-b1.gguf",
+   "round": 0,
+   "weights": "original",
+   "time": "2026-11-22 17:50:46",
+   "file_mib": 2904.5562133789062,
+   "backend": "cuda",
+   "n_gpu_layers": 0,
+   "cmd": [
+    [
+     "C:\\Vibe Coding\\LittleMore\\engine\\build\\bin\\llama-bench.exe",
+     "-m",
+     "C:\\Vibe Coding\\LittleMore\\.cache\\gguf\\littlebit-qwen3-8b-0.55bpw-b1.gguf",
+     "-ngl",
+     "0",
+     "-dev",
+     "CUDA0",
+     "-p",
+     "0",
+     "-n",
+     "128",
+     "-r",
+     "3",
+     "-o",
+     "json"
+    ],
+    [
+     "C:\\Vibe Coding\\LittleMore\\engine\\build\\bin\\llama-bench.exe",
+     "-m",
+     "C:\\Vibe Coding\\LittleMore\\.cache\\gguf\\littlebit-qwen3-8b-0.55bpw-b1.gguf",
+     "-ngl",
+     "0",
+     "-dev",
+     "CUDA0",
+     "-p",
+     "512",
+     "-n",
+     "0",
+     "-r",
+     "3",
+     "-o",
+     "json"
+    ]
+   ],
+   "warmup_s": [
+    0.0,
+    0.0
+   ],
+   "tg128_clock_at_start_mhz": 1605.0,
+   "tg128": 13.317,
+   "tg128_mean": 13.302999999999999,
+   "tg128_sd": 0.08259473348828053,
+   "tg128_samples": [
+    13.3777,
+    13.2143,
+    13.317
+   ],
+   "build_commit": "2d9b9e98b",
+   "gpu_info": "NVIDIA GeForce RTX 4050 Laptop GPU, NVIDIA GeForce RTX 4050 Laptop GPU, Intel(R) UHD Graphics",
+   "pp512_clock_at_start_mhz": 1455.0,
+   "pp512": 734.467,
+   "pp512_mean": 734.3893333333332,
+   "pp512_sd": 1.912683019565264,
+   "pp512_samples": [
+    732.439,
+    734.467,
+    736.262
+   ],
+   "clock_low": false,
+   "vram_mb": 1667.0,
+   "vram_peak_mb": 1667.0,
+   "vram_base_mb": 0.0,
+   "sm_clock_mhz": [
+    210.0,
+    210.0,
+    1605.0
+   ]
+  }
+ ]
+}

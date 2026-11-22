@@ -6,6 +6,9 @@ compute-backend plugins (CPU variants, CUDA, Vulkan).
 
 ## Quickstart
 
+A walk-through from installing to running an 8B LittleBit model on a 6 GB GPU (download, conversion, measured speed
+and quality): [docs/quickstart.md](../docs/quickstart.md).
+
 ```python
 import littlemore
 

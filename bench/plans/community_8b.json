@@ -1,0 +1,3 @@
+[
+  {"model": "qwen3-8b", "variant": "littlebit-0.55-community", "file": ".cache/gguf/littlebit-qwen3-8b-0.55bpw-b1.gguf"}
+]

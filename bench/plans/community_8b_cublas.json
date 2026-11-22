@@ -1,0 +1,4 @@
+[
+  {"model": "qwen3-8b", "variant": "default", "file": ".cache/gguf/littlebit-qwen3-8b-0.55bpw-b1.gguf"},
+  {"model": "qwen3-8b", "variant": "cublas-f32", "file": ".cache/gguf/littlebit-qwen3-8b-0.55bpw-b1.gguf", "env": {"GGML_CUDA_CUBLAS_COMPUTE_TYPE": "f32"}}
+]

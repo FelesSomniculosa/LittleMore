@@ -1,6 +1,7 @@
 # Development guide
 
-How to build, test and run LittleMore end to end. All environment variables and build knobs are listed in
+How to build, test and run LittleMore end to end. To just install it and run a model, start with
+[quickstart.md](quickstart.md). All environment variables and build knobs are listed in
 [environment-variables.md](environment-variables.md). LittleMore runs LittleBit
 (sub-1-bit) language models through a patched llama.cpp; see
 [engine-changes.md](engine-changes.md) for what the patch is.
@@ -149,6 +150,14 @@ the engine's gguf-py, bit-identical to it (`tests/convert/test_head_type.py`). W
 dequantizes the written head and compares it with the checkpoint's (relative RMS error at most 1.1e-2 for Q8_0, 3.8e-2
 for Q6_K; measured 5.35e-3 / 1.77e-2 on Qwen3-0.6B), so a wrong or corrupted head fails the conversion.
 
+Memory: the LittleBit linears are read one module at a time (`reference.LazyCheckpoint`), so the peak is the
+1-bit copies of all signs plus the largest other tensor while llama.cpp's converter writes it. Measured for the community
+Qwen3-8B checkpoint at 0.55 bits per weight (`LittleBitLLM/littlebit-qwen3-8b-0.55bpw`): 4.9 GiB peak working set,
+about 2.5 minutes, of which the read-back validation of the 252 linears takes about 2 minutes. Checkpoints written by
+the LittleBit training code carry three bookkeeping scalars per linear (`_eff_bit_target`, `_eff_bit_actual`,
+`_split_dim_final`); they are left out after `_split_dim_final` is checked against the rank of the signs
+(`tests/convert/test_bookkeeping_tensors.py`).
+
 Input widths (hidden size, intermediate size) must be multiples of 128, because
 a `B1` row is whole 128-sign blocks; the converter refuses anything else. The
 rank may be anything (it is padded to a multiple of 128 with zero scales, which
@@ -227,7 +236,9 @@ differs from its HF reference by only 1.2e-4 nats per chunk (CPU: 1.0e-4). So th
 few percent of the perplexity of single chunks) is specific to the LittleBit model on CUDA; neither the f16 attention nor
 the tensor-core prefill path, alone or together, removes it (they reduce it by up to a third). Its cause is not decided
 (hypotheses: rounding in the CUDA LittleBit kernels or the float32 GEMM path, amplified by the very flat output
-distribution of an untrained model; not tested). The standard error of the mean per-chunk gap is 0.0156/sqrt(64) = 2e-3
+distribution of an untrained model; not tested). It is not the F16 output head's 16-bit cuBLAS accumulation that
+explains the CUDA gap of the 8B model (7c): with `GGML_CUDA_CUBLAS_COMPUTE_TYPE=f32` the 32-chunk std stays at 1.26e-2
+(1.27e-2 without). The standard error of the mean per-chunk gap is 0.0156/sqrt(64) = 2e-3
 over 64 chunks (2.8e-3 over 32), so the measured mean gaps of the default CUDA run (-4.5e-4 over 32 chunks, +1.27e-3 over
 64 chunks) are both within one standard error of zero, i.e. consistent with zero; no trend with the chunk count is
 claimed. On the CPU the default-settings perplexity gap is 1.16e-3 over 32 chunks (3.4e-3 over the first 8 chunks); it
@@ -243,6 +254,48 @@ different logits) between the two.
 
 Test selection: a plain `pytest` also runs the smoke-marked tests, including this file (about 3.3 minutes extra when the
 assets exist; they skip otherwise). `pytest -m "not smoke"` is the fast subset.
+
+## 7c. Real weights: the community Qwen3-8B checkpoint (opt-in)
+
+```powershell
+$env:LITTLEMORE_RUN_8B = "1"; .venv\Scripts\python.exe -m pytest tests/e2e/test_community_8b.py -v -s   # about 3 minutes
+```
+
+`tests/e2e/test_community_8b.py` loads the converted `LittleBitLLM/littlebit-qwen3-8b-0.55bpw` GGUF through the Python
+SDK with auto-fit (all 36 layers and the head on a 6 GB GPU, GPU memory below 6 GiB, 32 greedy tokens), checks that
+the engine's tokenizer matches the checkpoint's, and compares the engine's perplexity (CUDA) with the float32 reference
+on the first chunks of WikiText-2 (1 % bound as in 7b, and 0.1 % with 32-bit cuBLAS compute, see below). It needs about 3 GB of downloads and a 2.9 GiB GGUF and never
+fetches or converts anything itself: without `LITTLEMORE_RUN_8B=1`, or without the files, it skips and says what is
+missing (download and conversion commands in its docstring and in [quickstart.md](quickstart.md)). The reference runs
+memory-lean (`build_model(..., packed_signs=True)` keeps the signs bit-packed and `lean_float32` applies the bf16
+embedding and head in float32: about 4 GiB of RAM instead of about 9), with the same numbers as the plain float32
+reference (`tests/dev/test_reference.py`).
+
+Measured (32 chunks of 512 tokens; `std` = spread of the per-chunk NLL difference, in nats):
+
+| Engine run | perplexity (reference 21.63247) | relative gap | std |
+|---|---|---|---|
+| CUDA, default | 21.6531 | +9.5e-4 | 2.2e-3 |
+| CUDA, `-fa off -ctk f32 -ctv f32` | 21.6519 | +9.0e-4 | 2.2e-3 |
+| CUDA, `GGML_CUDA_LITTLEBIT_F32_PREFILL=1` | 21.6524 | +9.2e-4 | 2.3e-3 |
+| CUDA, `GGML_CUDA_CUBLAS_COMPUTE_TYPE=f32` | 21.6322 | -1.2e-5 | 7.9e-5 |
+| CUDA, output head widened to F32 in the file | 21.6322 | -1.2e-5 | 7.9e-5 |
+| CPU (`-dev none`), `-fa off -ctk f32 -ctv f32` | 21.63250 | +1.4e-6 | 2.5e-5 |
+
+So on real weights the engine computes the reference's function: exactly on the CPU, and on CUDA up to the output head.
+For prompt batches the CUDA backend multiplies the F16 head through cuBLAS with 16-bit accumulation
+(`CUBLAS_COMPUTE_16F`, chosen for F16 weights on this GPU, `ggml-cuda.cu`); forcing 32-bit compute, or an F32 head,
+removes the gap. Neither attention precision nor the LittleBit prefill path matters here. Forcing 32-bit compute did not
+change llama-bench speed measurably (pp512 1114 to 1209 tokens/s against 1133 to 1183, tg128 63.3 against 63.3; 2
+rounds of 5; `bench/plans/community_8b_cublas.json`, `bench/results/community_8b_cublas.json`). Not examined: the head during single-token generation. The 1 % bound holds either way.
+
+A trained model is much less sensitive to small faults than the init-only 0.6B one, so on real weights the 1 % bound
+is weak. Measured on the first 4 chunks (relative perplexity change of the reference): a 2 % error on one output scale
++2.5e-4 (layer 0 `down_proj`) or -2.8e-5 (layer 0 `q_proj`), a 10 % error -1.3e-4, the residual path of layer 18's
+`down_proj` left out +8.8e-3, a one-token shift of the input +1.6e-2. The test therefore also runs the engine with
+`GGML_CUDA_CUBLAS_COMPUTE_TYPE=f32` and requires 0.1 % there (measured gap 6e-6 over 4 chunks, 1.2e-5 over 32), and a
+mutation test shows that the missing residual path fails it. Scale errors of a few percent stay below every
+perplexity bound here; the converter's bit-exact per-layer check covers them.
 
 ## 8. Speed benchmarks and the speed gate
 
