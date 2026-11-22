@@ -35,9 +35,23 @@ def pytest_configure(config: pytest.Config) -> None:
     config.addinivalue_line("markers", "robust: opt-in robustness campaign (tests/robustness); select with -m robust")
 
 
+def _selects_robust(markexpr: str) -> bool:
+    """True when the `-m` expression selects a test that carries only the `robust` marker (so `-m robust` and
+    `-m "robust and not slow"` opt in, `-m "not robust"` or an empty expression do not). Evaluated with pytest's own
+    expression parser, not by looking for the substring "robust"."""
+    if not markexpr.strip():
+        return False
+    from _pytest.mark.expression import Expression
+    try:
+        expr = Expression.compile(markexpr)
+    except Exception:  # noqa: BLE001 - a malformed expression is pytest's to report, not an opt-in
+        return False
+    return bool(expr.evaluate(lambda name, **_kw: name == "robust"))
+
+
 def pytest_collection_modifyitems(config: pytest.Config, items: list[pytest.Item]) -> None:
     """Skip every robustness test unless the run opted in (see the module docstring)."""
-    selected = "robust" in (config.getoption("-m") or "") or os.environ.get("LITTLEMORE_RUN_ROBUST") == "1"
+    selected = _selects_robust(config.getoption("markexpr") or "") or os.environ.get("LITTLEMORE_RUN_ROBUST") == "1"
     for item in items:
         if HERE in Path(str(item.fspath)).resolve().parents:
             item.add_marker(pytest.mark.robust)
