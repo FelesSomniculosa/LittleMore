@@ -64,7 +64,7 @@ in [phase1.md](phase1.md).)
   of short pp512 runs started like the harness, the FIRST timed repetition of each run, SM clock sampled during it; no
   GPU setting changed): Qwen3-1.7B, both files at 2325-2340 MHz in rounds 2-5: LittleBit / F16 = 0.97, 0.83, 0.82,
   0.87 (round 0, both near 2200 MHz: 0.86), i.e. **about 0.8-0.9x F16**; Qwen3-0.6B, the one round with both at
-  2340 MHz: 0.98, the other rounds 0.82-0.94 with F16 at a LOWER clock (1665-2115 MHz) than LittleBit (2130-2340), so
+  2340 MHz: 0.98, the other rounds 0.82-0.94 (rounds 0, 2, 3, 5; round 4 is left out: its F16 first repetition, 8338 t/s, is an outlier against 10961-12211 in the other rounds, and the ratio would be 1.22; in rounds 0, 2 and 4 the F16 run has no clock sample inside its first repetition (rep1_clock_mhz null), so "F16 at a lower clock" there rests on the clock at the start of the repetition only) with F16 at a LOWER clock (1665-2115 MHz) than LittleBit (2130-2340), so
   at equal clocks 0.6B is also below F16. First repetitions of the 10-repetition harness runs agree: 1.7B 0.79 /
   0.89 / 0.98, 0.6B 0.82 / 0.82 / 0.90.
 
