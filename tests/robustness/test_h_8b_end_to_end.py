@@ -139,4 +139,6 @@ def test_perplexity_unchanged(gguf_8b: Path) -> None:
           f"final {final.group(1) if final else None}")
     assert len(running) >= min(windows, 146) and all(v == v for v in running)
     if windows >= 146:
-        assert final and abs(float(final.group(1)) - PPL_ALL_WINDOWS) <= 5e-4, (final.group(1) if final else out[-1500:])
+        # the strided mode prints no "Final estimate" line: its result is the running value after the last window
+        value = float(final.group(1)) if final else running[-1]
+        assert abs(value - PPL_ALL_WINDOWS) <= 5e-4, (value, out[-1500:])
