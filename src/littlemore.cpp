@@ -466,15 +466,16 @@ struct fit_plan {
     uint64_t head         = 0;
 };
 
-// Reads an unsigned integer key; `fallback` when it is missing or not an integer.
-// a + b and a * b on uint64_t that stop at UINT64_MAX instead of wrapping (sizes read from a file are not trusted).
+// a + b on uint64_t that stops at UINT64_MAX instead of wrapping (sizes read from a file are not trusted).
 uint64_t sat_add(uint64_t a, uint64_t b) {
     return a > UINT64_MAX - b ? UINT64_MAX : a + b;
 }
+// a * b on uint64_t that stops at UINT64_MAX instead of wrapping (same reason).
 uint64_t sat_mul(uint64_t a, uint64_t b) {
     return (a != 0 && b > UINT64_MAX / a) ? UINT64_MAX : a * b;
 }
 
+// Reads an unsigned integer key; `fallback` when it is missing or not an integer.
 uint64_t gguf_uint(const gguf_context * g, const std::string & key, uint64_t fallback) {
     const int64_t id = gguf_find_key(g, key.c_str());
     if (id < 0) {

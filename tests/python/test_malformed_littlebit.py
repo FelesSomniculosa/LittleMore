@@ -159,3 +159,39 @@ def test_autofit_survives_sizes_that_overflow_64_bits(tiny_gguf: Path, tmp_path:
     A.copy_gguf(tiny_gguf, out, extra_kv=[("llama.attention.head_count_kv", big, T), ("llama.attention.key_length", big, T),
                                            ("llama.attention.value_length", big, T)])
     _expect_clean_fit_failure(out)
+
+
+# --------------------------------------------------------------------------------------------------------------
+# More malformed shapes and types (residual path, odd model width)
+# --------------------------------------------------------------------------------------------------------------
+def test_residual_u_factor_not_b1(tiny_gguf: Path, tmp_path: Path) -> None:
+    """lb_ur stored as F16 although lb_vr is B1."""
+    import gguf
+
+    def to_f16(t):
+        if t.name != LIN + "lb_ur":
+            return None
+        data = np.asarray(t.data)
+        return np.zeros((data.shape[0], data.shape[1] * 8), dtype=np.float16), gguf.GGMLQuantizationType.F16
+    _expect_model_load_error(_case(tiny_gguf, tmp_path, "ur_f16", replace=to_f16))
+
+
+@pytest.mark.parametrize("name", ["lb_vr", "lb_ur"])
+def test_residual_factor_with_wrong_shape(tiny_gguf: Path, tmp_path: Path, name: str) -> None:
+    """A residual factor with 16 extra bytes (128 extra signs) per row: its shape no longer matches the layer."""
+    import gguf
+
+    def widen(t):
+        if t.name != LIN + name:
+            return None
+        data = np.asarray(t.data)
+        return np.concatenate([data, np.zeros((data.shape[0], 16), dtype=data.dtype)], axis=1), gguf.GGMLQuantizationType.B1
+    _expect_model_load_error(_case(tiny_gguf, tmp_path, "bad_" + name, replace=widen))
+
+
+def test_model_width_not_multiple_of_128(tiny_gguf: Path, tmp_path: Path) -> None:
+    """llama.embedding_length changed to 250: the LittleBit input width is no multiple of 128."""
+    import gguf
+    out = tmp_path / "width250.gguf"
+    A.copy_gguf(tiny_gguf, out, extra_kv=[("llama.embedding_length", 250, gguf.GGUFValueType.UINT32)])
+    _expect_model_load_error(out)

@@ -147,7 +147,13 @@ jobs:
         shell: bash
         env:
           LITTLEMORE_ENGINE_BIN: ${{ github.workspace }}/build/bin
-        run: python -m pytest tests/engine/test_fused_graph_families.py -m engine_run -k "llama or gemma" -q
+        run: |
+          # These tests skip themselves (exit code 0!) when llama-debug is missing, so a broken build would look green:
+          # check the binary first, show skip reasons (-rs), and require passed tests and no skipped ones.
+          ls "$LITTLEMORE_ENGINE_BIN"/llama-debug*
+          python -m pytest tests/engine/test_fused_graph_families.py -m engine_run -k "llama or gemma" -q -rs -p no:cacheprovider | tee engine-ref.log
+          grep -Eq "[1-9][0-9]* passed" engine-ref.log
+          if grep -q "skipped" engine-ref.log; then echo "unexpected skips"; exit 1; fi
 
       # Wheel: python/setup.py copies the libraries from build/bin into the wheel (no CUDA runtime is bundled).
       - name: Build the wheel
