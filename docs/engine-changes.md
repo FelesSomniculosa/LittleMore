@@ -609,7 +609,7 @@ planes; with sgn = 2 w - 1, sum sgn q = 2 sum w q - sum q, and sum w q = sum ove
 exact int32 (Horner's rule in the accumulator, two groups of 14 planes). Each chunk then costs two float roundings
 (the exact chunk sum to float, the add to the accumulator), against one rounding per column in the float32 paths. The
 latent kernel's 256 rows are exactly one chunk of t, so it quantizes t into planes in its epilogue; t never goes to
-memory. Kernels: planes of x (one warp per token and chunk, a warp-wide 32 x 32 bit transpose), latent stage (3-stage
+memory. Kernels (as built in Task 13b; since Task 13c the planes of x are built inside the latent kernel, see "CUDA: prefill speed levers (Task 13c)"): planes of x (one warp per token and chunk, a warp-wide 32 x 32 bit transpose), latent stage (3-stage
 cp.async ring, weight bits read straight from global memory one chunk ahead), output stage (t planes of 8-16 tokens
 resident in shared memory, warps loop over 32-row tiles; ranks above 512 in windows that add to y). Planes are
 bounded to 12 MiB per token chunk (they stay in L2; scratch is bounded). Deterministic (integer sums; float adds in
@@ -701,6 +701,78 @@ coarse guard.) "Fails the guard" is not evidence of real harm by itself: P = 24 
 the op-level columns are the measure of accuracy. P = 24 and P = 20 now also fail `LB_BP_TOL` (4e-7). Split-precision bf16 / 3xTF32 GEMMs were not built: their measured instruction rates (bf16 f32-acc
 22 TFLOPS with 3 products per exact value, TF32 11.8 TFLOPS with 2) put them below the exact 1-bit path even at their
 peak.
+
+### CUDA: prefill speed levers (Task 13c)
+
+Follow-up to the section above: lossless changes only (op error, determinism and fallbacks unchanged), each measured
+against the previous version with `prefill_bench` in interleaved A/B rounds (variant DLL copies, 3-4 rounds, median).
+Because this laptop GPU runs at its power cap (45 W, SM clock 1.5-2.0 GHz under this load, varying by run), the
+comparison is in **cycles**: time per op x the median SM clock sampled every 100 ms by `nvidia-smi` while the GPU draws
+more than 25 W. Repeated identical configurations differ by up to about 4 % in this metric.
+
+**Where the time was** (Nsight Systems inside `llama-bench -p 512` on Qwen3-1.7B, per layer, before the levers but
+with the planes already built in the latent kernel): latent kernels 1.9 ms, output kernels 1.6 ms, although the
+output stage has more tensor-core instructions (8.2 M against 6.9 M): the latent kernel ran at 3.2-4.0 G instructions
+per second, the output kernel at 3.7-5.9 G (9.5 G peak at 2.19 GHz, `mma_rate.cu`). Gaps between kernels: 0.16 ms
+per 512-token pass, i.e. launches are not a cost. Diagnostic builds of the latent kernel (wrong results, timing only):
+without the per-chunk plane build 6-25 % fewer cycles; without the weight loads or the per-chunk barrier as well,
+little more. So the build of the planes, not the loads or the barrier, was the latent stage's overhead.
+
+Adopted (engine commits `20e96284a`, `9f531c3f5`; test case `2d9b9e98b`):
+
+1. **Planes of x built inside the latent kernel.** The block's 8 warps each build one token's planes of the next
+   chunk into a 2-slot shared-memory ring; the separate planes kernel, its launch and its global scratch (2 paths x 3.5
+   bytes per input value) are gone. Same arithmetic, bit-identical results.
+2. **One basic block for products, build and loads; `mma` asm no longer `volatile`.** The compiler can then put the
+   build's shuffles and integer work between the dependent instructions of the Horner chains. The last chunk (nothing
+   to build) is peeled off.
+3. **Output-stage row split.** About 4 blocks per resident block slot (at least one row tile per warp) instead of the
+   former "fewest waves x tiles" rule, which gave e.g. 32 large blocks on 20 SMs (12 SMs doing twice the work of 8).
+
+Cycles per op relative to the previous step (prefill_bench, 512 tokens):
+
+| layer (padded ranks) | 1. build in latent (vs 13b) | 2. one basic block | 3. row split |
+|---|---|---|---|
+| 0.6B q 1024 x 2048 (256 + 256) | 0.94 | 0.98 | 0.91 |
+| 0.6B k, v 1024 x 1024 (128 + 128) | 0.94 (time) | 0.98 | 0.92 |
+| 0.6B o / 1.7B k, v 2048 x 1024 (256 + 256) | 0.94 | 0.95 | 0.95 |
+| 0.6B gate, up 1024 x 3072 (256 + 256) | 1.01 (time) | | 0.87 |
+| 0.6B down 3072 x 1024 (256 + 256) | 0.91 | | 0.97 |
+| 1.7B q, o 2048 x 2048 (384 + 384) | 0.98 | 0.97 | 0.91 |
+| 1.7B gate, up 2048 x 6144 (512 + 512) | 0.92 | 0.97 | 1.04 (same split as before: noise) |
+| 1.7B down 6144 x 2048 (512 + 512) | 0.96 | 0.94 | 0.97 |
+
+(blank: not measured in that round; "time": first round, before the cycle metric, us per op.) End to end against
+the Task 13b build: see the table "Task 13c result" below.
+
+Tried and **not adopted** (gain below 5 % or a loss; sources restored):
+
+| lever | result (cycles vs the version it was built on) |
+|---|---|
+| latent block of 16 warps = 512 rows (planes built once per path instead of once per 256 rows; one block per SM) | 1.06-1.12x slower on the 1.7B layers (fewer blocks per SM hide less latency) |
+| 4 Horner chains of 7 planes instead of 2 of 14 (more independent instructions per warp; bit-identical) | latent only: 0.99-1.02; latent and output: 1.00-1.04 (output kernels then spill) |
+| latent kernel at 3 blocks per SM (`__launch_bounds__(256, 3)`, 80 registers, no spills) | 0.97-1.00 |
+| sharing the planes of x between q / k / v and gate / up (lever 1 of the plan) | not possible losslessly: the planes are those of x * s_v2, and s_v2 (a per-input-column scale) is different for every linear; sharing them would change the arithmetic |
+
+Mutations of this round (each built and run, source restored; test-littlebit-ref / test-backend-ops CUDA0):
+path 1 using s_v2 instead of s_v2r: fails, 314/452, error 2.2; the build written into the slot being read: fails,
+375/452; the peeled last chunk dropped: fails, 241/452, error 1.08; the prefetch of x one chunk early: fails,
+376/453, error 1.93; the token-chunk offset of x ignored: first **passed every test** (with only the planes of t in
+the 12 MiB budget the 5248 x 37 case no longer splits into two token chunks), so a case with two token chunks was
+added (256 x 37, 1024 + 1024 latent units, 2048 tokens, both test programs): now fails, 452/453, error 1.56.
+
+**Task 13c result** (bench/results/phase1_13c.md). Op level, cycles against the Task 13b build (3 interleaved rounds,
+512 tokens): Qwen3-0.6B layers 0.81-0.85 (one whole layer 0.82), Qwen3-1.7B q / o 0.92, k / v 0.85, gate / up 0.99,
+down 0.87 (one layer 0.93). Model level (`bench/clock_matched.py`, pp512 first repetition, runs at 2340 MHz only):
+LittleBit Qwen3-0.6B 12000-12127 -> 12985-13541 t/s, Qwen3-1.7B 4350 -> 4756-4871 t/s; against the median F16 run
+at 2340 MHz (F16 itself spreads 11836-14486 and 5385-6342 between runs): Qwen3-0.6B 0.93 -> 1.02 (parity within the
+noise), Qwen3-1.7B 0.78 -> 0.86 (still below F16). VRAM: the scratch no longer holds the planes of x (e.g. 1.7B down
+at 512 tokens: 13.1 MB -> 3.7 MB of pool scratch, computed from the allocation sizes; not measured). Accuracy and
+determinism unchanged: every change is bit-identical (test-littlebit-ref worst 1.806e-7, NMSE 2.251e-12, as before).
+Not done: merging the q / k / v and gate / up ops into shared launches (graph-level reordering plus multi-op
+kernels); the in-model trace shows no launch gaps (0.16 ms per pass), so its gain would come only from fuller grids
+on the small k / v layers. Where the 1.7B time is now: the latent stage (per-chunk plane build, repeated for each 256
+latent rows) and the output stage of gate / up, both at roughly 60-75 % of the instruction peak per cycle.
 
 ## LittleBit in the graph
 
