@@ -75,7 +75,7 @@ def _test_data() -> np.ndarray:
 
 @pytest.mark.skipif(not _LIBGGML.exists(), reason=f"engine build not found ({_LIBGGML})")
 @pytest.mark.parametrize("qtype", [Q8_0, Q6_K], ids=["q8_0", "q6_k"])
-def test_quantizer_bit_identical_to_ggml(qtype):
+def test_quantizer_bit_identical_to_ggml(qtype: gguf.GGMLQuantizationType) -> None:
     """gguf-py's quantizer output equals ggml's C reference quantizer byte for byte."""
     data = _test_data()
     py = gguf.quants.quantize(data, qtype)
@@ -92,11 +92,13 @@ def test_quantizer_bit_identical_to_ggml(qtype):
 
 
 def _convert(ck: Path, out: Path, head_type: str) -> dict:
+    """Convert checkpoint `ck` to `out` with the given head type and return {tensor name: GGUF reader tensor}."""
     lb.convert_checkpoint(ck, out, head_type=head_type)
     return {t.name: t for t in gguf.GGUFReader(str(out)).tensors}
 
 
-def _deq(t) -> np.ndarray:
+def _deq(t: gguf.ReaderTensor) -> np.ndarray:
+    """Dequantize a GGUF reader tensor (any type) to a flat float32 array."""
     return gguf.quants.dequantize(np.asarray(t.data), t.tensor_type).reshape(-1)
 
 
@@ -110,7 +112,7 @@ _REL_RMS_BOUND = lb.HEAD_REL_RMS_MAX   # {"q8_0": 1.1e-2, "q6_k": 3.8e-2}, the c
 
 @pytest.mark.parametrize("family,untied", [("llama", False), ("llama", True), ("qwen3", False)])
 @pytest.mark.parametrize("head_type", ["q8_0", "q6_k"])
-def test_head_type_converts_only_the_head(tmp_path, family, untied, head_type):
+def test_head_type_converts_only_the_head(tmp_path: Path, family: str, untied: bool, head_type: str) -> None:
     """Only token_embd (and output, when untied) change type; all other tensors are byte-identical to the f16 file."""
     if family == "qwen3" and not _tiny.qwen_tokenizer_available():
         pytest.skip("Qwen3-0.6B tokenizer not cached")
@@ -134,7 +136,7 @@ def test_head_type_converts_only_the_head(tmp_path, family, untied, head_type):
 
 
 @pytest.mark.parametrize("head_type", ["q8_0", "q6_k"])
-def test_converter_checks_head_content(tmp_path, monkeypatch, head_type):
+def test_converter_checks_head_content(tmp_path: Path, monkeypatch: pytest.MonkeyPatch, head_type: str) -> None:
     """The converter dequantizes the written head and compares it with the checkpoint (lb.HEAD_REL_RMS_MAX); a head
     whose quantized blocks are corrupted (here: one block in 64 of the embedding zeroed by the quantizer) is refused with
     a ConversionError and no output file, while the intact conversion reports its error."""
@@ -147,7 +149,8 @@ def test_converter_checks_head_content(tmp_path, monkeypatch, head_type):
     cls = gguf.quants._type_traits[qtype]
     real = cls.quantize_blocks.__func__
 
-    def corrupt(c, blocks):
+    def corrupt(c: type, blocks: np.ndarray) -> np.ndarray:
+        """Replacement quantizer: the real one, then every 64th output block zeroed."""
         out = real(c, blocks)
         out[::64] = 0          # every 64th block: scale 0 and quants 0, i.e. those 32 / 256 values become 0
         return out
@@ -159,7 +162,7 @@ def test_converter_checks_head_content(tmp_path, monkeypatch, head_type):
     assert not bad.exists()
 
 
-def test_head_type_row_length_refused(tmp_path):
+def test_head_type_row_length_refused(tmp_path: Path) -> None:
     """Q6_K blocks are 256 values: a hidden size of 128 cannot be stored and must fail (no silent F16 fallback)."""
     ck = _tiny.make_tiny_checkpoint("llama", tmp_path, hidden_size=128, intermediate_size=256)
     out = tmp_path / "q6k.gguf"
@@ -168,7 +171,7 @@ def test_head_type_row_length_refused(tmp_path):
     assert not out.exists()
 
 
-def test_head_type_unknown_refused():
+def test_head_type_unknown_refused() -> None:
     """An unknown head type is a ConversionError naming the option."""
     with pytest.raises(lb.ConversionError, match="head_type"):
         lb.convert(Path("nonexistent"), Path("x.gguf"), head_type="bogus")

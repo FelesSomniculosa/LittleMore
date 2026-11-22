@@ -8,7 +8,7 @@ What
       clock during the run (to see whether the GPU was at its boost clock, see "Clocks" below).
     * `run_plan(...)` runs a list of files in interleaved rounds (A B C A B C ...) so slow drifts of the machine (clocks,
       temperature, DRAM bandwidth) hit every file alike, and writes all raw results to a JSON file.
-    * `check_gate(results)` is the hard speed gate of the project (docs/specs/2026-11-21-littlemore-design.md, "Fast"):
+    * `check_gate(results)` is the hard speed gate of the project:
       LittleBit at 0.55 bits per weight generates tokens faster than the bf16 dense model, for BOTH Qwen3-0.6B and
       Qwen3-1.7B.  Pure logic, tested in tests/bench/test_check_gate.py.
     * `render_markdown(results)` turns the JSON into the tables of bench/results/phase1.md.
@@ -54,7 +54,7 @@ EXE = ".exe" if os.name == "nt" else ""
 # CUDA 12.9 runtime DLLs must be on PATH for ggml-cuda (the project pins CUDA 12.9, see docs/setup-windows.md)
 CUDA_BIN = Path(r"C:/Program Files/NVIDIA GPU Computing Toolkit/CUDA/v12.9/bin")
 
-# The two base models the hard gate is defined on (spec: "Speed gate is on Qwen3-0.6B and 1.7B").
+# The two base models the hard gate is defined on (the rule is defined on exactly these two sizes).
 GATE_MODELS = ("qwen3-0.6b", "qwen3-1.7b")
 # Results measured on PROXY weights (a base model rebuilt from a quantized GGUF with tools/dev/dequant_gguf_to_hf.py:
 # right shapes and types, other weight values; valid for speed only) are stored under "<model>-proxy" and marked
@@ -84,6 +84,7 @@ class _GpuSampler:
     """
 
     def __init__(self, period_ms: int = 100) -> None:
+        """Prepare an idle sampler; nothing runs until the `with` block is entered.  `period_ms`: sampling period."""
         self.period_ms = period_ms
         self.samples: list[tuple[float, float]] = []     # (memory used MiB, SM clock MHz)
         self.times: list[float] = []                     # time.perf_counter() of each sample
@@ -102,6 +103,8 @@ class _GpuSampler:
             return None
 
     def __enter__(self) -> "_GpuSampler":
+        """Start `nvidia-smi -lms <period>` and a reader thread that appends to `samples` / `times`; without nvidia-smi
+        the sampler stays empty (samples == []) and the benchmark still runs."""
         try:
             self._proc = subprocess.Popen(
                 ["nvidia-smi", "--query-gpu=memory.used,clocks.sm", "--format=csv,noheader,nounits",
@@ -125,6 +128,7 @@ class _GpuSampler:
         return self
 
     def __exit__(self, *exc: object) -> None:
+        """Stop nvidia-smi (terminate, then kill after 10 s) and join the reader thread; never suppresses exceptions."""
         if self._proc is not None:
             self._proc.terminate()
             try:
@@ -147,6 +151,8 @@ def _bench_cmd(model_gguf: Path, backend: str, n_gpu_layers: int, args: Iterable
 
 
 def _run(cmd: list[str], timeout: float) -> subprocess.CompletedProcess:
+    """Run one command in the engine's bin directory with the benchmark environment (_env), capturing UTF-8 output.
+    Raises subprocess.TimeoutExpired after `timeout` seconds; stdin is closed so llama-bench can never wait for input."""
     return subprocess.run(cmd, cwd=BIN, env=_env(), capture_output=True, text=True, encoding="utf-8",
                           errors="replace", timeout=timeout, stdin=subprocess.DEVNULL)
 
@@ -367,6 +373,7 @@ def provenance() -> dict:
     (its build info, written when CMake last configured the build, so it can lag behind a rebuilt tree), and this
     repository's commit.  Stored in the results JSON by run_plan."""
     def git(*args: str, cwd: Path) -> str:
+        """Stdout of `git <args>` in `cwd`, stripped; an empty string when git is missing or the command fails."""
         try:
             return subprocess.run(["git", *args], cwd=cwd, capture_output=True, text=True, timeout=30).stdout.strip()
         except (OSError, subprocess.SubprocessError):

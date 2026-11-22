@@ -49,9 +49,12 @@ def _add_path(p: Path) -> None:
 PROMPT = "The capital of France is"
 PROMPT_LONG = "In 1969, the first humans landed on the Moon and said"
 PROMPT_ONE = "Hello"           # single token (9707): position 0, RoPE/attention trivial
-# 44 tokens: one prompt batch above the chunk limit of the CUDA LittleBit op for every Qwen3-0.6B linear (16 tokens
-# for k / v, 24 for the others: all below 6 Mi signs, engine/ggml/src/ggml-cuda/littlebit-dispatch.h), i.e. the prefill
-# (dequantize + cuBLAS GEMM) path of ggml-cuda/littlebit.cu
+# 44 tokens: one prompt batch above the 8-token decode limit of the CUDA LittleBit op, so every Qwen3-0.6B linear takes
+# a prefill path (engine/ggml/src/ggml-cuda/littlebit.cu): on compute capability 8.0+ the tensor-core bit-plane path of
+# littlebit-bp.cu for every n > 8; the float32 GEMM prefill path only on older GPUs or with
+# GGML_CUDA_LITTLEBIT_F32_PREFILL=1.  The chunked-decode limits (16 tokens for k / v, 24 for the others, all below
+# 6 Mi signs, littlebit-dispatch.h) apply to that float32 fallback only; 44 tokens is above them, so the prompt takes
+# the prefill path on either variant.
 PROMPT_PREFILL = ("In 1969, the first humans landed on the Moon. Neil Armstrong stepped onto the surface and said that "
                   "it was one small step for a man and one giant leap for mankind, while millions watched on television")
 # Token ids of PROMPT for Qwen3 (no BOS); asserted against the engine's tokenizer.

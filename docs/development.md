@@ -1,6 +1,7 @@
 # Development guide
 
-How to build, test and run LittleMore end to end. LittleMore runs LittleBit
+How to build, test and run LittleMore end to end. All environment variables and build knobs are listed in
+[environment-variables.md](environment-variables.md). LittleMore runs LittleBit
 (sub-1-bit) language models through a patched llama.cpp; see
 [engine-changes.md](engine-changes.md) for what the patch is.
 
@@ -237,8 +238,8 @@ assets exist; they skip otherwise). `pytest -m "not smoke"` is the fast subset.
 `bench/run_bench.py` wraps `llama-bench` (warm-up, repetitions, interleaved rounds, GPU memory and clock); the gate is
 "LittleBit 0.55 bpw generates faster than bf16 on CUDA for Qwen3-0.6B and Qwen3-1.7B" (Phase 1 status: PASS on
 the original weights of both models). See [bench/README.md](../bench/README.md)
-and the results in [bench/results/phase1.md](../bench/results/phase1.md). Prompt processing after the tensor-core
-prefill path (Task 13b; `bench/plans/phase1_13b.json` measures LittleBit with and without it, `"env"` in a plan entry):
+and the results in [bench/results/phase1.md](../bench/results/phase1.md). Prompt processing with the tensor-core
+prefill path (`bench/plans/phase1_13b.json` measures LittleBit with and without it, `"env"` in a plan entry):
 [bench/results/phase1_13b.md](../bench/results/phase1_13b.md).
 
 ## Glossary

@@ -399,6 +399,8 @@ def _available_memory() -> int | None:
             import ctypes
 
             class _MemStatus(ctypes.Structure):
+                """ctypes mirror of the Win32 MEMORYSTATUSEX struct (physical and virtual memory totals, in bytes)."""
+
                 # Layout of the Win32 MEMORYSTATUSEX struct filled in by GlobalMemoryStatusEx.
                 _fields_ = [("dwLength", ctypes.c_ulong), ("dwMemoryLoad", ctypes.c_ulong),
                             ("ullTotalPhys", ctypes.c_ulonglong), ("ullAvailPhys", ctypes.c_ulonglong),
@@ -491,7 +493,7 @@ def _make_converter(ckpt: Path, tmp_out: Path, head_type: str = "f16") -> ModelB
         base_force = conv.tensor_force_quant
         head_keys = (gguf.MODEL_TENSOR.TOKEN_EMBD, gguf.MODEL_TENSOR.OUTPUT)
 
-        def force_head(name: str, new_name: str, bid: int | None, n_dims: int):
+        def force_head(name: str, new_name: str, bid: int | None, n_dims: int) -> gguf.GGMLQuantizationType | None:
             """Q8_0 / Q6_K for the embedding and the output head, the converter's own choice for everything else."""
             if n_dims >= 2 and any(conv.match_model_tensor_name(new_name, k, bid) for k in head_keys):
                 return qtype

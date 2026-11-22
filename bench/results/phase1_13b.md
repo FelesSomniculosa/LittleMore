@@ -1,6 +1,6 @@
-# Task 13b: prompt processing after the tensor-core prefill path
+# Prompt processing after the tensor-core prefill path (first build, `eaf9b01e6`)
 
-What: the gate harness (`bench/run_bench.py`, the Task 13 protocol: 3 interleaved rounds, each value the median of 10
+What: the gate harness (`bench/run_bench.py`, the protocol of the Phase 1 gate run: 3 interleaved rounds, each value the median of 10
 llama-bench repetitions, tg128 before pp512, 3 s warm-up load kept running until llama-bench's warm-up pass) on the
 original Qwen3-0.6B and Qwen3-1.7B, for the LittleBit 0.55 bpw file (F16 head) with the engine's new default (the
 exact tensor-core prefill path, `ggml-cuda/littlebit-bp.cu`) and, in the same rounds, the same file with

@@ -1,6 +1,6 @@
-# Phase 1, Task 13c: CUDA prefill levers of GGML_OP_LITTLEBIT (lossless)
+# Phase 1: CUDA prefill levers of GGML_OP_LITTLEBIT (lossless)
 
-Engine: Task 13b build `eaf9b01e6` ("13b") against this task's `2d9b9e98b` ("13c"). RTX 4050 Laptop GPU (20 SMs,
+Engine: the first tensor-core prefill build `eaf9b01e6` (called "TC build" below) against the speed-lever build `2d9b9e98b` (called "lever build" below; "13b" / "13c" in file names are the same two builds). RTX 4050 Laptop GPU (20 SMs,
 power cap about 45 W), CUDA 12.9, no GPU setting changed.
 
 ## Op level (prefill_bench, 512 tokens, 3 interleaved rounds)
@@ -9,7 +9,7 @@ Cycles = time per op x the median SM clock sampled every 100 ms while the GPU dr
 this sustained load is power-capped and varies from run to run, so times alone are not comparable). Raw lines:
 `phase1_13c_ops_raw.txt` (round, build, shape d_in d_out r r2, us, MHz, kcycles).
 
-| layer (padded ranks) | 13b kcycles | 13c kcycles | 13c / 13b | 13c us (at its clock) |
+| layer (padded ranks) | TC build kcycles | lever build kcycles | lever build / TC build | lever build us (at its clock) |
 |---|---|---|---|---|
 | 0.6B q 1024 x 2048 (256 + 256) | 287 | 238 | 0.83 | 125 |
 | 0.6B k, v 1024 x 1024 (128 + 128) | 185 | 152 | 0.82 | 76 |
@@ -24,36 +24,36 @@ this sustained load is power-capped and varies from run to run, so times alone a
 
 ## Model level (bench/clock_matched.py, pp512, first timed repetition; `phase1_13c_clock.json`)
 
-Three rounds; in each round the 13b build and the 13c build each ran once with all four files (the ggml-cuda DLL
+Three rounds; in each round the TC build and the lever build each ran once with all four files (the ggml-cuda DLL
 swapped between them).
 
 **Selection rule (one rule for every run of both builds and of F16):** a run counts only if its first timed
 repetition has clock samples and all of them are 2340 MHz (min = max = 2340). The clock at the start of the
 repetition is not used. Excluded by this rule (5 of 24 runs):
-- 13b round 0, 1.7B LittleBit 4522 (rep-1 clock 1620-2340);
-- 13c round 0, 0.6B LittleBit 12349 (no clock sample inside rep 1);
-- 13c round 1, 1.7B F16 6089 (1470 MHz);
-- 13b round 2, 0.6B LittleBit 11028 (no clock sample);
-- 13b round 2, 1.7B LittleBit 4159 (1800-2340) and 1.7B F16 5997 (1575 MHz).
+- TC build round 0, 1.7B LittleBit 4522 (rep-1 clock 1620-2340);
+- lever build round 0, 0.6B LittleBit 12349 (no clock sample inside rep 1);
+- lever build round 1, 1.7B F16 6089 (1470 MHz);
+- TC build round 2, 0.6B LittleBit 11028 (no clock sample);
+- TC build round 2, 1.7B LittleBit 4159 (1800-2340) and 1.7B F16 5997 (1575 MHz).
 
 | run | Qwen3-0.6B LittleBit | 0.6B F16 | Qwen3-1.7B LittleBit | 1.7B F16 |
 |---|---|---|---|---|
-| 13b round 0 | 12127 | 14486 | (4522, excluded) | 5656 |
-| 13c round 0 | (12349, excluded) | 13001 | 3775 | 6342 |
-| 13b round 1 | 12000 | 11836 | 4350 | 5385 |
-| 13c round 1 | 13541 | 12708 | 4871 | (6089, excluded) |
-| 13b round 2 | (11028, excluded) | 9050 | (4159, excluded) | (5997, excluded) |
-| 13c round 2 | 12985 | 13936 | 4756 | 5495 |
+| TC build round 0 | 12127 | 14486 | (4522, excluded) | 5656 |
+| lever build round 0 | (12349, excluded) | 13001 | 3775 | 6342 |
+| TC build round 1 | 12000 | 11836 | 4350 | 5385 |
+| lever build round 1 | 13541 | 12708 | 4871 | (6089, excluded) |
+| TC build round 2 | (11028, excluded) | 9050 | (4159, excluded) | (5997, excluded) |
+| lever build round 2 | 12985 | 13936 | 4756 | 5495 |
 
 Reading (included runs only; ratios against the median of all included F16 runs, which are interchangeable between
 builds since the F16 files do not use the changed code):
 - **F16 spread at the same 2340 MHz:** Qwen3-0.6B 9050-14486 (median 12854, 6 runs), Qwen3-1.7B 5385-6342 (median
   5576, 4 runs). Single-run ratios are therefore uncertain by tens of percent.
-- **Qwen3-0.6B:** 13b 12000-12127 = 0.93-0.94; 13c 12985-13541 = 1.01-1.05. Parity at equal clocks, within this noise.
+- **Qwen3-0.6B:** TC build 12000-12127 = 0.93-0.94; lever build 12985-13541 = 1.01-1.05. Parity at equal clocks, within this noise.
   (Op-level bound: 0.82x cycles per layer allows up to 0.94 / 0.82 = 1.14; the observed gain is inside it.)
-- **Qwen3-1.7B:** 13b one run 4350 = 0.78; 13c runs 3775 / 4871 / 4756 = 0.68 / 0.87 / 0.85 (median 0.85; the 3775 run
+- **Qwen3-1.7B:** TC build one run 4350 = 0.78; lever build runs 3775 / 4871 / 4756 = 0.68 / 0.87 / 0.85 (median 0.85; the 3775 run
   is about 20 % below the other two at the same clock and is not explained). The op-level data (0.93x cycles per
-  layer) bounds the model gain to about 7.5 %, i.e. 0.78 / 0.93 = 0.84 from the 13b run; the observed 0.85-0.87 is not
+  layer) bounds the model gain to about 7.5 %, i.e. 0.78 / 0.93 = 0.84 from the TC build run; the observed 0.85-0.87 is not
   distinguishable from that bound within the run-to-run noise. Plainly: about 0.84-0.87, below F16.
 
 ## VRAM (measured)
@@ -62,7 +62,7 @@ Peak GPU memory during `llama-bench -m <LittleBit file> -ngl 99 -p 512 -n 0 -r 3
 memory.used` sampled every 50 ms during the run minus the value just before it (0 MiB at idle on this laptop), 2
 interleaved rounds per build, ggml-cuda DLL swapped:
 
-| model | 13b | 13c | change |
+| model | TC build | lever build | change |
 |---|---|---|---|
 | Qwen3-0.6B | 801, 801 MiB | 791, 791 MiB | -10 MiB |
 | Qwen3-1.7B | 1191, 1191 MiB | 1181, 1181 MiB | -10 MiB |

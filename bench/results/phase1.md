@@ -6,7 +6,7 @@ head, generates tokens 1.68x faster than bf16 on Qwen3-0.6B (212.9 vs 126.9 toke
 head: 2.20x and 3.44x; with a Q6_K head: 2.38x and 3.69x. Per round (LittleBit F16 head / bf16): 0.6B 1.614 / 1.733 /
 1.687, 1.7B 2.811 / 2.786 / 2.800. `check_gate` on these results: True without proxy results (`gate_status`: "PASS").
 
-Real vs proxy weights (Task 13's first 1.7B measurement used weights dequantized from a Q4_K_M file; both measured in
+Real vs proxy weights (the first 1.7B measurement used weights dequantized from a Q4_K_M file; both measured in
 this run, interleaved): LittleBit 0.55 142.9 vs 143.1 tokens/s (-0.17 %), bf16 51.1 vs 51.1 (-0.02 %); pp512 -0.6 % /
 -4.9 % (pp512 varies by up to 10 % between rounds). The proxy rows are kept below as a labelled comparison only.
 
@@ -35,15 +35,15 @@ this run, interleaved): LittleBit 0.55 142.9 vs 143.1 tokens/s (-0.17 %), bf16 5
 - VRAM: from a separate pass of the same plan without the warm-up load (`--warmup 0`, 1 round, 3 repetitions;
   [phase1_vram.json](phase1_vram.json)): with the load, its memory stays visible in nvidia-smi for a moment after it
   exits (the speed run showed e.g. 2158 instead of 1609 MiB for bf16 Qwen3-0.6B), so the speed run stores no VRAM.
-  (Task 13b: the harness was modified after this run. The speed run's JSON had kept the inflated readings in `vram_mb`;
+  (Note: the harness was modified after this run. The speed run's JSON had kept the inflated readings in `vram_mb`;
   they are now nulled in [phase1.json](phase1.json) (see its `vram_note`), so `phase1_vram.json` is the only VRAM
   source. The SM clock columns below were sampled with the harness of this run, from 1 s after the load stopped to the
   end, so their minima include llama-bench's untimed warm-up pass, e.g. 735 MHz; the clock at the first timed
   repetition is the line above. The current harness samples only the timed repetitions.)
   Value = peak of nvidia-smi's `memory.used` during the run minus the value before it (weights, KV cache, compute
-  buffers, CUDA context); identical to Task 13's first run for every file measured in both. The bf16 Qwen3-1.7B (3881
+  buffers, CUDA context); identical to the first run of this plan for every file measured in both. The bf16 Qwen3-1.7B (3881
   MiB file) fits the 6 GB GPU: 3763 MiB.
-- Absolute speeds are about 10 % below Task 13's first run of this plan on the same machine (Qwen3-0.6B LittleBit
+- Absolute speeds are about 10 % below the first run of this plan on the same machine (Qwen3-0.6B LittleBit
   236.3 then, 212.9 now; bf16 127.5 / 126.9): this run started after hours of GPU load, at the power cap. LittleBit
   generation (latency and launch bound) loses more than the memory-bound dense models, so the 0.6B ratio is 1.68x here
   against 1.85x then; the 1.7B ratio is 2.80x against 2.82x. Compare files only within one run.
@@ -144,7 +144,7 @@ gibberish by design), so their deltas say only that a quantized head moves an ex
 few percent; they are not a quality measurement. The LittleBit files' heads are quantized by the converter
 (`lb_to_gguf.py --head-type`, which also checks the quantized head against the checkpoint), the dense ones by
 llama-quantize; both use ggml's reference quantizers (the converter's are bit-identical to them,
-tests/convert/test_head_type.py). The 0.6B rows are from Task 13's first run (same files).
+tests/convert/test_head_type.py). The 0.6B rows are from the first run of this plan (same files).
 
 ## Reproduce
 

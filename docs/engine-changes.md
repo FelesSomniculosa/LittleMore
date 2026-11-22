@@ -297,7 +297,7 @@ token; ranges over 3 AVX2 runs and 2 reference runs, alternated):
 
 What bounds it: with one token on 6 threads it reads about 9-10 GB/s of weights, while the same machine streams the
 dense F16 model at about 70 GB/s (1.40 GiB per token at 46.5 tokens/s, below), so the kernel is not bandwidth bound
-but instruction bound: 16 vector instructions per 32 sign-adds with one token, about 11 G sign-adds/s per thread
+but consistent with instruction bound (not verified): 16 vector instructions per 32 sign-adds with one token, about 11 G sign-adds/s per thread
 measured (clocks and port use were not measured, so the gap to the instruction ceiling is not attributed). With 8
 tokens the sign masks and gathers are shared and the rate about doubles. Keeping the accumulators in registers
 mattered (see the comment at `lb_block_impl`: plain loops left them in memory under MSVC; one thread, 8 tokens: 10.5 ..
@@ -436,9 +436,9 @@ cold 5120 x 13824 one token 69.7 us (76 GB/s) against 803 us for F16, the other 
 ### CUDA: batches above 8 tokens (chunked decode and prefill path)
 
 Same file (`littlebit.cu`, from "Prefill path" on; the file header documents math, tiles, scratch and numerics).
-**Since Task 13b this section describes the fallback** (GPUs below compute capability 8.0, HIP, MUSA, or
+**This section describes the fallback** (GPUs below compute capability 8.0, HIP, MUSA, or
 `GGML_CUDA_LITTLEBIT_F32_PREFILL=1`): on newer NVIDIA GPUs every batch above 8 tokens takes the tensor-core prefill
-path of the next section, 3-4x faster at 512 tokens and more accurate. Dispatch by batch size `n` in
+path of the next section, about 2x to 4x faster per layer at 512 tokens (2.7x to 3.2x for whole models, see the tables there) and more accurate. Dispatch by batch size `n` in
 `ggml_cuda_op_littlebit` on the fallback:
 
 | n | path |
@@ -472,7 +472,7 @@ path of the next section, 3-4x faster at 512 tokens and more accurate. Dispatch 
   synchronization per call. The tile size was measured at 4, 8, 16, 32 and 64 MiB on 4096 x 4096 and 5120 x 13824 /
   13824 x 5120 at 128 and 512 tokens: no consistent difference beyond the 10 % run-to-run spread, so the L2-sized 16 MiB
   was kept.
-- **Chunk limits, measured** (re-tuned in Task 13; the rule lives in `ggml-cuda/littlebit-dispatch.h`, shared with
+- **Chunk limits, measured** (re-tuned after the first float32-prefill version; the rule lives in `ggml-cuda/littlebit-dispatch.h`, shared with
   `test-littlebit-ref`). Method: two temporary builds with the path forced (always chunked / always prefill above 8
   tokens), `prefill_bench` with `LB_BENCH_SKIP_F16=1` (LITTLEBIT only, 1.5 s warm-up and >= 1 s timing per case), n = 9,
   12, 16, 20, 24, 28, 32, 40, 48, 56, 64, 80, 96, 128, on the linears of Qwen3-0.6B / 1.7B at 0.55 bits per weight and the
@@ -499,7 +499,7 @@ path of the next section, 3-4x faster at 512 tokens and more accurate. Dispatch 
   i.e. 1.9x, too slow at 32 tokens on 1024 x 3072). A first re-tune by sign count alone (16 / 24 / 48 / 96 tokens for
   <6 / 6..12 / 12..24 / >=24 Mi) fixed that but made 4096 x 4096 up to 30 % slower at 25-56 tokens than the old rule.
 
-  **Re-tune of fix round 2** (`tools/dev/chunk_crossover_study.sh` / `.py`, raw data in
+  **Second re-tune (22 layer shapes)** (`tools/dev/chunk_crossover_study.sh` / `.py`, raw data in
   `docs/data/chunk_crossover_2026-11-22_{chunk,gemm}.txt`; 22 layer shapes at 0.55 bits per weight: every linear of
   Qwen3-0.6B, Qwen3-1.7B, Qwen3-4B and Llama-3-8B plus the built-in larger shapes, n = 9, 12, 16, 20, 24, 28, 32, 40, 48,
   56, 64, 72, 80, 96, 112, 128, one run per path). Goal: no shape slower than with the old rule by more than 5 % at any
@@ -540,7 +540,7 @@ path of the next section, 3-4x faster at 512 tokens and more accurate. Dispatch 
   (`test_cuda_dispatch_boundaries`, 9 shapes, at least one per band of the rule): 9 tokens (8 + 1 chunks) bit-identical to
   an 8-token and a 1-token call; T + 1 tokens on the prefill path against T on the chunked path (T = 16, 24, 40, 48):
   worst NMSE 3.8e-13, worst max difference 6.1e-7 of the output scale.
-- **Tests:** `test-backend-ops -o LITTLEBIT -b CUDA0`: the 210 cases with n > 8 pass (451 in all; with the fix-round-2
+- **Tests:** `test-backend-ops -o LITTLEBIT -b CUDA0`: the 210 cases with n > 8 pass (451 in all; with the current
   rule: n = 9, 16 on small layers, 24 on a 1.3 Mi-sign layer, 40 on a 6 Mi-sign layer, 40 / 48 on a 13.75 Mi-sign layer:
   chunks; 17, 25, 32, 33, 41, 49, 64, 512, 2048: prefill; tiles: d_in 5248 with 640 + 640 latent rows (latent
   tiles of 768 + 512 rows, the first holding primary and residual rows), 1408 rows without residual, d_out 4100 (output
@@ -579,7 +579,7 @@ Reproduce (from `engine/build`, CUDA 12.9 `bin` on `PATH`): `bin\test-littlebit-
 `bin\test-backend-ops.exe test -o LITTLEBIT -b CUDA0`, `bin\test-backend-ops.exe perf -o LITTLEBIT -b CUDA0 -p "n=(32|33|128|512)$"`,
 and `prefill_bench.exe CUDA0 64 9,16,32,33,64,128,512` built as in `engine/tools/littlebit-bench/README.md`.
 
-### CUDA: tensor-core prefill path (exact bit-plane products, Task 13b)
+### CUDA: tensor-core prefill path (exact bit-plane products)
 
 File `ggml/src/ggml-cuda/littlebit-bp.cu` (its header documents the math, kernels, layouts and the error bound). On
 NVIDIA GPUs from compute capability 8.0 every batch above 8 tokens takes this path instead of the chunked decode
@@ -596,7 +596,7 @@ feature `LITTLEBIT_BP_PREFILL` when every device takes it, so tests know the dis
 | Qwen3-1.7B | 334 ms | 296 ms (89 %) | 22.4 ms | 16.1 ms | 30 ms | 88 ms |
 
 So the time is in the float32 GEMMs on the CUDA cores (about 3.3-3.8 TFLOPS, against 18-23 TFLOPS of the f16 tensor
-cores for the dense model); fusing the epilogue or caching the expanded signs (options (c), (d) of the brief) could save
+cores for the dense model); fusing the epilogue or caching the expanded signs (two further options considered: fusing the epilogue, caching the expanded signs) could save
 at most the 12-15 % outside the GEMMs. The lever is to move the products onto tensor cores without rounding the
 activations.
 
@@ -609,7 +609,7 @@ planes; with sgn = 2 w - 1, sum sgn q = 2 sum w q - sum q, and sum w q = sum ove
 exact int32 (Horner's rule in the accumulator, two groups of 14 planes). Each chunk then costs two float roundings
 (the exact chunk sum to float, the add to the accumulator), against one rounding per column in the float32 paths. The
 latent kernel's 256 rows are exactly one chunk of t, so it quantizes t into planes in its epilogue; t never goes to
-memory. Kernels (as built in Task 13b; since Task 13c the planes of x are built inside the latent kernel, see "CUDA: prefill speed levers (Task 13c)"): planes of x (one warp per token and chunk, a warp-wide 32 x 32 bit transpose), latent stage (3-stage
+memory. Kernels (as first built, engine commit `eaf9b01e6`; since the speed levers the planes of x are built inside the latent kernel, see "CUDA: prefill speed levers"): planes of x (one warp per token and chunk, a warp-wide 32 x 32 bit transpose), latent stage (3-stage
 cp.async ring, weight bits read straight from global memory one chunk ahead), output stage (t planes of 8-16 tokens
 resident in shared memory, warps loop over 32-row tiles; ranks above 512 in windows that add to y). Planes are
 bounded to 12 MiB per token chunk (they stay in L2; scratch is bounded). Deterministic (integer sums; float adds in
@@ -624,7 +624,7 @@ forced). Model level, `tests/engine/test_fused_graph_qwen3_06b.py` (coarse guard
 prompt, default configuration 2.95e-2 (GPU / pure CPU 1.34, bound 2.0; before: 3.09e-2, 1.40), exact configuration
 2.22e-2 (dense floor ratio 1.80, bound 2.0; before: 1.94e-2, 1.58); 16-token prompt (now this path, before the chunked
 decode kernels): 3.92e-2 / 4.27e-2. These model-level values move by tens of percent with any change of summation
-order on this init-only model (the Task 13 study: 0.019 .. 0.189 between correct paths and prompts), so they are
+order on this init-only model (measured over several correct paths and prompts: 0.019 .. 0.189 between correct paths and prompts), so they are
 within the noise of correct code; the precise detectors are the op-level bounds above. Plainly: the exact-config
 guard ratio rose from 1.58 to 1.80 (limit 2.0), so its margin shrank from 21 % to 10 %; it can trip on unrelated
 correct changes, and must not be loosened for that, but read against the op-level tests (the ratio does not track op
@@ -683,7 +683,7 @@ down: latent 62 %, output 20 %, planes 18 %. The inner loop alone (planes in sha
 about 90 % of the instruction's peak; the kernels reach 40-80 % of it (5-9 G instructions per second), limited by
 latency at block start / end, global loads of the weight bits and the plane traffic. Not pursued further in this task.
 
-**Model level** (gate harness, 3 interleaved rounds, [bench/results/phase1_13b.md](../bench/results/phase1_13b.md)): pp512 Qwen3-0.6B 9628 t/s (float32 path in the same rounds 3051, F16 11643, bf16 9256): 3.2x faster, 0.83x F16; Qwen3-1.7B 4118 (1531, F16 3872, bf16 3722): 2.7x faster. The 1.06x over F16 on the mean is a power-cap artifact: the F16 model's clock falls to 705-825 MHz within its 10 repetitions (LittleBit: 1395 MHz minimum). At equal clocks (`bench/clock_matched.py`, first timed repetition, both at 2325-2340 MHz) LittleBit is about 0.8-0.9x F16 on Qwen3-1.7B (0.82 .. 0.97) and below F16 on Qwen3-0.6B (0.98 in the one round at equal clock, 0.82-0.94 against an F16 at lower clocks (rounds 0, 2, 3, 5; round 4 is left out: its F16 first repetition, 8338 t/s, is an outlier against 10961-12211 in the other rounds, and the ratio would be 1.22; in rounds 0, 2 and 4 the F16 run has no clock sample inside its first repetition (rep1_clock_mhz null), so "F16 at a lower clock" there rests on the clock at the start of the repetition only)); see bench/results/phase1_13b.md. tg128 unchanged (219.6 / 143.3). VRAM 801 vs 821 MiB and 1191 vs 1223 MiB (smaller scratch).
+**Model level** (first tensor-core build; superseded by the later build below, see "Speed-lever result"; gate harness, 3 interleaved rounds, [bench/results/phase1_13b.md](../bench/results/phase1_13b.md)): pp512 Qwen3-0.6B 9628 t/s (float32 path in the same rounds 3051, F16 11643, bf16 9256): 3.2x faster, 0.83x F16; Qwen3-1.7B 4118 (1531, F16 3872, bf16 3722): 2.7x faster. The 1.06x over F16 on the mean is a power-cap artifact: the F16 model's clock falls to 705-825 MHz within its 10 repetitions (LittleBit: 1395 MHz minimum). At equal clocks (`bench/clock_matched.py`, first timed repetition, both at 2325-2340 MHz) LittleBit is about 0.8-0.9x F16 on Qwen3-1.7B (0.82 .. 0.97) and below F16 on Qwen3-0.6B in this build (0.98 in the one round at equal clock, 0.82-0.94 against an F16 at lower clocks (rounds 0, 2, 3, 5; round 4 is left out: its F16 first repetition, 8338 t/s, is an outlier against 10961-12211 in the other rounds, and the ratio would be 1.22; in rounds 0, 2 and 4 the F16 run has no clock sample inside its first repetition (rep1_clock_mhz null), so "F16 at a lower clock" there rests on the clock at the start of the repetition only)); see bench/results/phase1_13b.md. tg128 unchanged (219.6 / 143.3). VRAM 801 vs 821 MiB and 1191 vs 1223 MiB (smaller scratch).
 
 **Options that trade accuracy (not adopted; measured for the decision).** The number of activation bits P is a
 compile-time constant (`LB_BP_BITS`); fewer bits mean fewer instructions:
@@ -693,7 +693,7 @@ compile-time constant (`LB_BP_BITS`); fewer bits mean fewer instructions:
 | P = 28 (adopted) | 8584 (9048, 8339, 8365) | 3443 (3498, 3455, 3376) | 1.8e-7 | 2.3e-12 | 2.22e-2 (ratio 1.80) / 2.95e-2 (1.34): pass | same |
 | P = 24 | 9014 (+5.0 %) | 3866 (+12.3 %) | 7.1e-7 (4x worse; = the float32 GEMM path's 6.9e-7) | 3.2e-12 | 2.83e-2 (2.30: FAILS the 2.0 guard) / 2.44e-2 (1.11) | same |
 | P = 20 | 9667 (+12.6 %) | 4054 (+17.8 %) | 1.0e-5 (57x worse; fails `LB_BP_TOL`) | 8.7e-11 | 2.80e-2 (2.27: FAILS) / 3.64e-2 (1.66) | same |
-| TF32 GEMMs (float32 path, Task 11) | about 1.7x the float32 path, i.e. slower than P = 28 | | 8.1e-4 (8x over the 1e-4 tolerance) | 3.7e-7 | not measured | same |
+| TF32 GEMMs (float32 path) | about 1.7x the float32 path, i.e. slower than P = 28 | | 8.1e-4 (8x over the 1e-4 tolerance) | 3.7e-7 | not measured | same |
 
 (pp512 here: plain `llama-bench -p 512 -n 0 -r 5`, not the gate protocol; the model-level values are single runs of the
 coarse guard.) "Fails the guard" is not evidence of real harm by itself: P = 24 has the float32 GEMM path's op error
@@ -702,7 +702,7 @@ the op-level columns are the measure of accuracy. P = 24 and P = 20 now also fai
 22 TFLOPS with 3 products per exact value, TF32 11.8 TFLOPS with 2) put them below the exact 1-bit path even at their
 peak.
 
-### CUDA: prefill speed levers (Task 13c)
+### CUDA: prefill speed levers
 
 Follow-up to the section above: lossless changes only (op error, determinism and fallbacks unchanged), each measured
 against the previous version with `prefill_bench` in interleaved A/B rounds (variant DLL copies, 3-4 rounds, median).
@@ -733,7 +733,7 @@ Adopted (engine commits `20e96284a`, `9f531c3f5`; test case `2d9b9e98b`):
 
 Cycles per op relative to the previous step (prefill_bench, 512 tokens):
 
-| layer (padded ranks) | 1. build in latent (vs 13b) | 2. one basic block | 3. row split |
+| layer (padded ranks) | 1. build in latent (vs `eaf9b01e6`) | 2. one basic block | 3. row split |
 |---|---|---|---|
 | 0.6B q 1024 x 2048 (256 + 256) | 0.94 | 0.98 | 0.91 |
 | 0.6B k, v 1024 x 1024 (128 + 128) | 0.94 (time) | 0.98 | 0.92 |
@@ -745,7 +745,7 @@ Cycles per op relative to the previous step (prefill_bench, 512 tokens):
 | 1.7B down 6144 x 2048 (512 + 512) | 0.96 | 0.94 | 0.97 |
 
 (blank: not measured in that round; "time": first round, before the cycle metric, us per op.) End to end against
-the Task 13b build: see the table "Task 13c result" below.
+the tensor-core build `eaf9b01e6`: see the table "Speed-lever result" below.
 
 Tried and **not adopted** (gain below 5 % or a loss; sources restored):
 
@@ -765,7 +765,7 @@ added (256 x 37, 1024 + 1024 latent units, 2048 tokens, both test programs): now
 1010 with a partial token tile, 2.5 chunks of x, 4.5 chunks of t per path, three output windows; engine `b564b699b`):
 it passes, and the same mutation fails both new cases (452/454, errors 1.56 and 1.27).
 
-**Task 13c result** (bench/results/phase1_13c.md). Op level, cycles against the Task 13b build (3 interleaved rounds,
+**Speed-lever result** (bench/results/phase1_13c.md, build `2d9b9e98b`). Op level, cycles against the tensor-core build `eaf9b01e6` (3 interleaved rounds,
 512 tokens): Qwen3-0.6B layers 0.81-0.85 (one whole layer 0.82), Qwen3-1.7B q / o 0.92, k / v 0.85, gate / up 0.99,
 down 0.87 (one layer 0.93). Model level (`bench/clock_matched.py`, pp512 first repetition; one rule for all runs: only runs whose first
 repetition is entirely at 2340 MHz, 5 of 24 runs excluded and listed in the results file): Qwen3-0.6B LittleBit
@@ -829,11 +829,11 @@ latent rows) and the output stage of gate / up, both at roughly 60-75 % of the i
     op offload now also moves the prompt's `LITTLEBIT` nodes to CUDA0 (CUDA's `offload_op` takes batches of 32 tokens or
     more, which CUDA now supports; their weights are copied per call, as for dense weights in CPU layers; decode nodes
     stay on the CPU). With `--no-op-offload`, or `-dev none` (no GPU at all), the result is bit-identical to before for
-    every prompt. Cost of that weight copy (Task 13, `llama-bench -ngl 0 -t 6 -p 32,64,512 -n 0 -nopo 0,1 -r 5`, Qwen3-0.6B
+    every prompt. Cost of that weight copy (`llama-bench -ngl 0 -t 6 -p 32,64,512 -n 0 -nopo 0,1 -r 5`, Qwen3-0.6B
     B1): every prompt batch of 32 tokens or more copies each layer's LittleBit weights (35 MiB of signs plus the scales
     for the whole model) to the GPU, and it still pays: pp32 565 +- 76 vs 480 +- 47 tokens/s without op offload, pp64 1070
     vs 421, pp512 2640 vs 442.
-  - Placement guard (Task 13): `tests/engine/test_fused_graph_qwen3_06b.py::test_littlebit_nodes_and_weights_on_cuda_at_ngl99`
+  - Placement guard: `tests/engine/test_fused_graph_qwen3_06b.py::test_littlebit_nodes_and_weights_on_cuda_at_ngl99`
     parses `GGML_SCHED_DEBUG=2` output of `llama-completion -ngl 99`: every `LITTLEBIT` node (196 per graph, 4508 in the
     printed graphs) is on CUDA0 with all of its sources (activation and 8 weight tensors) on CUDA0 and none of them a
     per-call copy; the same check flags every node of a `-dev Vulkan0 -ngl 99` run (nodes and weights on the CPU), so it
@@ -845,7 +845,7 @@ latent rows) and the output stage of gate / up, both at roughly 60-75 % of the i
   `ggml_littlebit_packed` and needs no CONCAT nodes; the Q1_0 chain does the reverse (reads the three, skips
   `lb_s_pkr`). Files without `lb_s_pkr` load as before. Measured on Qwen3-0.6B (`GGML_SCHED_DEBUG=2`, one decode graph):
   651 nodes and 0 CONCAT with `lb_s_pkr`, 1043 nodes and 392 CONCAT (2 per linear) without; logits bit-identical
-  between the two files at `-ngl 0` and `-ngl 99` (guarded per model family since Task 13 by
+  between the two files at `-ngl 0` and `-ngl 99` (guarded per model family by
   `test_fused_graph_families.py::test_old_format_without_packed_scales_is_bit_identical`: the tiny model of each family
   converted, `lb_s_pkr` stripped, logits bit-identical at `-ngl 0` and `-ngl 99`; a copy whose `lb_s_pkr` has its last
   segment doubled moves the logits, so the packed tensor is really read). Cost: 2.7 MB more file for Qwen3-0.6B (670.7 -> 673.4 MB), no extra
@@ -992,12 +992,12 @@ Regression guards in `tests/engine/test_fused_graph_qwen3_06b.py`: LittleBit-vs-
 (measured 1.25 / 1.43 with the op on CUDA); 1 token `-ngl 99` exact: F16 head <= 1e-2 (4.8e-3), F32 head <= 2.5e-4 (2.6e-5; the limit was 1e-3
 while the op ran on the CPU and measured 1.1e-4).
 
-Prefill on the GPU (Task 13; `PROMPT_PREFILL`, 44 tokens, so every Qwen3-0.6B linear of the prompt batch takes the
+Prefill on the GPU (`PROMPT_PREFILL`, 44 tokens, so every Qwen3-0.6B linear of the prompt batch takes the
 prefill path): exact config 1.94e-2 against the dense floor 1.23e-2, 1.58x (limit 2.0). Default config 3.09e-2 against
 1.49e-2, 2.08x: above 2, diagnosed rather than loosened. On the pure CPU (`-dev none`, no GPU at all) the same 44
 tokens give LittleBit 2.20e-2 against dense 8.31e-3 in the default config (2.65x) and 1.29e-4 in the exact one, so the
 init-only LittleBit model amplifies some rounding far more than the dense model, independent of the GPU. Isolated
-on the pure CPU (5 prompts of 22..62 tokens, Task 13 fix round 1): the carrier is f16 rounding of keys / values in
+on the pure CPU (5 prompts of 22..62 tokens): the carrier is f16 rounding of keys / values in
 attention. Flash attention gives identical errors with an f16 or an f32 KV cache; with flash attention off, the f16
 KV cache alone gives the same level (LittleBit 2.4e-2..1.1e-1, dense 5.5e-3..8.6e-3); with f32 KV and no flash
 attention LittleBit is at 1.3e-4..5.2e-4 (dense 1.7e-5..2.5e-5). The prefill path is not the carrier: with the CUDA op forced onto the chunked decode kernels (temporary build)
@@ -1006,8 +1006,7 @@ prefill guard is therefore LittleBit-on-GPU <= 2.0x LittleBit-on-the-pure-CPU in
 1.40). Side finding: at `-ngl 0` a prompt of 32 tokens or more is not a CPU-only run (op offload moves batched ops,
 including LittleBit, to CUDA0): 44 tokens at `-ngl 0` exact give 2.46e-2, not the 1.3e-4 of `-dev none`.
 
-**These model-level GPU guards are coarse; the dense-floor factor is not a sound detector in general** (Task 13 fix
-round 1). Measured on 5 prompts of 22..62 tokens (all above the 16-token chunk limit), each on the prefill path and on
+**These model-level GPU guards are coarse; the dense-floor factor is not a sound detector in general**. Measured on 5 prompts of 22..62 tokens (all above the 16-token chunk limit), each on the prefill path and on
 the chunked decode kernels (temporary forced build), max-abs against the fp32 references, `-ngl 99`:
 
 | run (5 prompts) | LittleBit default | LittleBit exact | / dense floor, default | / dense floor, exact | GPU / pure CPU, default |
@@ -1020,15 +1019,15 @@ the chunked decode kernels (temporary forced build), max-abs against the fp32 re
 | mutation: residual dropped | 20.5 .. 25.5 | 20.1 .. 25.5 | 1468 .. 2126 | 1739 .. 2666 | 171 .. 991 |
 
 (Mutations: in the prefill epilogue, `y = s_u1 * P + m * s_u1r * Q` with m = 1.001 / 1.01 / 1.1, or the residual term
-removed; one rebuild of ggml-cuda each. Measured with the chunk limits of fix round 1, 16 tokens for every Qwen3-0.6B
-linear; with the fix-round-2 limits (24 for all but k / v) the 22-token prompt would run those linears on the chunked
+removed; one rebuild of ggml-cuda each. Measured with the earlier chunk limits (16 tokens for every Qwen3-0.6B
+linear); with the current limits (24 for all but k / v) the 22-token prompt would run those linears on the chunked
 kernels, the
 other four prompts still on the prefill path.) So the 2.0x dense factor fails correct code on most prompts (it holds
 only where the test applies it: the 16-token prompt in both configurations, the 44-token prompt in the exact one), the GPU / pure-CPU ratio has correct runs up to 2.42, and the absolute
 errors of correct runs (up to 0.20) overlap with the smallest mutation (x 1.001: from 0.075). On the test's own prompt
 both guards catch every mutation, including x 1.001. The op-level tests (`test-littlebit-ref`, `test-backend-ops`,
 NMSE <= 1e-10) remain the precise detectors of the kernels; the model-level guards only catch gross integration errors.
-Decision (the user's, Task 13 fix round 2, from these figures): keep the committed guards ("B1"): default config
+Decision (recorded from these figures): keep the committed guards ("B1"): default config
 LittleBit-GPU <= 2.0x LittleBit-pure-CPU, exact config LittleBit <= 2.0x the dense floor. Their measured false-failure
 rates on the 10 correct runs of the study: 1/10 for the default-config guard (2.42: forced chunked path, 48-token
 prompt; the committed prefill path 0/5) and 9/10 for the exact-config dense factor (it holds only on the test's
@@ -1038,10 +1037,10 @@ prompt); on the test's prompt both catch every mutation down to x1.001. Reproduc
 
 ## Qwen3-0.6B on the GPU (informal speed read)
 
-(Task 11's first read. The formal speed gate, both Qwen3 sizes, both head settings, bf16 / F16 / Q4_K_M baselines and
+(An early informal read. The formal speed gate, both Qwen3 sizes, both head settings, bf16 / F16 / Q4_K_M baselines and
 the harness: [bench/results/phase1.md](../bench/results/phase1.md). Gate PASS on the original weights: tg128
 LittleBit 0.55 vs bf16 212.9 vs 126.9 tokens/s on Qwen3-0.6B and 142.9 vs 51.1 on Qwen3-1.7B, in a run at the GPU's
-power cap; the numbers in this section are Task 11's informal read, measured cooler.)
+power cap; the numbers in this section are that early informal read, measured cooler.)
 
 `llama-bench -ngl 99 -p 512 -n 128 -r 3` (default settings: flash attention auto, f16 KV), RTX 4050 Laptop GPU warmed
 for 3 s before each model (`warm.exe`, an FMA loop), on 2026-11-21; peak VRAM = largest `memory.used` of nvidia-smi
@@ -1058,8 +1057,7 @@ the embedding and the output head are F16 (311 MB each, not LittleBit). Informal
 
 - Decode: LittleBit B1 generates 1.82x faster than the dense F16 model and 1.73x faster than the Q1_0 chain.
 - Prompt processing: 2.9x slower than F16 and 2.2x slower than the Q1_0 chain (whose CUDA path runs int8 MMQ on Q8_0
-  activations; the fused op stays float32, see the prefill section). Superseded by the tensor-core prefill path of
-  Task 13b (see its section and [bench/results/phase1_13b.md](../bench/results/phase1_13b.md)).
+  activations; the fused op stays float32, see the prefill section). Superseded by the tensor-core prefill path (see its section and [bench/results/phase1_13b.md](../bench/results/phase1_13b.md)).
 - Where decode time goes (Nsight Systems, `llama-bench -p 0 -n 128 -r 1`, 129 decode steps, kernel time per token
   4.26 ms of 4.4 ms wall, i.e. the GPU is about 97 % busy; decode runs as CUDA graphs, 256 `cudaGraphLaunch`):
   the F16 output head (`mul_mat_vec_f`, 311 MB per token) 1.84 ms = 43 %, at about 169 GB/s; the 196 LittleBit linears
@@ -1090,6 +1088,6 @@ then `nsys stats -r cuda_gpu_kern_sum`.
 - [ ] AVX-512 CPU path (the AVX-512 variants use the AVX2 kernel; no AVX-512 CPU to test on).
 - [ ] Vulkan kernel (Vulkan layers run the op on the CPU).
 - [ ] Prompt processing is 3x to 4x slower than F16 per large layer (float32 on CUDA cores vs f16 tensor cores).
-- [x] Speed gate (Task 13): LittleBit 0.55 generates faster than bf16 on CUDA for Qwen3-0.6B (1.68x) and Qwen3-1.7B
+- [x] Speed gate: LittleBit 0.55 generates faster than bf16 on CUDA for Qwen3-0.6B (1.68x) and Qwen3-1.7B
   (2.80x), original weights ([bench/results/phase1.md](../bench/results/phase1.md)).
-- [x] Qwen3-1.7B rows of the gate re-run on the original weights (fix round 2; real vs proxy within 0.2 %).
+- [x] Qwen3-1.7B rows of the gate re-run on the original weights (real vs proxy within 0.2 %).

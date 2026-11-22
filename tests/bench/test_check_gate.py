@@ -1,6 +1,6 @@
 """Pure-logic tests of the speed-gate decision `bench.run_bench.check_gate` (no engine, no GPU: mocked numbers).
 
-The hard gate of the project (docs/specs/2026-11-21-littlemore-design.md, "Fast"): LittleBit at 0.55 bits per weight
+The hard gate of the project: LittleBit at 0.55 bits per weight
 must generate tokens faster than the 16-bit dense model (bf16) of the same base model, for BOTH Qwen3-0.6B and
 Qwen3-1.7B, measured on CUDA.  `check_gate` takes the results table the harness produces and answers that question.
 These tests pin the decision rule: strictly faster, both models required, a missing or non-finite measurement fails.
@@ -42,7 +42,7 @@ def test_passes_when_littlebit_faster_on_both():
     (100.0, 120.0, 150.0, 60.0),   # 0.6B slower
     (90.0, 120.0, 50.0, 60.0),     # both slower
 ], ids=["1.7b-slower", "0.6b-slower", "both-slower"])
-def test_fails_when_slower_on_either(numbers):
+def test_fails_when_slower_on_either(numbers: tuple[float, float, float, float]) -> None:
     assert check_gate(_results(*numbers)) is False
 
 
@@ -52,7 +52,7 @@ def test_equal_speed_is_not_faster():
 
 
 @pytest.mark.parametrize("missing", ["lb06", "bf06", "lb17", "bf17", "model17"])
-def test_missing_measurement_fails(missing):
+def test_missing_measurement_fails(missing: str) -> None:
     """A gate that was not measured cannot pass."""
     args = dict(lb06=227.0, bf06=120.0, lb17=150.0, bf17=60.0)
     if missing == "model17":
@@ -65,7 +65,7 @@ def test_missing_measurement_fails(missing):
 
 
 @pytest.mark.parametrize("bad", [math.nan, math.inf, -1.0, 0.0])
-def test_non_finite_or_non_positive_speed_fails(bad):
+def test_non_finite_or_non_positive_speed_fails(bad: float) -> None:
     """A broken measurement (NaN, inf, zero or negative tokens/s) never passes, on either side."""
     assert check_gate(_results(bad, 120.0, 150.0, 60.0)) is False
     assert check_gate(_results(227.0, 120.0, 150.0, bad)) is False

@@ -99,10 +99,10 @@ def test_fused_matches_reference_and_beats_slow_path(ggufs, prompt, ngl):
 # and 1.43 (-fa off, f32 KV) with the LittleBit op on CUDA (1.46 / 1.56 when it ran on the CPU); limit 2.0.
 GPU_OVER_DENSE_FLOOR_MAX = 2.0
 # Prefill (44 tokens) at -ngl 99, exact config: measured 1.58 x the dense floor with the float32 GEMM prefill path, 1.80
-# with the tensor-core prefill path of Task 13b (limit above, 2.0: the margin shrank from 21 % to 10 %).  That path is
+# with the tensor-core prefill path (limit above, 2.0: the margin shrank from 21 % to 10 %).  That path is
 # MORE accurate at op level (worst error against the double reference 1.8e-7 vs 6.9e-7); the ratio moved because any
-# change of summation order moves this init-only model's error by tens of percent (Task 13 study: 0.019 .. 0.189
-# between correct paths and prompts).  So this guard can trip on unrelated, correct changes, and a ratio above 2.0 is
+# change of summation order moves this init-only model's error by tens of percent (measured over several correct paths
+# and prompts: 0.019 .. 0.189, docs/engine-changes.md "CUDA: tensor-core prefill path").  So this guard can trip on unrelated, correct changes, and a ratio above 2.0 is
 # not by itself evidence of harm: a 24-bit-activation build, whose op error equals the float32 path's, scored 2.30
 # here while the float32 path scores 1.58.  Do not loosen it on that account; diagnose with the op-level tests
 # (test-littlebit-ref, test-backend-ops), which are the precise detectors.  Default config: LittleBit on the GPU / the
@@ -138,7 +138,7 @@ def test_gpu_error_is_within_dense_floor_factor(ggufs, cfg, prompt):
     3.09e-2 and 1.94e-2 with the prefill path, i.e. the two float32 paths land on the same error level in different
     order.  In the exact configuration the dense factor holds for THIS prompt (1.58).
 
-    THESE GUARDS ARE COARSE, and the dense-factor one is not a sound detector in general (Task 13 fix round 1, measured):
+    THESE GUARDS ARE COARSE, and the dense-factor one is not a sound detector in general (measured):
       * spread over correct paths: 5 prompts (this one and 4 more, 22..62 tokens) x {prefill path, forced chunked
         path}: LittleBit / dense-floor ratios of 1.69..21.0 (default) and 1.58..25.1 (exact): the 2.0 factor FAILS on
         correct code for most prompts; it holds only where this test applies it (PROMPT_LONG in both configurations,
@@ -148,7 +148,7 @@ def test_gpu_error_is_within_dense_floor_factor(ggufs, cfg, prompt):
         guards on PROMPT_PREFILL (smallest effect, x1.001: default 0.172 = 7.8x the pure CPU, exact 0.163 = 13x the
         dense floor).  The op-level tests (test-littlebit-ref, test-backend-ops, NMSE <= 1e-10) are the precise
         detectors (precise to rounding); this model-level test only catches gross integration errors.
-      * decision (the user's, Task 13 fix round 2, from these measurements): keep both guards as they are (option "B1"):
+      * decision (recorded from these measurements): keep both guards as they are (option "B1"):
         default config LittleBit-GPU <= 2.0x LittleBit-pure-CPU, exact config LittleBit <= 2.0x the dense floor.
         Measured false-failure rate of the default-config guard over the 10 correct runs of the study: 1/10 (the forced
         chunked path on the 48-token prompt, 2.42; the committed prefill path 0/5); the exact-config dense factor holds
@@ -218,7 +218,7 @@ def littlebit_placement(gguf, ngl: int, extra: tuple = ()) -> list[tuple[str, st
 
 def test_littlebit_nodes_and_weights_on_cuda_at_ngl99(ggufs):
     """-ngl 99: every LITTLEBIT node runs on CUDA0 and every one of its sources (activation and weights) lives there,
-    with no per-call weight copy (Task 11's placement by capability).  Teeth: test_placement_check_detects_littlebit_off_cuda."""
+    with no per-call weight copy (placement by device capability, see docs/engine-changes.md).  Teeth: test_placement_check_detects_littlebit_off_cuda."""
     b1, _ = ggufs
 
     def off_cuda(nodes):

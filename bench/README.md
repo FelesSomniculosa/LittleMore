@@ -10,11 +10,13 @@ This folder holds the speed measurements of LittleMore and the code that makes t
 | `plans/phase1.json` | the list of GGUF files measured for Phase 1 (model, variant name, file) |
 | `results/phase1.json` | raw results of the Phase 1 run: every repetition of every round, GPU memory, SM clock |
 | `results/phase1.md` | the Phase 1 results, the gate decision and how they were made |
+| `clock_matched.py` | prompt-processing speed of GGUF files compared at matched GPU clocks (see its docstring) |
+| `plans/phase1_13b.json`, `results/phase1_13b*`, `results/phase1_13c*` | follow-up runs after the CUDA prefill work. The "13b" / "13c" in these file names are historical labels: 13b = the first tensor-core prefill build (engine commit `eaf9b01e6`), 13c = the same path after the speed levers (plane fusion, one basic block, row split; engine commit `2d9b9e98b`) |
 | `../tests/bench/test_check_gate.py` | tests of the gate rule (pure logic, mocked numbers) |
 
 ## The gate
 
-From the design spec ("Fast"): on CUDA, LittleBit at 0.55 bits per weight must generate tokens faster than the
+The project's speed rule: on CUDA, LittleBit at 0.55 bits per weight must generate tokens faster than the
 16-bit dense model (bf16) of the same base model, for both Qwen3-0.6B and Qwen3-1.7B, on the RTX 4050 Laptop GPU of
 this project. `check_gate(results)` returns True only if, for both models, the LittleBit file's `tg128` (tokens per
 second generating 128 tokens) is strictly larger than the bf16 file's; a missing or broken measurement fails. The
@@ -76,6 +78,6 @@ side matters at these speeds); compare files only within one run of the plan.
 
 A plan entry may carry `"env": {"NAME": "value"}`, passed to llama-bench (and stored in the record): e.g.
 `bench/plans/phase1_13b.json` runs the same LittleBit file once with the engine's default and once with
-`GGML_CUDA_LITTLEBIT_F32_PREFILL=1` (the float32 GEMM prefill path) in the same interleaved rounds. Since Task 13b the
+`GGML_CUDA_LITTLEBIT_F32_PREFILL=1` (the float32 GEMM prefill path) in the same interleaved rounds. The
 SM clock range is sampled only during llama-bench's timed repetitions (`"clock_window": "timed_repetitions"` in the
 JSON); older results sampled from 1 s after the warm-up load stopped, including the untimed warm-up pass.

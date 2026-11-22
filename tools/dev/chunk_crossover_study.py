@@ -4,7 +4,7 @@ What
     Reads <prefix>_chunk.txt and <prefix>_gemm.txt (prefill_bench output with the CUDA LittleBit op forced onto the
     chunked decode kernels / the prefill path) and prints, per layer shape: the time of both paths per batch size, the
     first batch size from which the prefill path stays faster, and for each rule in RULES the worst ratio of the rule's
-    time to (a) the faster path and (b) the old rule (32 tokens, 48 from 8 Mi signs, before Task 13).
+    time to (a) the faster path and (b) the old rule (32 tokens, 48 from 8 Mi signs, the first version of the float32 prefill dispatch).
 Why
     The chunk limits of engine/ggml/src/ggml-cuda/littlebit-dispatch.h are chosen from these numbers; the rules below are
     the candidates that were compared (docs/engine-changes.md, "Chunk limits").  GPU specific.
@@ -22,7 +22,7 @@ Shape = tuple[int, int, int, int]   # d_in, d_out, r, r2 (padded)
 
 
 def load(path: Path) -> dict[tuple[int, int, int, int, int], float]:
-    """(d_in, d_out, r, r2, n) -> us per op."""
+    """Parse a prefill_bench output file into {(d_in, d_out, r, r2, n): microseconds per op}; lines that do not match are skipped."""
     out = {}
     for line in path.read_text(errors="replace").splitlines():
         m = PAT.search(line)
@@ -32,31 +32,34 @@ def load(path: Path) -> dict[tuple[int, int, int, int, int], float]:
 
 
 def signs(s: Shape) -> int:
+    """Number of stored sign bits of a layer: (r + r2) latent rows times (d_in + d_out) columns; the rules key on it."""
     return (s[2] + s[3]) * (s[0] + s[1])
 
 
 def old_rule(s: Shape) -> int:
-    """Before Task 13: 32 tokens, 48 for layers with at least 8 Mi signs."""
+    """The original rule: 32 tokens, 48 for layers with at least 8 Mi signs."""
     return 48 if signs(s) >= 8 << 20 else 32
 
 
 def bands_rule(s: Shape) -> int:
-    """Task 13 first re-tune: sign-count bands only."""
+    """First re-tune: sign-count bands only."""
     S = signs(s)
     return 96 if S >= 24 << 20 else 48 if S >= 12 << 20 else 24 if S >= 6 << 20 else 16
 
 
-def fix2_rule(s: Shape) -> int:
-    """Task 13 fix round 2: re-measured on 22 shapes (Qwen3-0.6B / 1.7B / 4B, Llama-3-8B, built-in), chosen so that no
+def retuned_rule(s: Shape) -> int:
+    """Current rule (second re-tune): re-measured on 22 shapes (Qwen3-0.6B / 1.7B / 4B, Llama-3-8B, built-in), chosen so that no
     shape is more than 5 % slower than with the old rule at any measured batch size."""
     S = signs(s)
     return 48 if S >= 8 << 20 else 40 if S >= 6 << 20 else 24 if S >= 1 << 20 else 16
 
 
-RULES = {"old (32/48)": old_rule, "bands (16/24/48/96)": bands_rule, "fix2 (16/24/40/48)": fix2_rule}
+RULES = {"old (32/48)": old_rule, "bands (16/24/48/96)": bands_rule, "22-shape re-tune (16/24/40/48)": retuned_rule}
 
 
 def report(prefix: str, rules: dict = RULES, rows: bool = False) -> None:
+    """Print, per shape, the crossover batch size and each rule's worst slowdown against the faster path and the old rule;
+    then one summary line per rule.  rows=True also prints the raw chunk/prefill times."""
     ch, gm = load(Path(prefix + "_chunk.txt")), load(Path(prefix + "_gemm.txt"))
     shapes = sorted({k[:4] for k in ch if k in gm}, key=signs)
     worst = {name: (0.0, None) for name in rules}

@@ -1,4 +1,4 @@
-"""Prompt-processing speed of two GGUF files compared at matched GPU clocks (Task 13b).
+"""Prompt-processing speed of two GGUF files compared at matched GPU clocks.
 
 What
     Short llama-bench runs (pp512 only, 3 timed repetitions each) of every file of a list, in interleaved rounds, each
@@ -25,6 +25,11 @@ from bench.run_bench import ROOT, _bench_cmd, _bench_with_load, _GpuSampler
 
 
 def run_once(gguf: Path, warmup_s: float) -> dict:
+    """One llama-bench pp512 run (3 repetitions) of `gguf` on CUDA after a `warmup_s` GPU warm-up load.
+
+    Returns the per-repetition speeds (`pp512_samples`, tokens/s), the SM clock when llama-bench's timed part started
+    (`clock_at_start_mhz`), and [min, median, max] of the SM clock sampled during the first timed repetition
+    (`rep1_clock_mhz`, None when no sample fell inside it because the repetition was shorter than the 50 ms period)."""
     cmd = _bench_cmd(gguf.resolve(), "cuda", 99, ["-p", "512", "-n", "0", "-r", "3", "-o", "json"])
     with _GpuSampler(period_ms=50) as smp:
         r, info = _bench_with_load(cmd, warmup_s, True)
@@ -43,6 +48,8 @@ def run_once(gguf: Path, warmup_s: float) -> dict:
 
 
 def main() -> None:
+    """Command line entry: run every file `--rounds` times in interleaved order and rewrite `--out` (JSON) after each run,
+    so a partial result survives an interruption."""
     ap = argparse.ArgumentParser(description=__doc__, formatter_class=argparse.RawDescriptionHelpFormatter)
     ap.add_argument("files", nargs="+")
     ap.add_argument("--rounds", type=int, default=6)
