@@ -148,6 +148,8 @@ def _run(cmd: list[str], timeout: float) -> subprocess.CompletedProcess:
 # a measured run whose SM clock at the first timed repetition is below this is flagged ("clock_low"): the GPU of this
 # project idles at 1605 MHz and boosts to 2040-2340 MHz; memory-bound runs settle around 1.8-2.0 GHz
 BOOST_MIN_MHZ = 1800.0
+# seconds after the warm-up load stopped before memory / clock samples count (see run_bench)
+VRAM_SETTLE_S = 1.0
 # arguments of bench/gpu_load.py (the warm-up load); see its --mode
 GPU_LOAD_ARGS: list[str] = []
 
@@ -217,8 +219,9 @@ def run_bench(model_gguf: Path, backend: str, n_gpu_layers: int, *, reps: int = 
         pp512_samples / ...       every repetition
         tg128_clock_at_start_mhz  SM clock when the first timed repetition started (same for pp512)
         clock_low                 True if either of them was below BOOST_MIN_MHZ (the run is flagged, not dropped)
-        vram_mb                   peak GPU memory used after the load was stopped, minus the memory used before the
-                                  load started (MiB; None without nvidia-smi or on the CPU backend)
+        vram_mb                   peak GPU memory used during the two runs minus the memory used before them (MiB);
+                                  only measured without the warm-up load (warmup_s=0), None otherwise, without
+                                  nvidia-smi and on the CPU backend
         vram_peak_mb, vram_base_mb  the two raw nvidia-smi values (whole GPU)
         sm_clock_mhz              [min, median, max] SM clock sampled while llama-bench measured (after the load stopped)
         cmd, file_mib, warmup_s   the command lines, the file size and the load time actually spent before each run
@@ -236,7 +239,9 @@ def run_bench(model_gguf: Path, backend: str, n_gpu_layers: int, *, reps: int = 
                              ["-p", str(p), "-n", str(n), "-r", str(reps), "-o", "json", *extra_args])
             out["cmd"].append(cmd)
             r, info = _bench_with_load(cmd, warmup_s, use_load)
-            windows.append((info["load_stop_t"], time.perf_counter()))
+            # memory and clock samples count from VRAM_SETTLE_S after the load was stopped: nvidia-smi still shows the
+            # load's memory for a moment after it exited (measured: +549 MiB on one bf16 run without this delay)
+            windows.append((info["load_stop_t"] + (VRAM_SETTLE_S if use_load else 0.0), time.perf_counter()))
             out["warmup_s"].append(info["load_s"])
             out[key + "_clock_at_start_mhz"] = info["clock_at_start_mhz"]
             if r.returncode != 0:
@@ -259,6 +264,11 @@ def run_bench(model_gguf: Path, backend: str, n_gpu_layers: int, *, reps: int = 
         clocks = sorted(c for _, c in inside)
         out.update(vram_mb=peak - base[0], vram_peak_mb=peak, vram_base_mb=base[0],
                    sm_clock_mhz=[clocks[0], statistics.median(clocks), clocks[-1]])
+        if use_load:
+            # not valid with the warm-up load: its memory lingers in nvidia-smi for a moment after it exits, and a
+            # settle delay long enough for that misses the whole pp512 run of a small model (measured: 535 instead of
+            # 821 MiB); measure VRAM in a separate pass with warmup_s=0
+            out.update(vram_mb=None, vram_peak_mb=None)
     else:
         out.update(vram_mb=None, vram_peak_mb=None, vram_base_mb=None, sm_clock_mhz=None)
     return out
@@ -402,15 +412,26 @@ def run_plan(plan: list[dict], rounds: int, out_json: Path, backend: str = "cuda
     return runs
 
 
-def render_markdown(raw: dict) -> str:
-    """Markdown tables (per model: every variant's tg128 / pp512 / VRAM) and the gate lines, from a run_plan JSON."""
+def render_markdown(raw: dict, vram_raw: dict | None = None) -> str:
+    """Markdown tables (per model: every variant's tg128 / pp512 / VRAM) and the gate lines, from a run_plan JSON.
+
+    `vram_raw`: optionally another run_plan JSON whose VRAM values replace those of `raw` (used when the speed run's
+    VRAM samples were not valid, see bench/results/phase1.md); the column heading says so.
+    """
     runs = [r for r in raw["runs"] if "error" not in r]
     agg = aggregate(runs)
+    vram_note = ""
+    if vram_raw is not None:
+        vagg = aggregate([r for r in vram_raw["runs"] if "error" not in r])
+        for model, variants in agg.items():
+            for name, v in variants.items():
+                v["vram_mb"] = vagg.get(model, {}).get(name, {}).get("vram_mb")
+        vram_note = " (separate pass)"
     lines: list[str] = []
     for model, variants in agg.items():
         proxy = any(v.get("weights") == "proxy" for v in variants.values())
         lines += [f"### {model}" + (" (PROXY weights: speed only, not the original model)" if proxy else ""), "",
-                  "| variant | file MiB | tg128 t/s (mean of the round medians; min..max of them) | pp512 t/s (same) | VRAM MiB | SM clock MHz (min..max sampled, incl. model loading) |",
+                  f"| variant | file MiB | tg128 t/s (mean of the round medians; min..max of them) | pp512 t/s (same) | VRAM MiB{vram_note} | SM clock MHz (min..max sampled while measuring) |",
                   "|---|---|---|---|---|---|"]
         for name, v in variants.items():
             clk = v.get("sm_clock_range_mhz")
@@ -441,9 +462,11 @@ def main(argv: list[str] | None = None) -> int:
     ap.add_argument("-ngl", "--n-gpu-layers", type=int, default=99)
     ap.add_argument("--out", type=Path, help="raw results JSON (with --plan)")
     ap.add_argument("--markdown", type=Path, help="print the tables of an existing results JSON")
+    ap.add_argument("--vram", type=Path, help="with --markdown: take the VRAM column from this results JSON")
     a = ap.parse_args(argv)
     if a.markdown:
-        print(render_markdown(json.loads(a.markdown.read_text(encoding="utf-8"))))
+        vram = json.loads(a.vram.read_text(encoding="utf-8")) if a.vram else None
+        print(render_markdown(json.loads(a.markdown.read_text(encoding="utf-8")), vram))
         return 0
     if not a.plan or not a.out:
         ap.error("--plan and --out are required unless --markdown is given")

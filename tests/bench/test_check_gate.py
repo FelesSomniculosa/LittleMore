@@ -120,3 +120,23 @@ def test_gate_status_formal_pass_and_fail():
     res = _with_proxy_17b()
     res["qwen3-1.7b-proxy"]["littlebit-0.55"]["tg128"] = 50.0   # slower on the proxy too
     assert gate_status(res) == "FAIL"
+
+
+# --- the committed Phase 1 results ---------------------------------------------------------------------------------
+
+def test_committed_phase1_results_pass_the_formal_gate():
+    """bench/results/phase1.json (the formal run): the gate passes on ORIGINAL weights for both models, without proxy
+    results, and the run records a clean engine tree whose commit llama-bench also reports (build provenance)."""
+    import json
+    from pathlib import Path
+    from bench.run_bench import aggregate
+    raw = json.loads((Path(__file__).resolve().parents[2] / "bench" / "results" / "phase1.json").read_text(encoding="utf-8"))
+    runs = [r for r in raw["runs"] if "error" not in r]
+    agg = aggregate(runs)
+    for model in GATE_MODELS:
+        assert all(v["weights"] == "original" for v in agg[model].values()), model
+    assert check_gate(agg) is True
+    assert gate_status(agg) == "PASS"
+    prov = raw["provenance"]
+    assert prov["engine_dirty"] is False
+    assert prov["engine_commit"][:9] in prov["llama_bench_version"]

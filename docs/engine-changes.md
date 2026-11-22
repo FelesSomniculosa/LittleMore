@@ -810,7 +810,10 @@ the chunked decode kernels (temporary forced build), max-abs against the fp32 re
 | mutation: residual dropped | 20.5 .. 25.5 | 20.1 .. 25.5 | 1468 .. 2126 | 1739 .. 2666 | 171 .. 991 |
 
 (Mutations: in the prefill epilogue, `y = s_u1 * P + m * s_u1r * Q` with m = 1.001 / 1.01 / 1.1, or the residual term
-removed; one rebuild of ggml-cuda each.) So the 2.0x dense factor fails correct code on most prompts (it holds
+removed; one rebuild of ggml-cuda each. Measured with the chunk limits of fix round 1, 16 tokens for every Qwen3-0.6B
+linear; with the fix-round-2 limits (24 for all but k / v) the 22-token prompt would run those linears on the chunked
+kernels, the
+other four prompts still on the prefill path.) So the 2.0x dense factor fails correct code on most prompts (it holds
 only where the test applies it: the 16-token prompt in both configurations, the 44-token prompt in the exact one), the GPU / pure-CPU ratio has correct runs up to 2.42, and the absolute
 errors of correct runs (up to 0.20) overlap with the smallest mutation (x 1.001: from 0.075). On the test's own prompt
 both guards catch every mutation, including x 1.001. The op-level tests (`test-littlebit-ref`, `test-backend-ops`,
@@ -826,9 +829,9 @@ prompt); on the test's prompt both catch every mutation down to x1.001. Reproduc
 ## Qwen3-0.6B on the GPU (informal speed read)
 
 (Task 11's first read. The formal speed gate, both Qwen3 sizes, both head settings, bf16 / F16 / Q4_K_M baselines and
-the harness: [bench/results/phase1.md](../bench/results/phase1.md). Gate PROVISIONAL PASS: tg128 LittleBit 0.55 vs
-bf16 236.3 vs 127.5 tokens/s on Qwen3-0.6B (original weights) and 143.8 vs 51.0 on Qwen3-1.7B measured on PROXY weights
-of the right shapes; provisional until the 1.7B rows are re-run on the original weights, see the caveat there.)
+the harness: [bench/results/phase1.md](../bench/results/phase1.md). Gate PASS on the original weights: tg128
+LittleBit 0.55 vs bf16 212.9 vs 126.9 tokens/s on Qwen3-0.6B and 142.9 vs 51.1 on Qwen3-1.7B, in a run at the GPU's
+power cap; the numbers in this section are Task 11's informal read, measured cooler.)
 
 `llama-bench -ngl 99 -p 512 -n 128 -r 3` (default settings: flash attention auto, f16 KV), RTX 4050 Laptop GPU warmed
 for 3 s before each model (`warm.exe`, an FMA loop), on 2026-11-21; peak VRAM = largest `memory.used` of nvidia-smi
@@ -876,7 +879,6 @@ then `nsys stats -r cuda_gpu_kern_sum`.
 - [ ] AVX-512 CPU path (the AVX-512 variants use the AVX2 kernel; no AVX-512 CPU to test on).
 - [ ] Vulkan kernel (Vulkan layers run the op on the CPU).
 - [ ] Prompt processing is 3x to 4x slower than F16 per large layer (float32 on CUDA cores vs f16 tensor cores).
-- [ ] Speed gate (Task 13): PROVISIONAL PASS. LittleBit 0.55 generates faster than bf16 on CUDA for Qwen3-0.6B
-  (original weights) and for Qwen3-1.7B on proxy weights only ([bench/results/phase1.md](../bench/results/phase1.md));
-  formally open until the next item is done.
-- [ ] Re-run the Qwen3-1.7B rows of the gate on the original weights (measured on proxy weights of the same shapes; needs the 4 GB download).
+- [x] Speed gate (Task 13): LittleBit 0.55 generates faster than bf16 on CUDA for Qwen3-0.6B (1.68x) and Qwen3-1.7B
+  (2.80x), original weights ([bench/results/phase1.md](../bench/results/phase1.md)).
+- [x] Qwen3-1.7B rows of the gate re-run on the original weights (fix round 2; real vs proxy within 0.2 %).

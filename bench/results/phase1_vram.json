@@ -1,0 +1,1294 @@
+{
+ "backend": "cuda",
+ "n_gpu_layers": 99,
+ "reps": 3,
+ "warmup_s": 0.0,
+ "provenance": {
+  "engine_commit": "94d74731d18608d72c3b306367a5535c91aa2951",
+  "engine_dirty": false,
+  "llama_bench_version": "version: 1.0.0-dev (build 15, commit 94d74731d)",
+  "repo_commit": "46b06e38473572f206073841177e4d8e8eb77d89"
+ },
+ "runs": [
+  {
+   "model": "qwen3-0.6b",
+   "variant": "littlebit-0.55",
+   "file": ".cache/gguf/qwen3-0.6b-lb2-0.55-b1.gguf",
+   "round": 0,
+   "weights": "original",
+   "time": "2026-11-22 06:23:02",
+   "file_mib": 642.2414855957031,
+   "backend": "cuda",
+   "n_gpu_layers": 99,
+   "cmd": [
+    [
+     "C:\\Vibe Coding\\LittleMore\\engine\\build\\bin\\llama-bench.exe",
+     "-m",
+     "C:\\Vibe Coding\\LittleMore\\.cache\\gguf\\qwen3-0.6b-lb2-0.55-b1.gguf",
+     "-ngl",
+     "99",
+     "-dev",
+     "CUDA0",
+     "-p",
+     "0",
+     "-n",
+     "128",
+     "-r",
+     "3",
+     "-o",
+     "json"
+    ],
+    [
+     "C:\\Vibe Coding\\LittleMore\\engine\\build\\bin\\llama-bench.exe",
+     "-m",
+     "C:\\Vibe Coding\\LittleMore\\.cache\\gguf\\qwen3-0.6b-lb2-0.55-b1.gguf",
+     "-ngl",
+     "99",
+     "-dev",
+     "CUDA0",
+     "-p",
+     "512",
+     "-n",
+     "0",
+     "-r",
+     "3",
+     "-o",
+     "json"
+    ]
+   ],
+   "warmup_s": [
+    0.0,
+    0.0
+   ],
+   "tg128_clock_at_start_mhz": 1605.0,
+   "tg128": 205.809,
+   "tg128_mean": 203.7876666666667,
+   "tg128_sd": 5.585405744736295,
+   "tg128_samples": [
+    197.473,
+    205.809,
+    208.081
+   ],
+   "build_commit": "94d74731d",
+   "gpu_info": "NVIDIA GeForce RTX 4050 Laptop GPU, NVIDIA GeForce RTX 4050 Laptop GPU, Intel(R) UHD Graphics",
+   "pp512_clock_at_start_mhz": 1380.0,
+   "pp512": 2825.37,
+   "pp512_mean": 2796.6866666666665,
+   "pp512_sd": 197.56287665787158,
+   "pp512_samples": [
+    2978.34,
+    2586.35,
+    2825.37
+   ],
+   "clock_low": false,
+   "vram_mb": 821.0,
+   "vram_peak_mb": 821.0,
+   "vram_base_mb": 0.0,
+   "sm_clock_mhz": [
+    900.0,
+    1665.0,
+    2340.0
+   ]
+  },
+  {
+   "model": "qwen3-0.6b",
+   "variant": "bf16",
+   "file": ".cache/gguf/qwen3-0.6b-base-bf16.gguf",
+   "round": 0,
+   "weights": "original",
+   "time": "2026-11-22 06:23:06",
+   "file_mib": 1439.4261474609375,
+   "backend": "cuda",
+   "n_gpu_layers": 99,
+   "cmd": [
+    [
+     "C:\\Vibe Coding\\LittleMore\\engine\\build\\bin\\llama-bench.exe",
+     "-m",
+     "C:\\Vibe Coding\\LittleMore\\.cache\\gguf\\qwen3-0.6b-base-bf16.gguf",
+     "-ngl",
+     "99",
+     "-dev",
+     "CUDA0",
+     "-p",
+     "0",
+     "-n",
+     "128",
+     "-r",
+     "3",
+     "-o",
+     "json"
+    ],
+    [
+     "C:\\Vibe Coding\\LittleMore\\engine\\build\\bin\\llama-bench.exe",
+     "-m",
+     "C:\\Vibe Coding\\LittleMore\\.cache\\gguf\\qwen3-0.6b-base-bf16.gguf",
+     "-ngl",
+     "99",
+     "-dev",
+     "CUDA0",
+     "-p",
+     "512",
+     "-n",
+     "0",
+     "-r",
+     "3",
+     "-o",
+     "json"
+    ]
+   ],
+   "warmup_s": [
+    0.0,
+    0.0
+   ],
+   "tg128_clock_at_start_mhz": 2340.0,
+   "tg128": 113.357,
+   "tg128_mean": 109.62033333333333,
+   "tg128_sd": 8.061976453285718,
+   "tg128_samples": [
+    100.368,
+    113.357,
+    115.136
+   ],
+   "build_commit": "94d74731d",
+   "gpu_info": "NVIDIA GeForce RTX 4050 Laptop GPU, NVIDIA GeForce RTX 4050 Laptop GPU, Intel(R) UHD Graphics",
+   "pp512_clock_at_start_mhz": 2340.0,
+   "pp512": 9527.99,
+   "pp512_mean": 9645.31,
+   "pp512_sd": 229.72015083575047,
+   "pp512_samples": [
+    9910.0,
+    9527.99,
+    9497.94
+   ],
+   "clock_low": false,
+   "vram_mb": 1609.0,
+   "vram_peak_mb": 1609.0,
+   "vram_base_mb": 0.0,
+   "sm_clock_mhz": [
+    900.0,
+    1537.5,
+    2340.0
+   ]
+  },
+  {
+   "model": "qwen3-0.6b",
+   "variant": "littlebit-0.55-q8_0head",
+   "file": ".cache/gguf/qwen3-0.6b-lb2-0.55-b1-q8_0head.gguf",
+   "round": 0,
+   "weights": "original",
+   "time": "2026-11-22 06:23:12",
+   "file_mib": 364.0383605957031,
+   "backend": "cuda",
+   "n_gpu_layers": 99,
+   "cmd": [
+    [
+     "C:\\Vibe Coding\\LittleMore\\engine\\build\\bin\\llama-bench.exe",
+     "-m",
+     "C:\\Vibe Coding\\LittleMore\\.cache\\gguf\\qwen3-0.6b-lb2-0.55-b1-q8_0head.gguf",
+     "-ngl",
+     "99",
+     "-dev",
+     "CUDA0",
+     "-p",
+     "0",
+     "-n",
+     "128",
+     "-r",
+     "3",
+     "-o",
+     "json"
+    ],
+    [
+     "C:\\Vibe Coding\\LittleMore\\engine\\build\\bin\\llama-bench.exe",
+     "-m",
+     "C:\\Vibe Coding\\LittleMore\\.cache\\gguf\\qwen3-0.6b-lb2-0.55-b1-q8_0head.gguf",
+     "-ngl",
+     "99",
+     "-dev",
+     "CUDA0",
+     "-p",
+     "512",
+     "-n",
+     "0",
+     "-r",
+     "3",
+     "-o",
+     "json"
+    ]
+   ],
+   "warmup_s": [
+    0.0,
+    0.0
+   ],
+   "tg128_clock_at_start_mhz": 2325.0,
+   "tg128": 259.557,
+   "tg128_mean": 258.02233333333334,
+   "tg128_sd": 14.22721428577406,
+   "tg128_samples": [
+    243.09,
+    259.557,
+    271.42
+   ],
+   "build_commit": "94d74731d",
+   "gpu_info": "NVIDIA GeForce RTX 4050 Laptop GPU, NVIDIA GeForce RTX 4050 Laptop GPU, Intel(R) UHD Graphics",
+   "pp512_clock_at_start_mhz": 2325.0,
+   "pp512": 3488.76,
+   "pp512_mean": 3521.5200000000004,
+   "pp512_sd": 215.1289745710698,
+   "pp512_samples": [
+    3751.15,
+    3488.76,
+    3324.65
+   ],
+   "clock_low": false,
+   "vram_mb": 683.0,
+   "vram_peak_mb": 683.0,
+   "vram_base_mb": 0.0,
+   "sm_clock_mhz": [
+    1185.0,
+    2235.0,
+    2325.0
+   ]
+  },
+  {
+   "model": "qwen3-0.6b",
+   "variant": "littlebit-0.55-q6_khead",
+   "file": ".cache/gguf/qwen3-0.6b-lb2-0.55-b1-q6_khead.gguf",
+   "round": 0,
+   "weights": "original",
+   "time": "2026-11-22 06:23:16",
+   "file_mib": 292.1692199707031,
+   "backend": "cuda",
+   "n_gpu_layers": 99,
+   "cmd": [
+    [
+     "C:\\Vibe Coding\\LittleMore\\engine\\build\\bin\\llama-bench.exe",
+     "-m",
+     "C:\\Vibe Coding\\LittleMore\\.cache\\gguf\\qwen3-0.6b-lb2-0.55-b1-q6_khead.gguf",
+     "-ngl",
+     "99",
+     "-dev",
+     "CUDA0",
+     "-p",
+     "0",
+     "-n",
+     "128",
+     "-r",
+     "3",
+     "-o",
+     "json"
+    ],
+    [
+     "C:\\Vibe Coding\\LittleMore\\engine\\build\\bin\\llama-bench.exe",
+     "-m",
+     "C:\\Vibe Coding\\LittleMore\\.cache\\gguf\\qwen3-0.6b-lb2-0.55-b1-q6_khead.gguf",
+     "-ngl",
+     "99",
+     "-dev",
+     "CUDA0",
+     "-p",
+     "512",
+     "-n",
+     "0",
+     "-r",
+     "3",
+     "-o",
+     "json"
+    ]
+   ],
+   "warmup_s": [
+    0.0,
+    0.0
+   ],
+   "tg128_clock_at_start_mhz": 2325.0,
+   "tg128": 268.078,
+   "tg128_mean": 268.078,
+   "tg128_sd": 1.3649999999999807,
+   "tg128_samples": [
+    268.078,
+    269.443,
+    266.713
+   ],
+   "build_commit": "94d74731d",
+   "gpu_info": "NVIDIA GeForce RTX 4050 Laptop GPU, NVIDIA GeForce RTX 4050 Laptop GPU, Intel(R) UHD Graphics",
+   "pp512_clock_at_start_mhz": 2325.0,
+   "pp512": 2744.85,
+   "pp512_mean": 2784.2233333333334,
+   "pp512_sd": 69.16882920314141,
+   "pp512_samples": [
+    2744.85,
+    2743.73,
+    2864.09
+   ],
+   "clock_low": false,
+   "vram_mb": 647.0,
+   "vram_peak_mb": 647.0,
+   "vram_base_mb": 0.0,
+   "sm_clock_mhz": [
+    840.0,
+    1935.0,
+    2325.0
+   ]
+  },
+  {
+   "model": "qwen3-0.6b",
+   "variant": "littlebit-0.1",
+   "file": ".cache/gguf/qwen3-0.6b-lb2-0.1-b1.gguf",
+   "round": 0,
+   "weights": "original",
+   "time": "2026-11-22 06:23:20",
+   "file_mib": 626.2864074707031,
+   "backend": "cuda",
+   "n_gpu_layers": 99,
+   "cmd": [
+    [
+     "C:\\Vibe Coding\\LittleMore\\engine\\build\\bin\\llama-bench.exe",
+     "-m",
+     "C:\\Vibe Coding\\LittleMore\\.cache\\gguf\\qwen3-0.6b-lb2-0.1-b1.gguf",
+     "-ngl",
+     "99",
+     "-dev",
+     "CUDA0",
+     "-p",
+     "0",
+     "-n",
+     "128",
+     "-r",
+     "3",
+     "-o",
+     "json"
+    ],
+    [
+     "C:\\Vibe Coding\\LittleMore\\engine\\build\\bin\\llama-bench.exe",
+     "-m",
+     "C:\\Vibe Coding\\LittleMore\\.cache\\gguf\\qwen3-0.6b-lb2-0.1-b1.gguf",
+     "-ngl",
+     "99",
+     "-dev",
+     "CUDA0",
+     "-p",
+     "512",
+     "-n",
+     "0",
+     "-r",
+     "3",
+     "-o",
+     "json"
+    ]
+   ],
+   "warmup_s": [
+    0.0,
+    0.0
+   ],
+   "tg128_clock_at_start_mhz": 2220.0,
+   "tg128": 197.443,
+   "tg128_mean": 198.44433333333333,
+   "tg128_sd": 10.434098204125416,
+   "tg128_samples": [
+    188.547,
+    197.443,
+    209.343
+   ],
+   "build_commit": "94d74731d",
+   "gpu_info": "NVIDIA GeForce RTX 4050 Laptop GPU, NVIDIA GeForce RTX 4050 Laptop GPU, Intel(R) UHD Graphics",
+   "pp512_clock_at_start_mhz": 2115.0,
+   "pp512": 5564.36,
+   "pp512_mean": 5611.056666666666,
+   "pp512_sd": 139.41902536359012,
+   "pp512_samples": [
+    5564.36,
+    5767.83,
+    5500.98
+   ],
+   "clock_low": false,
+   "vram_mb": 801.0,
+   "vram_peak_mb": 801.0,
+   "vram_base_mb": 0.0,
+   "sm_clock_mhz": [
+    945.0,
+    1740.0,
+    2220.0
+   ]
+  },
+  {
+   "model": "qwen3-0.6b",
+   "variant": "littlebit-0.1-q8_0head",
+   "file": ".cache/gguf/qwen3-0.6b-lb2-0.1-b1-q8_0head.gguf",
+   "round": 0,
+   "weights": "original",
+   "time": "2026-11-22 06:23:24",
+   "file_mib": 348.0832824707031,
+   "backend": "cuda",
+   "n_gpu_layers": 99,
+   "cmd": [
+    [
+     "C:\\Vibe Coding\\LittleMore\\engine\\build\\bin\\llama-bench.exe",
+     "-m",
+     "C:\\Vibe Coding\\LittleMore\\.cache\\gguf\\qwen3-0.6b-lb2-0.1-b1-q8_0head.gguf",
+     "-ngl",
+     "99",
+     "-dev",
+     "CUDA0",
+     "-p",
+     "0",
+     "-n",
+     "128",
+     "-r",
+     "3",
+     "-o",
+     "json"
+    ],
+    [
+     "C:\\Vibe Coding\\LittleMore\\engine\\build\\bin\\llama-bench.exe",
+     "-m",
+     "C:\\Vibe Coding\\LittleMore\\.cache\\gguf\\qwen3-0.6b-lb2-0.1-b1-q8_0head.gguf",
+     "-ngl",
+     "99",
+     "-dev",
+     "CUDA0",
+     "-p",
+     "512",
+     "-n",
+     "0",
+     "-r",
+     "3",
+     "-o",
+     "json"
+    ]
+   ],
+   "warmup_s": [
+    0.0,
+    0.0
+   ],
+   "tg128_clock_at_start_mhz": 1875.0,
+   "tg128": 262.681,
+   "tg128_mean": 260.5346666666666,
+   "tg128_sd": 5.09282655637645,
+   "tg128_samples": [
+    254.72,
+    264.203,
+    262.681
+   ],
+   "build_commit": "94d74731d",
+   "gpu_info": "NVIDIA GeForce RTX 4050 Laptop GPU, NVIDIA GeForce RTX 4050 Laptop GPU, Intel(R) UHD Graphics",
+   "pp512_clock_at_start_mhz": 2325.0,
+   "pp512": 5837.88,
+   "pp512_mean": 5884.62,
+   "pp512_sd": 280.575195446782,
+   "pp512_samples": [
+    6185.63,
+    5837.88,
+    5630.35
+   ],
+   "clock_low": false,
+   "vram_mb": 663.0,
+   "vram_peak_mb": 663.0,
+   "vram_base_mb": 0.0,
+   "sm_clock_mhz": [
+    1350.0,
+    1875.0,
+    2325.0
+   ]
+  },
+  {
+   "model": "qwen3-0.6b",
+   "variant": "f16",
+   "file": ".cache/gguf/qwen3-0.6b-base-f16.gguf",
+   "round": 0,
+   "weights": "original",
+   "time": "2026-11-22 06:23:27",
+   "file_mib": 1439.4261474609375,
+   "backend": "cuda",
+   "n_gpu_layers": 99,
+   "cmd": [
+    [
+     "C:\\Vibe Coding\\LittleMore\\engine\\build\\bin\\llama-bench.exe",
+     "-m",
+     "C:\\Vibe Coding\\LittleMore\\.cache\\gguf\\qwen3-0.6b-base-f16.gguf",
+     "-ngl",
+     "99",
+     "-dev",
+     "CUDA0",
+     "-p",
+     "0",
+     "-n",
+     "128",
+     "-r",
+     "3",
+     "-o",
+     "json"
+    ],
+    [
+     "C:\\Vibe Coding\\LittleMore\\engine\\build\\bin\\llama-bench.exe",
+     "-m",
+     "C:\\Vibe Coding\\LittleMore\\.cache\\gguf\\qwen3-0.6b-base-f16.gguf",
+     "-ngl",
+     "99",
+     "-dev",
+     "CUDA0",
+     "-p",
+     "512",
+     "-n",
+     "0",
+     "-r",
+     "3",
+     "-o",
+     "json"
+    ]
+   ],
+   "warmup_s": [
+    0.0,
+    0.0
+   ],
+   "tg128_clock_at_start_mhz": 2325.0,
+   "tg128": 117.193,
+   "tg128_mean": 114.177,
+   "tg128_sd": 8.8674048063681,
+   "tg128_samples": [
+    104.195,
+    117.193,
+    121.143
+   ],
+   "build_commit": "94d74731d",
+   "gpu_info": "NVIDIA GeForce RTX 4050 Laptop GPU, NVIDIA GeForce RTX 4050 Laptop GPU, Intel(R) UHD Graphics",
+   "pp512_clock_at_start_mhz": 2325.0,
+   "pp512": 11562.3,
+   "pp512_mean": 11598.266666666668,
+   "pp512_sd": 109.7623037902055,
+   "pp512_samples": [
+    11721.5,
+    11562.3,
+    11511.0
+   ],
+   "clock_low": false,
+   "vram_mb": 1609.0,
+   "vram_peak_mb": 1609.0,
+   "vram_base_mb": 0.0,
+   "sm_clock_mhz": [
+    1320.0,
+    1725.0,
+    2325.0
+   ]
+  },
+  {
+   "model": "qwen3-0.6b",
+   "variant": "q4_k_m",
+   "file": ".cache/gguf/qwen3-0.6b-base-q4_k_m.gguf",
+   "round": 0,
+   "weights": "original",
+   "time": "2026-11-22 06:23:34",
+   "file_mib": 461.7884521484375,
+   "backend": "cuda",
+   "n_gpu_layers": 99,
+   "cmd": [
+    [
+     "C:\\Vibe Coding\\LittleMore\\engine\\build\\bin\\llama-bench.exe",
+     "-m",
+     "C:\\Vibe Coding\\LittleMore\\.cache\\gguf\\qwen3-0.6b-base-q4_k_m.gguf",
+     "-ngl",
+     "99",
+     "-dev",
+     "CUDA0",
+     "-p",
+     "0",
+     "-n",
+     "128",
+     "-r",
+     "3",
+     "-o",
+     "json"
+    ],
+    [
+     "C:\\Vibe Coding\\LittleMore\\engine\\build\\bin\\llama-bench.exe",
+     "-m",
+     "C:\\Vibe Coding\\LittleMore\\.cache\\gguf\\qwen3-0.6b-base-q4_k_m.gguf",
+     "-ngl",
+     "99",
+     "-dev",
+     "CUDA0",
+     "-p",
+     "512",
+     "-n",
+     "0",
+     "-r",
+     "3",
+     "-o",
+     "json"
+    ]
+   ],
+   "warmup_s": [
+    0.0,
+    0.0
+   ],
+   "tg128_clock_at_start_mhz": 2325.0,
+   "tg128": 235.935,
+   "tg128_mean": 232.02800000000002,
+   "tg128_sd": 15.123849609143829,
+   "tg128_samples": [
+    215.334,
+    235.935,
+    244.815
+   ],
+   "build_commit": "94d74731d",
+   "gpu_info": "NVIDIA GeForce RTX 4050 Laptop GPU, NVIDIA GeForce RTX 4050 Laptop GPU, Intel(R) UHD Graphics",
+   "pp512_clock_at_start_mhz": 2325.0,
+   "pp512": 12682.1,
+   "pp512_mean": 12951.300000000001,
+   "pp512_sd": 678.8852922254247,
+   "pp512_samples": [
+    13723.5,
+    12682.1,
+    12448.3
+   ],
+   "clock_low": false,
+   "vram_mb": 829.0,
+   "vram_peak_mb": 829.0,
+   "vram_base_mb": 0.0,
+   "sm_clock_mhz": [
+    1665.0,
+    2325.0,
+    2325.0
+   ]
+  },
+  {
+   "model": "qwen3-1.7b",
+   "variant": "littlebit-0.55",
+   "file": ".cache/gguf/qwen3-1.7b-lb2-0.55-b1.gguf",
+   "round": 0,
+   "weights": "original",
+   "time": "2026-11-22 06:23:37",
+   "file_mib": 1322.1242980957031,
+   "backend": "cuda",
+   "n_gpu_layers": 99,
+   "cmd": [
+    [
+     "C:\\Vibe Coding\\LittleMore\\engine\\build\\bin\\llama-bench.exe",
+     "-m",
+     "C:\\Vibe Coding\\LittleMore\\.cache\\gguf\\qwen3-1.7b-lb2-0.55-b1.gguf",
+     "-ngl",
+     "99",
+     "-dev",
+     "CUDA0",
+     "-p",
+     "0",
+     "-n",
+     "128",
+     "-r",
+     "3",
+     "-o",
+     "json"
+    ],
+    [
+     "C:\\Vibe Coding\\LittleMore\\engine\\build\\bin\\llama-bench.exe",
+     "-m",
+     "C:\\Vibe Coding\\LittleMore\\.cache\\gguf\\qwen3-1.7b-lb2-0.55-b1.gguf",
+     "-ngl",
+     "99",
+     "-dev",
+     "CUDA0",
+     "-p",
+     "512",
+     "-n",
+     "0",
+     "-r",
+     "3",
+     "-o",
+     "json"
+    ]
+   ],
+   "warmup_s": [
+    0.0,
+    0.0
+   ],
+   "tg128_clock_at_start_mhz": 2325.0,
+   "tg128": 124.853,
+   "tg128_mean": 122.94766666666668,
+   "tg128_sd": 6.948756819268704,
+   "tg128_samples": [
+    115.245,
+    124.853,
+    128.745
+   ],
+   "build_commit": "94d74731d",
+   "gpu_info": "NVIDIA GeForce RTX 4050 Laptop GPU, NVIDIA GeForce RTX 4050 Laptop GPU, Intel(R) UHD Graphics",
+   "pp512_clock_at_start_mhz": 1140.0,
+   "pp512": 1343.79,
+   "pp512_mean": 1350.79,
+   "pp512_sd": 56.844176482732145,
+   "pp512_samples": [
+    1297.77,
+    1343.79,
+    1410.81
+   ],
+   "clock_low": false,
+   "vram_mb": 1223.0,
+   "vram_peak_mb": 1223.0,
+   "vram_base_mb": 0.0,
+   "sm_clock_mhz": [
+    1140.0,
+    1575.0,
+    2325.0
+   ]
+  },
+  {
+   "model": "qwen3-1.7b",
+   "variant": "bf16",
+   "file": ".cache/gguf/qwen3-1.7b-base-bf16.gguf",
+   "round": 0,
+   "weights": "original",
+   "time": "2026-11-22 06:23:44",
+   "file_mib": 3881.1488037109375,
+   "backend": "cuda",
+   "n_gpu_layers": 99,
+   "cmd": [
+    [
+     "C:\\Vibe Coding\\LittleMore\\engine\\build\\bin\\llama-bench.exe",
+     "-m",
+     "C:\\Vibe Coding\\LittleMore\\.cache\\gguf\\qwen3-1.7b-base-bf16.gguf",
+     "-ngl",
+     "99",
+     "-dev",
+     "CUDA0",
+     "-p",
+     "0",
+     "-n",
+     "128",
+     "-r",
+     "3",
+     "-o",
+     "json"
+    ],
+    [
+     "C:\\Vibe Coding\\LittleMore\\engine\\build\\bin\\llama-bench.exe",
+     "-m",
+     "C:\\Vibe Coding\\LittleMore\\.cache\\gguf\\qwen3-1.7b-base-bf16.gguf",
+     "-ngl",
+     "99",
+     "-dev",
+     "CUDA0",
+     "-p",
+     "512",
+     "-n",
+     "0",
+     "-r",
+     "3",
+     "-o",
+     "json"
+    ]
+   ],
+   "warmup_s": [
+    0.0,
+    0.0
+   ],
+   "tg128_clock_at_start_mhz": 2115.0,
+   "tg128": 50.4267,
+   "tg128_mean": 48.23716666666667,
+   "tg128_sd": 4.0282078103461,
+   "tg128_samples": [
+    43.5884,
+    50.4267,
+    50.6964
+   ],
+   "build_commit": "94d74731d",
+   "gpu_info": "NVIDIA GeForce RTX 4050 Laptop GPU, NVIDIA GeForce RTX 4050 Laptop GPU, Intel(R) UHD Graphics",
+   "pp512_clock_at_start_mhz": 1965.0,
+   "pp512": 3690.85,
+   "pp512_mean": 3710.2333333333336,
+   "pp512_sd": 213.37632585020603,
+   "pp512_samples": [
+    3932.64,
+    3690.85,
+    3507.21
+   ],
+   "clock_low": false,
+   "vram_mb": 3763.0,
+   "vram_peak_mb": 3763.0,
+   "vram_base_mb": 0.0,
+   "sm_clock_mhz": [
+    840.0,
+    1815.0,
+    2325.0
+   ]
+  },
+  {
+   "model": "qwen3-1.7b",
+   "variant": "littlebit-0.55-q8_0head",
+   "file": ".cache/gguf/qwen3-1.7b-lb2-0.55-b1-q8_0head.gguf",
+   "round": 0,
+   "weights": "original",
+   "time": "2026-11-22 06:23:58",
+   "file_mib": 765.7180480957031,
+   "backend": "cuda",
+   "n_gpu_layers": 99,
+   "cmd": [
+    [
+     "C:\\Vibe Coding\\LittleMore\\engine\\build\\bin\\llama-bench.exe",
+     "-m",
+     "C:\\Vibe Coding\\LittleMore\\.cache\\gguf\\qwen3-1.7b-lb2-0.55-b1-q8_0head.gguf",
+     "-ngl",
+     "99",
+     "-dev",
+     "CUDA0",
+     "-p",
+     "0",
+     "-n",
+     "128",
+     "-r",
+     "3",
+     "-o",
+     "json"
+    ],
+    [
+     "C:\\Vibe Coding\\LittleMore\\engine\\build\\bin\\llama-bench.exe",
+     "-m",
+     "C:\\Vibe Coding\\LittleMore\\.cache\\gguf\\qwen3-1.7b-lb2-0.55-b1-q8_0head.gguf",
+     "-ngl",
+     "99",
+     "-dev",
+     "CUDA0",
+     "-p",
+     "512",
+     "-n",
+     "0",
+     "-r",
+     "3",
+     "-o",
+     "json"
+    ]
+   ],
+   "warmup_s": [
+    0.0,
+    0.0
+   ],
+   "tg128_clock_at_start_mhz": 2325.0,
+   "tg128": 159.003,
+   "tg128_mean": 157.80266666666668,
+   "tg128_sd": 7.559315864106571,
+   "tg128_samples": [
+    149.715,
+    159.003,
+    164.69
+   ],
+   "build_commit": "94d74731d",
+   "gpu_info": "NVIDIA GeForce RTX 4050 Laptop GPU, NVIDIA GeForce RTX 4050 Laptop GPU, Intel(R) UHD Graphics",
+   "pp512_clock_at_start_mhz": 1185.0,
+   "pp512": 1256.85,
+   "pp512_mean": 1289.1833333333332,
+   "pp512_sd": 59.483054169513984,
+   "pp512_samples": [
+    1256.85,
+    1252.87,
+    1357.83
+   ],
+   "clock_low": false,
+   "vram_mb": 945.0,
+   "vram_peak_mb": 945.0,
+   "vram_base_mb": 0.0,
+   "sm_clock_mhz": [
+    1140.0,
+    1665.0,
+    2325.0
+   ]
+  },
+  {
+   "model": "qwen3-1.7b",
+   "variant": "littlebit-0.55-q6_khead",
+   "file": ".cache/gguf/qwen3-1.7b-lb2-0.55-b1-q6_khead.gguf",
+   "round": 0,
+   "weights": "original",
+   "time": "2026-11-22 06:24:04",
+   "file_mib": 621.9797668457031,
+   "backend": "cuda",
+   "n_gpu_layers": 99,
+   "cmd": [
+    [
+     "C:\\Vibe Coding\\LittleMore\\engine\\build\\bin\\llama-bench.exe",
+     "-m",
+     "C:\\Vibe Coding\\LittleMore\\.cache\\gguf\\qwen3-1.7b-lb2-0.55-b1-q6_khead.gguf",
+     "-ngl",
+     "99",
+     "-dev",
+     "CUDA0",
+     "-p",
+     "0",
+     "-n",
+     "128",
+     "-r",
+     "3",
+     "-o",
+     "json"
+    ],
+    [
+     "C:\\Vibe Coding\\LittleMore\\engine\\build\\bin\\llama-bench.exe",
+     "-m",
+     "C:\\Vibe Coding\\LittleMore\\.cache\\gguf\\qwen3-1.7b-lb2-0.55-b1-q6_khead.gguf",
+     "-ngl",
+     "99",
+     "-dev",
+     "CUDA0",
+     "-p",
+     "512",
+     "-n",
+     "0",
+     "-r",
+     "3",
+     "-o",
+     "json"
+    ]
+   ],
+   "warmup_s": [
+    0.0,
+    0.0
+   ],
+   "tg128_clock_at_start_mhz": 2325.0,
+   "tg128": 171.079,
+   "tg128_mean": 173.01366666666664,
+   "tg128_sd": 4.828979429789826,
+   "tg128_samples": [
+    169.452,
+    171.079,
+    178.51
+   ],
+   "build_commit": "94d74731d",
+   "gpu_info": "NVIDIA GeForce RTX 4050 Laptop GPU, NVIDIA GeForce RTX 4050 Laptop GPU, Intel(R) UHD Graphics",
+   "pp512_clock_at_start_mhz": 1260.0,
+   "pp512": 1330.05,
+   "pp512_mean": 1354.1733333333334,
+   "pp512_sd": 58.763994361627105,
+   "pp512_samples": [
+    1421.16,
+    1330.05,
+    1311.31
+   ],
+   "clock_low": false,
+   "vram_mb": 873.0,
+   "vram_peak_mb": 873.0,
+   "vram_base_mb": 0.0,
+   "sm_clock_mhz": [
+    1140.0,
+    1680.0,
+    2325.0
+   ]
+  },
+  {
+   "model": "qwen3-1.7b",
+   "variant": "f16",
+   "file": ".cache/gguf/qwen3-1.7b-base-f16.gguf",
+   "round": 0,
+   "weights": "original",
+   "time": "2026-11-22 06:24:10",
+   "file_mib": 3881.1488037109375,
+   "backend": "cuda",
+   "n_gpu_layers": 99,
+   "cmd": [
+    [
+     "C:\\Vibe Coding\\LittleMore\\engine\\build\\bin\\llama-bench.exe",
+     "-m",
+     "C:\\Vibe Coding\\LittleMore\\.cache\\gguf\\qwen3-1.7b-base-f16.gguf",
+     "-ngl",
+     "99",
+     "-dev",
+     "CUDA0",
+     "-p",
+     "0",
+     "-n",
+     "128",
+     "-r",
+     "3",
+     "-o",
+     "json"
+    ],
+    [
+     "C:\\Vibe Coding\\LittleMore\\engine\\build\\bin\\llama-bench.exe",
+     "-m",
+     "C:\\Vibe Coding\\LittleMore\\.cache\\gguf\\qwen3-1.7b-base-f16.gguf",
+     "-ngl",
+     "99",
+     "-dev",
+     "CUDA0",
+     "-p",
+     "512",
+     "-n",
+     "0",
+     "-r",
+     "3",
+     "-o",
+     "json"
+    ]
+   ],
+   "warmup_s": [
+    0.0,
+    0.0
+   ],
+   "tg128_clock_at_start_mhz": 2325.0,
+   "tg128": 50.4056,
+   "tg128_mean": 48.77436666666667,
+   "tg128_sd": 3.1793426527087845,
+   "tg128_samples": [
+    45.1105,
+    50.4056,
+    50.807
+   ],
+   "build_commit": "94d74731d",
+   "gpu_info": "NVIDIA GeForce RTX 4050 Laptop GPU, NVIDIA GeForce RTX 4050 Laptop GPU, Intel(R) UHD Graphics",
+   "pp512_clock_at_start_mhz": 2325.0,
+   "pp512": 4922.08,
+   "pp512_mean": 5071.8,
+   "pp512_sd": 649.680191247971,
+   "pp512_samples": [
+    5783.27,
+    4922.08,
+    4510.05
+   ],
+   "clock_low": false,
+   "vram_mb": 3765.0,
+   "vram_peak_mb": 3765.0,
+   "vram_base_mb": 0.0,
+   "sm_clock_mhz": [
+    1260.0,
+    1950.0,
+    2325.0
+   ]
+  },
+  {
+   "model": "qwen3-1.7b",
+   "variant": "q4_k_m",
+   "file": ".cache/gguf/qwen3-1.7b-base-q4_k_m.gguf",
+   "round": 0,
+   "weights": "original",
+   "time": "2026-11-22 06:24:23",
+   "file_mib": 1223.0296630859375,
+   "backend": "cuda",
+   "n_gpu_layers": 99,
+   "cmd": [
+    [
+     "C:\\Vibe Coding\\LittleMore\\engine\\build\\bin\\llama-bench.exe",
+     "-m",
+     "C:\\Vibe Coding\\LittleMore\\.cache\\gguf\\qwen3-1.7b-base-q4_k_m.gguf",
+     "-ngl",
+     "99",
+     "-dev",
+     "CUDA0",
+     "-p",
+     "0",
+     "-n",
+     "128",
+     "-r",
+     "3",
+     "-o",
+     "json"
+    ],
+    [
+     "C:\\Vibe Coding\\LittleMore\\engine\\build\\bin\\llama-bench.exe",
+     "-m",
+     "C:\\Vibe Coding\\LittleMore\\.cache\\gguf\\qwen3-1.7b-base-q4_k_m.gguf",
+     "-ngl",
+     "99",
+     "-dev",
+     "CUDA0",
+     "-p",
+     "512",
+     "-n",
+     "0",
+     "-r",
+     "3",
+     "-o",
+     "json"
+    ]
+   ],
+   "warmup_s": [
+    0.0,
+    0.0
+   ],
+   "tg128_clock_at_start_mhz": 2325.0,
+   "tg128": 116.408,
+   "tg128_mean": 112.05246666666666,
+   "tg128_sd": 10.90071870352287,
+   "tg128_samples": [
+    99.6474,
+    116.408,
+    120.102
+   ],
+   "build_commit": "94d74731d",
+   "gpu_info": "NVIDIA GeForce RTX 4050 Laptop GPU, NVIDIA GeForce RTX 4050 Laptop GPU, Intel(R) UHD Graphics",
+   "pp512_clock_at_start_mhz": 1575.0,
+   "pp512": 5194.85,
+   "pp512_mean": 5692.016666666667,
+   "pp512_sd": 918.4973542331699,
+   "pp512_samples": [
+    6751.93,
+    5194.85,
+    5129.27
+   ],
+   "clock_low": false,
+   "vram_mb": 1517.0,
+   "vram_peak_mb": 1517.0,
+   "vram_base_mb": 0.0,
+   "sm_clock_mhz": [
+    1125.0,
+    1575.0,
+    2325.0
+   ]
+  },
+  {
+   "model": "qwen3-1.7b-proxy",
+   "variant": "littlebit-0.55",
+   "file": ".cache/gguf/qwen3-1.7b-proxy-lb2-0.55-b1.gguf",
+   "round": 0,
+   "weights": "proxy",
+   "time": "2026-11-22 06:24:30",
+   "file_mib": 728.6242370605469,
+   "backend": "cuda",
+   "n_gpu_layers": 99,
+   "cmd": [
+    [
+     "C:\\Vibe Coding\\LittleMore\\engine\\build\\bin\\llama-bench.exe",
+     "-m",
+     "C:\\Vibe Coding\\LittleMore\\.cache\\gguf\\qwen3-1.7b-proxy-lb2-0.55-b1.gguf",
+     "-ngl",
+     "99",
+     "-dev",
+     "CUDA0",
+     "-p",
+     "0",
+     "-n",
+     "128",
+     "-r",
+     "3",
+     "-o",
+     "json"
+    ],
+    [
+     "C:\\Vibe Coding\\LittleMore\\engine\\build\\bin\\llama-bench.exe",
+     "-m",
+     "C:\\Vibe Coding\\LittleMore\\.cache\\gguf\\qwen3-1.7b-proxy-lb2-0.55-b1.gguf",
+     "-ngl",
+     "99",
+     "-dev",
+     "CUDA0",
+     "-p",
+     "512",
+     "-n",
+     "0",
+     "-r",
+     "3",
+     "-o",
+     "json"
+    ]
+   ],
+   "warmup_s": [
+    0.0,
+    0.0
+   ],
+   "tg128_clock_at_start_mhz": 2325.0,
+   "tg128": 131.535,
+   "tg128_mean": 130.07899999999998,
+   "tg128_sd": 6.6486642267450975,
+   "tg128_samples": [
+    122.823,
+    131.535,
+    135.879
+   ],
+   "build_commit": "94d74731d",
+   "gpu_info": "NVIDIA GeForce RTX 4050 Laptop GPU, NVIDIA GeForce RTX 4050 Laptop GPU, Intel(R) UHD Graphics",
+   "pp512_clock_at_start_mhz": 2325.0,
+   "pp512": 1372.95,
+   "pp512_mean": 1389.243333333333,
+   "pp512_sd": 51.577675726357946,
+   "pp512_samples": [
+    1447.0,
+    1347.78,
+    1372.95
+   ],
+   "clock_low": false,
+   "vram_mb": 1223.0,
+   "vram_peak_mb": 1223.0,
+   "vram_base_mb": 0.0,
+   "sm_clock_mhz": [
+    1110.0,
+    1980.0,
+    2325.0
+   ]
+  },
+  {
+   "model": "qwen3-1.7b-proxy",
+   "variant": "bf16",
+   "file": ".cache/gguf/qwen3-1.7b-proxy-bf16.gguf",
+   "round": 0,
+   "weights": "proxy",
+   "time": "2026-11-22 06:24:37",
+   "file_mib": 3287.6483764648438,
+   "backend": "cuda",
+   "n_gpu_layers": 99,
+   "cmd": [
+    [
+     "C:\\Vibe Coding\\LittleMore\\engine\\build\\bin\\llama-bench.exe",
+     "-m",
+     "C:\\Vibe Coding\\LittleMore\\.cache\\gguf\\qwen3-1.7b-proxy-bf16.gguf",
+     "-ngl",
+     "99",
+     "-dev",
+     "CUDA0",
+     "-p",
+     "0",
+     "-n",
+     "128",
+     "-r",
+     "3",
+     "-o",
+     "json"
+    ],
+    [
+     "C:\\Vibe Coding\\LittleMore\\engine\\build\\bin\\llama-bench.exe",
+     "-m",
+     "C:\\Vibe Coding\\LittleMore\\.cache\\gguf\\qwen3-1.7b-proxy-bf16.gguf",
+     "-ngl",
+     "99",
+     "-dev",
+     "CUDA0",
+     "-p",
+     "512",
+     "-n",
+     "0",
+     "-r",
+     "3",
+     "-o",
+     "json"
+    ]
+   ],
+   "warmup_s": [
+    0.0,
+    0.0
+   ],
+   "tg128_clock_at_start_mhz": 2325.0,
+   "tg128": 49.6791,
+   "tg128_mean": 48.7532,
+   "tg128_sd": 2.731783155742781,
+   "tg128_samples": [
+    45.6788,
+    49.6791,
+    50.9017
+   ],
+   "build_commit": "94d74731d",
+   "gpu_info": "NVIDIA GeForce RTX 4050 Laptop GPU, NVIDIA GeForce RTX 4050 Laptop GPU, Intel(R) UHD Graphics",
+   "pp512_clock_at_start_mhz": 1230.0,
+   "pp512": 3296.93,
+   "pp512_mean": 3388.0733333333333,
+   "pp512_sd": 162.87865432073448,
+   "pp512_samples": [
+    3576.12,
+    3296.93,
+    3291.17
+   ],
+   "clock_low": false,
+   "vram_mb": 3763.0,
+   "vram_peak_mb": 3763.0,
+   "vram_base_mb": 0.0,
+   "sm_clock_mhz": [
+    795.0,
+    1770.0,
+    2325.0
+   ]
+  }
+ ]
+}

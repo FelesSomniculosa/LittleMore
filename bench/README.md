@@ -48,9 +48,11 @@ the generated tables print such a pass as "PASS (provisional: <model> on proxy w
   1.6 % faster (LittleBit), while bf16 still starts 7-13 % slow although the SM clock at that moment was 2010-2295 MHz,
   i.e. that penalty is not the SM clock (not further attributed); the reported value is the median, which it does not
   move. The SM clock column covers only the measured runs (after the load stopped).
-- GPU memory (`vram_mb`): the peak of nvidia-smi's `memory.used` while llama-bench measured (after the load stopped)
-  minus the value before the load started, i.e. what the benchmark process allocated (weights, KV cache, compute
-  buffers, CUDA context).
+- GPU memory (`vram_mb`): the peak of nvidia-smi's `memory.used` during the two llama-bench runs minus the value
+  before them, i.e. what the benchmark process allocated (weights, KV cache, compute buffers, CUDA context). Measured
+  only in a separate pass without the warm-up load (`--warmup 0`, e.g. 1 round, 3 repetitions): with the load, its
+  memory stays visible in nvidia-smi for a moment after it exits, and waiting for that misses the short pp512 runs of
+  small models. `--markdown <speed.json> --vram <vram.json>` combines the two.
 - Provenance: `run_plan` stores the engine commit, whether the engine tree had uncommitted changes, the commit llama-bench
   reports (its build info, refreshed only when CMake reconfigures) and this repository's commit in the results JSON.
 - Rounds: `run_plan` runs the whole list once per round and repeats the rounds (A B C ... A B C ...), so drifts of the
@@ -64,7 +66,8 @@ From the repository root, with the engine built (docs/development.md) and the GG
 
 ```powershell
 .venv\Scripts\python.exe -m bench.run_bench --plan bench/plans/phase1.json --rounds 3 --out bench/results/phase1.json
-.venv\Scripts\python.exe -m bench.run_bench --markdown bench/results/phase1.json
+.venv\Scripts\python.exe -m bench.run_bench --plan bench/plans/phase1.json --rounds 1 --reps 3 --warmup 0 --out bench/results/phase1_vram.json
+.venv\Scripts\python.exe -m bench.run_bench --markdown bench/results/phase1.json --vram bench/results/phase1_vram.json
 .venv\Scripts\python.exe -m pytest tests/bench -q
 ```
 
