@@ -28,6 +28,7 @@ from __future__ import annotations
 
 import atexit
 import ctypes
+import operator
 import queue
 import re
 import sys
@@ -117,23 +118,37 @@ def _make_sampling(**kw: Any) -> _lib.Sampling:
     if kw.get("temperature") is not None:
         s.temperature = float(kw["temperature"])
     if kw.get("top_k") is not None:
-        if int(kw["top_k"]) < 0:
-            raise ValueError("top_k must be >= 0 (0 turns it off)")
-        s.top_k = int(kw["top_k"])
+        s.top_k = _sampling_int("top_k", kw["top_k"], 0, 2**31 - 1)  # 0 turns it off
     if kw.get("top_p") is not None:
         if not 0.0 < float(kw["top_p"]) <= 1.0:
             raise ValueError("top_p must be in (0, 1]")
         s.top_p = float(kw["top_p"])
     if kw.get("seed") is not None:
-        seed = SEED_RANDOM if kw["seed"] == "random" else kw["seed"]
-        if isinstance(seed, bool) or not isinstance(seed, int) or not 0 <= seed <= 0xFFFFFFFF:
-            raise ValueError('seed must be an integer in 0 .. 2**32-1, or "random"')
-        s.seed = seed
+        seed = SEED_RANDOM if isinstance(kw["seed"], str) and kw["seed"] == "random" else kw["seed"]
+        try:
+            s.seed = _sampling_int("seed", seed, 0, 0xFFFFFFFF)
+        except (TypeError, ValueError):
+            raise ValueError('seed must be an integer in 0 .. 2**32-1, or "random"') from None
     if kw.get("max_tokens") is not None:
-        if int(kw["max_tokens"]) <= 0:
-            raise ValueError("max_tokens must be > 0")
-        s.max_tokens = int(kw["max_tokens"])
+        s.max_tokens = _sampling_int("max_tokens", kw["max_tokens"], 1, 2**31 - 1)
     return s
+
+
+def _sampling_int(name: str, value: Any, low: int, high: int) -> int:
+    """An integer sampling option, checked against the range of its C field.
+
+    ctypes stores a Python int into an int32 / uint32 field modulo 2**32 without any error, so top_k=2**32 + 5 would
+    silently become 5; and int() would silently cut 2.5 down to 2. Integer-like values (numpy integers) are accepted
+    through operator.index; floats, bools and strings are refused (TypeError), out-of-range values too (ValueError)."""
+    if isinstance(value, bool):
+        raise TypeError(f"{name} must be an integer, not bool")
+    try:
+        v = operator.index(value)
+    except TypeError:
+        raise TypeError(f"{name} must be an integer, not {type(value).__name__}") from None
+    if not low <= v <= high:
+        raise ValueError(f"{name} must be between {low} and {high}, not {v}")
+    return v
 
 
 def _encode_messages(messages: Sequence[Mapping[str, str]]) -> tuple[Any, list[bytes]]:
@@ -360,8 +375,9 @@ class Model:
         devices: which devices to use, by the names `backends_info()` prints. `None` (default) = every GPU,
             `"none"` = CPU only (the model allocates nothing on the GPU; loading the backends still shows a driver
             context of about 73 MiB in nvidia-smi), `"CUDA0"` or `"CUDA0,CUDA1"` = exactly these.
-        n_ctx: context size in tokens (prompt plus answer); 0 = the library default (4096, capped at the model's).
-        n_threads: CPU threads; 0 = the library default.
+        n_ctx: context size in tokens (prompt plus answer); 0 = the library default (4096, capped at the model's);
+            at most 2**31 - 1.
+        n_threads: CPU threads; 0 = the library default; at most 512 (`littlemore._lib.LM_MAX_THREADS`).
         n_batch: prompt batch size; 0 = the library default (512).
         vram_budget: auto-fit only: GPU memory budget in bytes (0 = the free memory the devices report).
         use_mmap: memory-map the model file where possible.
@@ -385,8 +401,8 @@ class Model:
         self._model_lock = threading.Lock()  # the model pointer: held briefly by tokenize / info, and by close()
         self._active = _ActiveStreams()
         layers = _parse_n_gpu_layers(n_gpu_layers)
-        n_ctx = _int_in_range("n_ctx", n_ctx, 0, 2**32 - 1)  # 0 = the library default
-        n_threads = _int_in_range("n_threads", n_threads, 0, 2**31 - 1)
+        n_ctx = _int_in_range("n_ctx", n_ctx, 0, 2**31 - 1)  # 0 = the library default; positions are 32-bit
+        n_threads = _int_in_range("n_threads", n_threads, 0, _lib.LM_MAX_THREADS)
         n_batch = _int_in_range("n_batch", n_batch, 0, 2**32 - 1)
         vram_budget = _int_in_range("vram_budget", vram_budget, 0, 2**64 - 1)
         lib = _lib.load()

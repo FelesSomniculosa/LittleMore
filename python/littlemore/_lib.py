@@ -35,6 +35,7 @@ EXPECTED_API_VERSION = 1
 LM_OK = 0
 LM_ERR_BUFFER_TOO_SMALL = 11  # an output buffer is too small; the needed size is reported (a test checks the value against the header)
 LM_GPU_LAYERS_AUTO = -1
+LM_MAX_THREADS = 512  # largest lm_session_options.n_threads (LM_MAX_THREADS in the header)
 LM_SEED_RANDOM = 0xFFFFFFFF
 
 _PKG_DIR = Path(__file__).resolve().parent

@@ -503,6 +503,12 @@ std::vector<uint64_t> gguf_per_layer(const gguf_context * g, const std::string &
         return v;
     }
     const enum gguf_type at = gguf_get_arr_type(g, id);
+    // Only integer arrays carry per-layer counts. Any other element type comes from a broken file: keep the fallback
+    // and let the engine's loader reject the file with an error. (gguf_get_arr_data must not even be called for a
+    // string array: it asserts, which would abort the host process on an untrusted file.)
+    if (at != GGUF_TYPE_UINT32 && at != GGUF_TYPE_INT32) {
+        return v;
+    }
     const size_t n = std::min(gguf_get_arr_n(g, id), n_layer);
     const void * data = gguf_get_arr_data(g, id);
     for (size_t i = 0; i < n; ++i) {
@@ -1170,8 +1176,19 @@ lm_status LM_CALL lm_session_new(lm_model * model, const lm_session_options * op
         if (st != LM_OK) {
             return st;
         }
-        if (opts.n_threads < 0) {
-            return fail(LM_ERR_INVALID_ARG, "lm_session_new: n_threads must be >= 0");
+        // The CPU backend starts one OS thread per requested thread for every batch it computes; with no upper bound,
+        // n_threads = 5000 started 5000 threads per token and INT32_MAX crashed the process (fail-fast while sizing
+        // the work buffer). GGML_MAX_N_THREADS is the engine's own limit (its CPU masks have that many entries).
+        static_assert(LM_MAX_THREADS == GGML_MAX_N_THREADS, "LM_MAX_THREADS documents the engine's thread limit");
+        if (opts.n_threads < 0 || opts.n_threads > LM_MAX_THREADS) {
+            return fail(LM_ERR_INVALID_ARG, "lm_session_new: n_threads is " + std::to_string(opts.n_threads) +
+                                                "; it must be between 0 (the default) and " + std::to_string(LM_MAX_THREADS));
+        }
+        // Token positions are 32-bit in the engine, and its padding of n_ctx to a multiple of 256 wraps a uint32 near
+        // 2^32 to 0 (it then failed with the confusing engine message "n_ctx_seq == 0").
+        if (opts.n_ctx > static_cast<uint32_t>(std::numeric_limits<int32_t>::max())) {
+            return fail(LM_ERR_INVALID_ARG, "lm_session_new: n_ctx is " + std::to_string(opts.n_ctx) +
+                                                "; it must be at most " + std::to_string(std::numeric_limits<int32_t>::max()));
         }
         if (llama_model_has_encoder(model->model)) {
             return fail(LM_ERR_UNSUPPORTED, "lm_session_new: encoder-decoder models are not supported");

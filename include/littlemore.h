@@ -305,15 +305,23 @@ LM_API lm_status LM_CALL lm_model_get_info(const lm_model * model, lm_model_info
 /** A conversation state (the engine context and its KV cache) on one model. Opaque. */
 typedef struct lm_session lm_session;
 
+/** Largest lm_session_options.n_threads (the engine's own limit, GGML_MAX_N_THREADS: the CPU backend starts one OS
+ *  thread per requested thread for every computed batch). */
+#define LM_MAX_THREADS 512
+
 /** Options of lm_session_new. Initialise with lm_session_options_default(). */
 typedef struct lm_session_options {
     /** sizeof(lm_session_options) as compiled by the caller. */
     size_t struct_size;
     /** Context size in tokens: prompt plus generated text must fit. 0 (default) = 4096, capped at the model's
      *  training context. The engine may round its allocation up (to a multiple of 256 tokens);
-     *  the limit stays the size asked for. */
+     *  the limit stays the size asked for. A value above the model's training context is accepted (the engine logs
+     *  a warning; how well the model works beyond it is up to the model). At most INT32_MAX (token positions are
+     *  32-bit): a larger value is LM_ERR_INVALID_ARG. A context whose KV cache does not fit in memory fails in
+     *  lm_session_new (LM_ERR_OUT_OF_MEMORY). */
     uint32_t n_ctx;
-    /** CPU threads, for both prompt reading and generation. 0 (default) = llama.cpp's default (4 threads). */
+    /** CPU threads, for both prompt reading and generation. 0 (default) = llama.cpp's default (4 threads).
+     *  At most LM_MAX_THREADS; a negative or larger value is LM_ERR_INVALID_ARG. */
     int32_t n_threads;
     /** Most tokens processed in one engine call while reading a prompt (also the engine's physical batch,
      *  n_ubatch). 0 (default) = 512, the size the auto-fit reserve is computed for. */
@@ -329,7 +337,8 @@ LM_API lm_status LM_CALL lm_session_options_default(lm_session_options * opts);
  * Creates a session on a model. The model must outlive the session (lm_model_free refuses while it is alive).
  * @param opts  options, or NULL for the defaults.
  * @param out   receives the session on success; set to NULL on failure.
- * @return LM_OK; LM_ERR_INVALID_ARG; LM_ERR_UNSUPPORTED; LM_ERR_SESSION or LM_ERR_OUT_OF_MEMORY when the engine
+ * @return LM_OK; LM_ERR_INVALID_ARG (also n_threads outside [0, LM_MAX_THREADS], n_ctx above INT32_MAX);
+ *         LM_ERR_UNSUPPORTED; LM_ERR_SESSION or LM_ERR_OUT_OF_MEMORY when the engine
  *         context (KV cache, compute buffers) cannot be created. The engine reports no error code here, so the
  *         choice between these two is a guess from its log text (an "alloc"/"memory" message means
  *         LM_ERR_OUT_OF_MEMORY); the message in lm_last_error() carries the engine's own words.
