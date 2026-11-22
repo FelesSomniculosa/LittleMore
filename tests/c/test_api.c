@@ -4,7 +4,8 @@
  * Being C (compiled as C, not C++) is part of the test: it proves the public header is valid C with no C++
  * types. The test loads a tiny random LittleBit GGUF (built by tests/c/make_tiny_gguf.py; CTest does that
  * first) and checks:
- *   - version queries; NULL arguments and bad struct sizes return LM_ERR_* (no crash) with a message;
+ *   - the struct layouts have no hidden padding (compile-time asserts), version queries; NULL arguments, bad
+ *     struct sizes and non-zero reserved fields return LM_ERR_* (no crash) with a message;
  *   - a missing file gives LM_ERR_MODEL_LOAD and a non-empty lm_last_error();
  *   - lm_backends_info() lists the CPU (and CUDA0 in "cuda" mode);
  *   - auto-fit: on the CPU nothing is offloaded; on CUDA everything fits the real free memory, a forced tiny
@@ -13,7 +14,12 @@
  *   - lm_chat streams at least one piece, applies the model's chat template (same text as lm_generate on the
  *     hand-formatted ChatML prompt), stops when the callback asks, respects max_tokens;
  *   - determinism: temperature 0 twice gives the same text, and so does the same seed at temperature 0.8;
- *   - a prompt longer than the context gives LM_ERR_CONTEXT_FULL;
+ *   - a prompt longer than the context gives LM_ERR_CONTEXT_FULL; a generation that fills the context stops
+ *     at exactly n_ctx - n_prompt tokens;
+ *   - re-entrant calls from a token callback (lm_chat, lm_generate, lm_session_free on the same session) and
+ *     lm_model_free with a live session are refused with an error, the outer call completes;
+ *   - an older, smaller lm_model_info is filled only up to its last field; lm_detokenize's special flag;
+ *   - lm_last_error() is per thread;
  *   - two threads on one session are serialised and both get the single-thread answer;
  *   - repeated load/session/chat/free cycles do not grow the process's private memory (a simple leak check).
  *
@@ -23,7 +29,9 @@
  *   no CUDA device is present.
  */
 #include "littlemore.h"
+#include "../../src/utf8_boundary.h" /* the library's own boundary rule, to check streamed pieces against */
 
+#include <stddef.h>
 #include <stdint.h>
 #include <stdio.h>
 #include <stdlib.h>
@@ -39,6 +47,24 @@
 #endif
 
 #define SKIP_CODE 77
+
+/* The header promises structs without hidden padding on 64-bit platforms: sizeof() equals the end of the last
+ * field, and no field follows a gap. Checked here at compile time, from C, i.e. with the C compiler's layout. */
+#define END_OF(T, f) (offsetof(T, f) + sizeof(((T *) 0)->f))
+_Static_assert(sizeof(void *) == 8, "64-bit platforms only");
+_Static_assert(sizeof(lm_model_options) == END_OF(lm_model_options, use_mmap), "tail padding in lm_model_options");
+_Static_assert(offsetof(lm_model_options, devices) == END_OF(lm_model_options, reserved0), "hole in lm_model_options");
+_Static_assert(offsetof(lm_model_options, vram_budget) == END_OF(lm_model_options, devices), "hole in lm_model_options");
+_Static_assert(sizeof(lm_model_options) == 40, "lm_model_options size");
+_Static_assert(sizeof(lm_session_options) == END_OF(lm_session_options, reserved0), "tail padding in lm_session_options");
+_Static_assert(sizeof(lm_session_options) == 24, "lm_session_options size");
+_Static_assert(sizeof(lm_sampling) == END_OF(lm_sampling, reserved0), "tail padding in lm_sampling");
+_Static_assert(sizeof(lm_sampling) == 32, "lm_sampling size");
+_Static_assert(offsetof(lm_model_info, size_bytes) == END_OF(lm_model_info, reserved0), "hole in lm_model_info");
+_Static_assert(sizeof(lm_model_info) == END_OF(lm_model_info, description), "tail padding in lm_model_info");
+_Static_assert(sizeof(lm_model_info) == 336, "lm_model_info size");
+_Static_assert(sizeof(lm_message) == 16, "lm_message size");
+_Static_assert(sizeof(lm_status) == 4, "lm_status is 32-bit");
 
 static int g_failures = 0;
 static int g_checks   = 0;
@@ -95,12 +121,16 @@ typedef struct collector {
     int    pieces;
     int    stop_after;
     int    bad_piece; /* a piece whose len disagreed with its NUL terminator */
+    int    split_piece; /* a piece that ended inside an unfinished UTF-8 sequence (only the last may) */
 } collector;
 
 static int collect_cb(const char * piece, size_t len, void * user) {
     collector * c = (collector *) user;
     if (strlen(piece) != len) {
         c->bad_piece = 1;
+    }
+    if (lm_utf8_complete_prefix(piece, len) != len) {
+        c->split_piece = 1;
     }
     if (c->len + len < sizeof(c->text)) {
         memcpy(c->text + c->len, piece, len);
@@ -255,8 +285,8 @@ static void test_null_args(void) {
     CHECK_ERR(lm_detokenize(NULL, tok, 1, buf, sizeof(buf), 0, &n), LM_ERR_INVALID_ARG);
     CHECK(lm_backends_info(NULL, 10) == 0, "lm_backends_info(NULL, 10) must fail");
     CHECK(lm_last_error()[0] != '\0', "lm_backends_info(NULL, 10) failed without a message");
-    lm_model_free(NULL);   /* documented no-ops */
-    lm_session_free(NULL);
+    CHECK(lm_model_free(NULL) == LM_OK, "lm_model_free(NULL) is a no-op");
+    CHECK(lm_session_free(NULL) == LM_OK, "lm_session_free(NULL) is a no-op");
 }
 
 /* The struct_size rules: too small is refused; larger with zero tail is fine; larger with a non-zero unknown
@@ -269,6 +299,16 @@ static void test_struct_size_rules(void) {
     lm_model_options_default(&o);
     o.struct_size = 3;
     CHECK_ERR(lm_model_load("missing.gguf", &o, &m), LM_ERR_INVALID_ARG);
+    /* A size that cuts a field in two cannot come from any header version. */
+    o.struct_size = offsetof(lm_model_options, n_gpu_layers) + 2;
+    CHECK_ERR(lm_model_load("missing.gguf", &o, &m), LM_ERR_INVALID_ARG);
+    /* An older caller that ends after n_gpu_layers: accepted (the file is missing, so MODEL_LOAD). */
+    o.struct_size = END_OF(lm_model_options, n_gpu_layers);
+    CHECK_ERR(lm_model_load("missing.gguf", &o, &m), LM_ERR_MODEL_LOAD);
+    /* Reserved fields must be 0. */
+    lm_model_options_default(&o);
+    o.reserved0 = 7;
+    CHECK_ERR(lm_model_load("missing.gguf", &o, &m), LM_ERR_UNSUPPORTED);
 
     memset(&big, 0, sizeof(big));
     lm_model_options_default(&big.o);
@@ -294,15 +334,24 @@ static void test_backends_info(void) {
     if (need == 0) {
         return;
     }
-    buf = (char *) malloc(need + 1);
-    CHECK(lm_backends_info(buf, need + 1) == need, "second call returned another length");
+    /* The text holds live free-memory figures, so its length may change between calls (documented): allocate
+     * slack and accept any length that fits. */
+    buf = (char *) malloc(need + 64);
+    CHECK(buf != NULL, "out of memory");
+    if (!buf) {
+        return;
+    }
+    {
+        const size_t got = lm_backends_info(buf, need + 64);
+        CHECK(got > 0 && got < need + 64, "second call returned %u", (unsigned) got);
+    }
     printf("backends:\n%s", buf);
     CHECK(strncmp(buf, "CPU", 3) == 0 || strstr(buf, "\nCPU") != NULL, "no CPU device line in:\n%s", buf);
     if (g_cuda) {
         CHECK(strstr(buf, "CUDA0:") != NULL, "no CUDA0 line in:\n%s", buf);
     }
     /* Truncation: snprintf semantics, always NUL-terminated, same total length returned. */
-    CHECK(lm_backends_info(small, sizeof(small)) == need, "truncated call returned another length");
+    CHECK(lm_backends_info(small, sizeof(small)) >= sizeof(small), "truncated call returned too small a length");
     CHECK(strlen(small) == sizeof(small) - 1, "truncated text is not NUL-terminated at cap - 1");
     free(buf);
 }
@@ -421,6 +470,15 @@ static void test_tokens(const lm_model * m) {
     CHECK_ERR(lm_detokenize(m, tok, n, back, 4, 0, &len), LM_ERR_BUFFER_TOO_SMALL);
     CHECK(len == strlen(text), "needed %zu, reported %zu", strlen(text), len);
 
+    /* special = 1 keeps the beginning-of-text token's text ("<s>" in this vocabulary); special = 0 drops it. */
+    CHECK_OK(lm_tokenize(m, text, strlen(text), tok, 64, 1, &n_special));
+    CHECK_OK(lm_detokenize(m, tok, n_special, back, sizeof(back), 1, &len));
+    CHECK(strncmp(back, "<s>", 3) == 0, "special = 1 gave '%s'", back);
+    CHECK_OK(lm_detokenize(m, tok, n_special, back, sizeof(back), 0, &len));
+    /* (With the BOS token present the engine keeps the SentencePiece space before the first word, so the text
+     * is " the quick ...": the exact round trip holds for tokens made with add_special = 0, checked above.) */
+    CHECK(strstr(back, "<s>") == NULL && strstr(back, text) != NULL, "special = 0 gave '%s'", back);
+
     /* Out-of-range token id. */
     tok[0] = 1 << 30;
     CHECK_ERR(lm_detokenize(m, tok, 1, back, sizeof(back), 0, &len), LM_ERR_TOKENIZE);
@@ -448,6 +506,7 @@ static void test_chat(lm_model * m) {
     CHECK(chat.pieces >= 1, "no piece streamed");
     CHECK(chat.pieces <= smp.max_tokens, "%d pieces for max_tokens %d", chat.pieces, smp.max_tokens);
     CHECK(!chat.bad_piece, "a piece's len disagreed with its NUL terminator");
+    CHECK(!chat.split_piece, "a piece ended inside an unfinished UTF-8 sequence");
 
     /* The model's template (ChatML) is applied: the same answer as generating from the hand-made prompt. */
     collector_init(&raw, 0);
@@ -510,6 +569,165 @@ static void test_chat(lm_model * m) {
                               &smp, NULL, NULL), LM_ERR_CONTEXT_FULL);
         lm_session_free(s);
     }
+
+    /* A generation that runs into the end of the context: stops (LM_OK) after exactly n_ctx - n_prompt tokens.
+     * This tiny model emits one-byte pieces ("x", "\n"), so pieces == tokens here. */
+    so.n_ctx = 24;
+    s = NULL;
+    CHECK_OK(lm_session_new(m, &so, &s));
+    if (s) {
+        const char * p = "the lazy dog";
+        size_t n_prompt = 0;
+        collector full;
+        lm_tokenize(m, p, strlen(p), NULL, 0, 1, &n_prompt);
+        smp = greedy(1000);
+        collector_init(&full, 0);
+        CHECK_OK(lm_generate(s, p, &smp, collect_cb, &full));
+        CHECK((size_t) full.pieces == 24 - n_prompt, "full context: %d pieces, expected %u (n_ctx 24, prompt %u)",
+              full.pieces, (unsigned) (24 - n_prompt), (unsigned) n_prompt);
+        lm_session_free(s);
+    }
+
+    /* LM_SEED_RANDOM runs (its output is random, so only the status is checked). */
+    s = NULL;
+    so.n_ctx = 128;
+    CHECK_OK(lm_session_new(m, &so, &s));
+    if (s) {
+        smp = greedy(4);
+        smp.temperature = 0.8f;
+        smp.seed = LM_SEED_RANDOM;
+        CHECK_OK(lm_generate(s, "the lazy dog", &smp, NULL, NULL));
+        lm_session_free(s);
+    }
+}
+
+/* ---- re-entrancy: what a token callback may and may not call ---------------------------------------------- */
+
+typedef struct reentry {
+    lm_session * session;
+    lm_model *   model;
+    lm_status    chat_status, generate_status, free_status, model_free_status, tokenize_status;
+    int          calls;
+} reentry;
+
+static int reentry_cb(const char * piece, size_t len, void * user) {
+    reentry *   r   = (reentry *) user;
+    lm_message  msg = { "user", "again" };
+    lm_sampling s   = greedy(2);
+    size_t      n   = 0;
+    (void) piece;
+    (void) len;
+    if (r->calls++ == 0) {
+        r->chat_status       = lm_chat(r->session, &msg, 1, &s, collect_cb, NULL);
+        r->generate_status   = lm_generate(r->session, "again", &s, collect_cb, NULL);
+        r->free_status       = lm_session_free(r->session);
+        r->model_free_status = lm_model_free(r->model);
+        r->tokenize_status   = lm_tokenize(r->model, "the dog", 7, NULL, 0, 0, &n); /* allowed: size query */
+        if (r->tokenize_status == LM_ERR_BUFFER_TOO_SMALL && n > 0) {
+            r->tokenize_status = LM_OK; /* cap 0 with tokens to return: the expected "too small" answer */
+        }
+    }
+    return 0;
+}
+
+static void test_reentrancy(lm_model * m) {
+    lm_session * s = NULL;
+    reentry      r;
+    lm_sampling  smp = greedy(4);
+    lm_message   msg = { "user", "the quick brown fox" };
+    CHECK_OK(lm_session_new(m, NULL, &s));
+    if (!s) {
+        return;
+    }
+    memset(&r, 0, sizeof(r));
+    r.session = s;
+    r.model   = m;
+    CHECK_OK(lm_chat(s, &msg, 1, &smp, reentry_cb, &r));
+    CHECK(r.calls == 4, "the outer chat should run to max_tokens (4 pieces), got %d", r.calls);
+    CHECK(r.chat_status == LM_ERR_REENTRANT, "lm_chat from the callback: %s", lm_status_name(r.chat_status));
+    CHECK(r.generate_status == LM_ERR_REENTRANT, "lm_generate from the callback: %s", lm_status_name(r.generate_status));
+    CHECK(r.free_status == LM_ERR_REENTRANT, "lm_session_free from the callback: %s", lm_status_name(r.free_status));
+    CHECK(r.model_free_status == LM_ERR_BUSY, "lm_model_free with a live session: %s", lm_status_name(r.model_free_status));
+    CHECK(r.tokenize_status == LM_OK, "lm_tokenize from the callback: %s", lm_status_name(r.tokenize_status));
+    /* The session survived the refused free and still works. */
+    {
+        collector c;
+        collector_init(&c, 0);
+        CHECK_OK(lm_chat(s, &msg, 1, &smp, collect_cb, &c));
+        CHECK(c.pieces >= 1, "session unusable after a refused free");
+    }
+    /* Outside a callback, lm_model_free is refused while the session lives. */
+    CHECK_ERR(lm_model_free(m), LM_ERR_BUSY);
+    CHECK_OK(lm_session_free(s));
+}
+
+/* ---- model info from an older, smaller struct ------------------------------------------------------------- */
+
+static void test_small_info(const lm_model * m) {
+    unsigned char raw[sizeof(lm_model_info)];
+    lm_model_info * info = (lm_model_info *) raw;
+    size_t i;
+    memset(raw, 0xAB, sizeof(raw));
+    info->struct_size = END_OF(lm_model_info, n_gpu_layers); /* an "old" struct of three fields */
+    CHECK_OK(lm_model_get_info(m, info));
+    CHECK(info->n_layer == 2, "n_layer %d", info->n_layer);
+    for (i = END_OF(lm_model_info, n_gpu_layers); i < sizeof(raw); ++i) {
+        if (raw[i] != 0xAB) {
+            CHECK(0, "byte %u after the caller's struct was written", (unsigned) i);
+            break;
+        }
+    }
+    info->struct_size = END_OF(lm_model_info, n_gpu_layers) + 1; /* cuts n_ctx_train */
+    CHECK_ERR(lm_model_get_info(m, info), LM_ERR_INVALID_ARG);
+}
+
+/* ---- lm_last_error is per thread -------------------------------------------------------------------------- */
+
+typedef struct error_job {
+    char message[256];
+} error_job;
+
+static void error_job_run(error_job * job) {
+    lm_model * m = NULL;
+    lm_model_load("thread-only-missing.gguf", NULL, &m); /* fails on this thread */
+    snprintf(job->message, sizeof(job->message), "%s", lm_last_error());
+}
+
+#ifdef _WIN32
+static DWORD WINAPI error_job_main(LPVOID arg) {
+    error_job_run((error_job *) arg);
+    return 0;
+}
+#else
+static void * error_job_main(void * arg) {
+    error_job_run((error_job *) arg);
+    return NULL;
+}
+#endif
+
+static void test_error_per_thread(void) {
+    error_job job;
+    char      mine[256];
+    lm_model * m = NULL;
+    memset(&job, 0, sizeof(job));
+    lm_model_load("main-thread-missing.gguf", NULL, &m);
+    snprintf(mine, sizeof(mine), "%s", lm_last_error());
+#ifdef _WIN32
+    {
+        HANDLE t = CreateThread(NULL, 0, error_job_main, &job, 0, NULL);
+        WaitForSingleObject(t, INFINITE);
+        CloseHandle(t);
+    }
+#else
+    {
+        pthread_t t;
+        pthread_create(&t, NULL, error_job_main, &job);
+        pthread_join(t, NULL);
+    }
+#endif
+    CHECK(strstr(job.message, "thread-only-missing.gguf") != NULL, "other thread's error: %s", job.message);
+    CHECK(strcmp(lm_last_error(), mine) == 0 && strstr(mine, "main-thread-missing.gguf") != NULL,
+          "this thread's error changed to: %s", lm_last_error());
 }
 
 static void test_threads(lm_model * m) {
@@ -553,8 +771,8 @@ static void cycle(const char * path) {
 }
 
 static void test_leaks(const char * path) {
-    /* Limit 4 MiB over 20 cycles. Measured (Windows, this tiny model): a correct build grows by less than
-     * 0.1 MiB (sometimes shrinks); a leaked model grows by 17 MiB on the CPU and 7.5 MiB on CUDA (its weights
+    /* Limit 4 MiB over 20 cycles. Measured (Windows, this tiny model): a correct build changes by -0.6 to
+     * +0.9 MiB (allocator noise); a leaked model grows by 17 MiB on the CPU and 7.5 MiB on CUDA (its weights
      * are then in GPU memory, only the host-side part shows here); a leaked session by more than 480 MiB. */
     const int      n_cycles = 20;
     const uint64_t limit    = 4ull << 20;
@@ -604,8 +822,8 @@ int main(int argc, char ** argv) {
     }
     if (g_cuda) {
         size_t need = lm_backends_info(NULL, 0);
-        char * buf = (char *) malloc(need + 1);
-        int has_cuda = buf && need > 0 && lm_backends_info(buf, need + 1) == need && strstr(buf, "CUDA0:") != NULL;
+        char * buf = (char *) malloc(need + 64);
+        int has_cuda = buf && need > 0 && lm_backends_info(buf, need + 64) > 0 && strstr(buf, "CUDA0:") != NULL;
         free(buf);
         if (!has_cuda) {
             printf("SKIP: cuda mode but no CUDA0 device is loaded\n");
@@ -618,6 +836,7 @@ int main(int argc, char ** argv) {
     test_null_args();
     test_struct_size_rules();
     test_bad_path();
+    test_error_per_thread();
     test_backends_info();
     test_autofit(path);
     {
@@ -627,8 +846,10 @@ int main(int argc, char ** argv) {
     if (m) {
         test_tokens(m);
         test_chat(m);
+        test_reentrancy(m);
+        test_small_info(m);
         test_threads(m);
-        lm_model_free(m);
+        CHECK_OK(lm_model_free(m));
     }
     test_leaks(path);
 
