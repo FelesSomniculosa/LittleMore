@@ -319,4 +319,9 @@ if (LITTLEMORE_BUILD_TESTS)
             set_tests_properties(${_t} PROPERTIES ENVIRONMENT_MODIFICATION "${_env}")
         endif()
     endforeach()
+    # The NULL harness and the example find the CUDA runtime the same way (example_chat auto-fits on every GPU: without
+    # the toolkit first on PATH it would silently run on Vulkan or the CPU).
+    if (_lm_env_cuda)
+        set_tests_properties(test-api-null test-example-chat PROPERTIES ENVIRONMENT_MODIFICATION "${_lm_env_cuda}")
+    endif()
 endif()

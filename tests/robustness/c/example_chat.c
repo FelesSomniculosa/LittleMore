@@ -36,7 +36,11 @@ int main(int argc, char ** argv) {
     }
     lm_model_info info;
     info.struct_size = sizeof(info);
-    lm_model_get_info(model, &info);
+    if (lm_model_get_info(model, &info) != LM_OK) {   /* never print fields the library did not fill */
+        fprintf(stderr, "%s\n", lm_last_error());
+        lm_model_free(model);
+        return 1;
+    }
     fprintf(stderr, "model: %s, %d of %d layers on the GPU (%s)\n", info.description, (int) info.n_gpu_layers,
             (int) info.n_layer + 1, info.gpu_devices[0] ? info.gpu_devices : "none");
 
