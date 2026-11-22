@@ -690,9 +690,29 @@ def test_sdk_normalizes_text_to_nfc(model) -> None:
 
     assert raw(nfd) != raw(nfc)                       # the C API does not normalize
     assert model.tokenize(nfd) == model.tokenize(nfc) == raw(nfc)
-    g = dict(temperature=0, max_tokens=8)
-    assert model.generate(nfd, **g) == model.generate(nfc, **g)
-    assert model.chat([{"role": "user", "content": nfd}], **g) == model.chat([{"role": "user", "content": nfc}], **g)
+    # generate and chat: the tiny model's greedy text does not depend on these tokens, so check the BYTES the SDK hands
+    # to lm_generate / lm_chat (each entry point separately: removing the normalization from one of them fails here)
+    seen: dict[str, list[bytes]] = {"generate": [], "chat": []}
+    real_generate, real_chat = lib.lm_generate, lib.lm_chat
+
+    def spy_generate(session, prompt, *rest):
+        seen["generate"].append(prompt)
+        return real_generate(session, prompt, *rest)
+
+    def spy_chat(session, msgs, n, *rest):
+        seen["chat"] += [msgs[i].content for i in range(n)] + [msgs[i].role for i in range(n)]
+        return real_chat(session, msgs, n, *rest)
+
+    try:
+        lib.lm_generate, lib.lm_chat = spy_generate, spy_chat
+        g = dict(temperature=0, max_tokens=4)
+        model.generate(nfd, **g)
+        model.chat([{"role": "user", "content": nfd}], **g)
+        "".join(model.generate(nfd, stream=True, **g))
+    finally:
+        lib.lm_generate, lib.lm_chat = real_generate, real_chat
+    assert seen["generate"] == [nfc.encode("utf-8")] * 2, seen["generate"]
+    assert seen["chat"] == [nfc.encode("utf-8"), b"user"], seen["chat"]
 
 
 @pytest.mark.smoke
