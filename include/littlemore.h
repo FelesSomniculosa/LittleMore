@@ -293,8 +293,8 @@ typedef struct lm_model_info {
 /**
  * Reports facts about a model. Set info->struct_size = sizeof(lm_model_info) first; an older, smaller struct
  * (ending on one of its field boundaries) is filled up to its last field and nothing after it is written.
- * @return LM_OK, or LM_ERR_INVALID_ARG for NULL arguments or a struct_size that does not end on a field
- *         boundary or is smaller than struct_size plus n_layer.
+ * @return LM_OK, or LM_ERR_INVALID_ARG for NULL arguments, or a struct_size that does not end on a field boundary
+ *         or ends before the field n_gpu_layers (the oldest layout accepted covers every field before it).
  */
 LM_API lm_status LM_CALL lm_model_get_info(const lm_model * model, lm_model_info * info);
 

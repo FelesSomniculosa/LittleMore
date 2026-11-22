@@ -4,7 +4,8 @@
 #   1. cpu-build-test (Windows x64 and Linux x64)
 #        builds the C API library and the engine's CPU backends from source, runs the C API tests and the engine's
 #        own LittleBit tests (CTest), runs `test-backend-ops` for the fused LITTLEBIT op on the CPU backend, runs the
-#        Python tests that need no GPU and no model download, and builds the Python wheel and imports it.
+#        Python tests that need no GPU and no model download, compares the engine's logits with the PyTorch reference on
+#        tiny random models, and builds the Python wheel and imports it from a clean install (the build tree moved away).
 #   2. cuda-compile-linux / cuda-compile-windows
 #        compile-only checks of the CUDA backend. GitHub-hosted runners have no GPU, so nothing CUDA is *run*
 #        here; the CUDA kernels are tested on a real GPU by the maintainer (see docs/development.md).
@@ -102,7 +103,7 @@ jobs:
           cmake -G Ninja -B "$BUILD_DIR" \
             -DCMAKE_BUILD_TYPE=Release \
             -DGGML_CUDA=OFF -DGGML_VULKAN=OFF \
-            -DLLAMA_BUILD_COMMON=ON -DLLAMA_BUILD_TESTS=ON -DLLAMA_CURL=OFF \
+            -DLLAMA_BUILD_COMMON=ON -DLLAMA_BUILD_TESTS=ON -DLLAMA_BUILD_EXAMPLES=ON -DLLAMA_CURL=OFF \
             -DLITTLEMORE_PYTHON="$PY"
 
       # Only the targets the tests need (not the whole engine with all its tools).
@@ -111,7 +112,7 @@ jobs:
         run: |
           cmake --build "$BUILD_DIR" --parallel \
             --target littlemore test_api test_utf8 \
-            test-backend-ops test-b1 test-gguf test-alloc
+            test-backend-ops test-b1 test-gguf test-alloc llama-debug
 
       # CTest: the C API tests (the tiny test model is built first by tests/c/make_tiny_gguf.py, a CTest fixture)
       # and the engine's B1 / GGUF / allocator tests. (The engine's test-littlebit-ref is left out on purpose: it
@@ -138,20 +139,45 @@ jobs:
         shell: bash
         run: python -m pytest -m "not smoke and not engine_run" -q
 
+      # End-to-end numbers on the CPU, no downloads: tiny random Llama and Gemma 3 models are converted, run through
+      # the engine (llama-debug, built above into build/bin) and their logits compared with the PyTorch reference
+      # (tools/dev/reference.py). About 25 s locally on a CPU-only build. The Qwen cases of the same file need a
+      # cached tokenizer and skip themselves.
+      - name: Engine logits against the PyTorch reference (tiny models, CPU)
+        shell: bash
+        env:
+          LITTLEMORE_ENGINE_BIN: ${{ github.workspace }}/build/bin
+        run: python -m pytest tests/engine/test_fused_graph_families.py -m engine_run -k "llama or gemma" -q
+
       # Wheel: python/setup.py copies the libraries from build/bin into the wheel (no CUDA runtime is bundled).
       - name: Build the wheel
         shell: bash
         run: python -m build --wheel --outdir dist python
 
-      # Install the wheel from a clean directory (so the source tree is not importable) and check that the
-      # bundled library loads and reports the CPU backend.
-      - name: Install the wheel and import it
+      # Install the wheel and import it so that ONLY the wheel's own copy of the libraries can be found: the CMake
+      # build folder (which the SDK would otherwise use in a source checkout) is moved away first, the import runs
+      # from another directory, and the script checks that the library really came from site-packages. This can fail
+      # (for example when a plugin cannot find its sibling libraries, the case the origin-relative RPATH of
+      # CMakeLists.txt is for). The step is the only place where the Linux RPATH is exercised.
+      - name: Install the wheel and import it (without the build tree)
         shell: bash
         run: |
           python -m pip install dist/littlemore-*.whl
+          mv "$BUILD_DIR" "$RUNNER_TEMP/moved-build"
           cd "$RUNNER_TEMP"
-          python -c "import littlemore, sys; names=[b['name'] for b in littlemore.backends_info()]; print(names); sys.exit(0 if 'CPU' in names else 1)"
+          python -c "
+          import littlemore, sys
+          from littlemore import _lib
+          lib = str(_lib.find_library())
+          print('library:', lib)
+          assert 'site-packages' in lib, 'the library was not taken from the installed wheel'
+          names = [b['name'] for b in littlemore.backends_info()]
+          print('backends:', names)
+          sys.exit(0 if 'CPU' in names else 1)"
 
+      # The wheel is tagged for the platform it was built on (win_amd64, or linux_x86_64 on Linux). A linux_x86_64
+      # wheel is NOT uploadable to PyPI: that needs a manylinux tag, i.e. `auditwheel repair` on a build made in a
+      # manylinux container, which this workflow does not do yet. The artifact is for testing only.
       - uses: actions/upload-artifact@v4
         with:
           name: wheel-${{ matrix.os }}

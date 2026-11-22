@@ -24,6 +24,7 @@
 
 #include <algorithm>
 #include <atomic>
+#include <cstdint>
 #include <cstdio>
 #include <cstdlib>
 #include <cstring>
@@ -466,6 +467,14 @@ struct fit_plan {
 };
 
 // Reads an unsigned integer key; `fallback` when it is missing or not an integer.
+// a + b and a * b on uint64_t that stop at UINT64_MAX instead of wrapping (sizes read from a file are not trusted).
+uint64_t sat_add(uint64_t a, uint64_t b) {
+    return a > UINT64_MAX - b ? UINT64_MAX : a + b;
+}
+uint64_t sat_mul(uint64_t a, uint64_t b) {
+    return (a != 0 && b > UINT64_MAX / a) ? UINT64_MAX : a * b;
+}
+
 uint64_t gguf_uint(const gguf_context * g, const std::string & key, uint64_t fallback) {
     const int64_t id = gguf_find_key(g, key.c_str());
     if (id < 0) {
@@ -540,29 +549,6 @@ lm_status plan_fit(const char * path, const std::vector<ggml_backend_dev_t> & de
         ~gguf_guard() { gguf_free(g); }
     } guard{ g };
 
-    std::vector<uint64_t> layer_w;
-    uint64_t out_w = 0, embd_w = 0, misc_w = 0;
-    bool has_output = false;
-    for (int64_t i = 0; i < gguf_get_n_tensors(g); ++i) {
-        const char * name = gguf_get_tensor_name(g, i);
-        const uint64_t size = gguf_get_tensor_size(g, i);
-        int il = -1;
-        if (std::sscanf(name, "blk.%d.", &il) == 1 && il >= 0) {
-            if (static_cast<size_t>(il) >= layer_w.size()) {
-                layer_w.resize(static_cast<size_t>(il) + 1, 0);
-            }
-            layer_w[static_cast<size_t>(il)] += size;
-        } else if (std::strcmp(name, "output.weight") == 0) {
-            out_w = size;
-            has_output = true;
-        } else if (std::strcmp(name, "token_embd.weight") == 0) {
-            embd_w = size;
-        } else {
-            misc_w += size;
-        }
-    }
-    const size_t n_layer = layer_w.size();
-
     std::string arch = "llama";
     {
         const int64_t id = gguf_find_key(g, "general.architecture");
@@ -570,6 +556,35 @@ lm_status plan_fit(const char * path, const std::vector<ggml_backend_dev_t> & de
             arch = gguf_get_val_str(g, id);
         }
     }
+    // Every number below comes from the (untrusted) file, so sizes are added and multiplied with saturation (a wrapped
+    // uint64 could make a huge model look tiny and the auto-fit put too much on the GPU), and a tensor name may not
+    // claim a layer index beyond the model's block count (it would make the per-layer table gigabytes long).
+    const uint64_t block_count = gguf_uint(g, arch + ".block_count", 0);
+    const uint64_t max_layers  = block_count > 0 ? std::min<uint64_t>(block_count, 1u << 16) : (1u << 16);
+
+    std::vector<uint64_t> layer_w;
+    uint64_t out_w = 0, embd_w = 0, misc_w = 0;
+    bool has_output = false;
+    for (int64_t i = 0; i < gguf_get_n_tensors(g); ++i) {
+        const char * name = gguf_get_tensor_name(g, i);
+        const uint64_t size = gguf_get_tensor_size(g, i);
+        int il = -1;
+        if (std::sscanf(name, "blk.%d.", &il) == 1 && il >= 0 && static_cast<uint64_t>(il) < max_layers) {
+            if (static_cast<size_t>(il) >= layer_w.size()) {
+                layer_w.resize(static_cast<size_t>(il) + 1, 0);
+            }
+            layer_w[static_cast<size_t>(il)] = sat_add(layer_w[static_cast<size_t>(il)], size);
+        } else if (std::strcmp(name, "output.weight") == 0) {
+            out_w = size;
+            has_output = true;
+        } else if (std::strcmp(name, "token_embd.weight") == 0) {
+            embd_w = size;
+        } else {
+            misc_w = sat_add(misc_w, size);
+        }
+    }
+    const size_t n_layer = layer_w.size();
+
     const uint64_t n_embd   = gguf_uint(g, arch + ".embedding_length", 0);
     const uint64_t n_ctx_tr = gguf_uint(g, arch + ".context_length", k_default_ctx);
     const std::vector<uint64_t> n_head    = gguf_per_layer(g, arch + ".attention.head_count", n_layer, 0);
@@ -599,9 +614,10 @@ lm_status plan_fit(const char * path, const std::vector<ggml_backend_dev_t> & de
             budget += free;
         }
     }
-    const uint64_t per_dev_reserve = k_fixed_reserve + n_vocab * k_fit_ubatch * 4 + n_ctx * k_fit_ubatch * n_head_max * 4;
-    const uint64_t reserve = per_dev_reserve * devs.size();
-    const uint64_t head = (has_output ? out_w : embd_w) + misc_w;
+    const uint64_t per_dev_reserve = sat_add(sat_add(k_fixed_reserve, sat_mul(sat_mul(n_vocab, k_fit_ubatch), 4)),
+                                             sat_mul(sat_mul(sat_mul(n_ctx, k_fit_ubatch), n_head_max), 4));
+    const uint64_t reserve = sat_mul(per_dev_reserve, devs.size());
+    const uint64_t head = sat_add(has_output ? out_w : embd_w, misc_w);
 
     plan = fit_plan();
     plan.budget  = budget;
@@ -609,7 +625,7 @@ lm_status plan_fit(const char * path, const std::vector<ggml_backend_dev_t> & de
     plan.head    = head;
     std::vector<uint64_t> layer_total(n_layer);
     for (size_t il = 0; il < n_layer; ++il) {
-        layer_total[il] = layer_w[il] + n_ctx * n_head_kv[il] * (key_len + val_len) * 2;
+        layer_total[il] = sat_add(layer_w[il], sat_mul(sat_mul(sat_mul(n_ctx, n_head_kv[il]), sat_add(key_len, val_len)), 2));
         plan.layer_max = std::max(plan.layer_max, layer_total[il]);
     }
     if (budget <= reserve || budget - reserve < head) {

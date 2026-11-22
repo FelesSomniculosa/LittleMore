@@ -56,10 +56,11 @@ quantization-aware knowledge distillation (2.97 GB download). See "Licences" bel
 ## 3. Convert it to GGUF
 
 The engine reads one GGUF file. The converter needs the development environment (PyTorch, transformers and the
-engine's GGUF writer), so run it from the source checkout:
+engine's GGUF writer), so it comes from the source checkout, which you name explicitly (`--repo`, or the
+environment variable `LITTLEMORE_REPO`; the command never runs a converter it finds in the current directory):
 
 ```powershell
-littlemore convert .cache/models/littlebit-qwen3-8b-0.55bpw -o .cache/gguf/littlebit-qwen3-8b-0.55bpw-b1.gguf
+littlemore convert --repo . .cache/models/littlebit-qwen3-8b-0.55bpw -o .cache/gguf/littlebit-qwen3-8b-0.55bpw-b1.gguf
 ```
 
 (`littlemore convert` runs `tools/convert/lb_to_gguf.py`; `python -m tools.convert.lb_to_gguf` is the same.) It

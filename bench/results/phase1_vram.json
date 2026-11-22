@@ -22,9 +22,9 @@
    "n_gpu_layers": 99,
    "cmd": [
     [
-     "C:\\Vibe Coding\\LittleMore\\engine\\build\\bin\\llama-bench.exe",
+     "engine\\build\\bin\\llama-bench.exe",
      "-m",
-     "C:\\Vibe Coding\\LittleMore\\.cache\\gguf\\qwen3-0.6b-lb2-0.55-b1.gguf",
+     ".cache\\gguf\\qwen3-0.6b-lb2-0.55-b1.gguf",
      "-ngl",
      "99",
      "-dev",
@@ -39,9 +39,9 @@
      "json"
     ],
     [
-     "C:\\Vibe Coding\\LittleMore\\engine\\build\\bin\\llama-bench.exe",
+     "engine\\build\\bin\\llama-bench.exe",
      "-m",
-     "C:\\Vibe Coding\\LittleMore\\.cache\\gguf\\qwen3-0.6b-lb2-0.55-b1.gguf",
+     ".cache\\gguf\\qwen3-0.6b-lb2-0.55-b1.gguf",
      "-ngl",
      "99",
      "-dev",
@@ -102,9 +102,9 @@
    "n_gpu_layers": 99,
    "cmd": [
     [
-     "C:\\Vibe Coding\\LittleMore\\engine\\build\\bin\\llama-bench.exe",
+     "engine\\build\\bin\\llama-bench.exe",
      "-m",
-     "C:\\Vibe Coding\\LittleMore\\.cache\\gguf\\qwen3-0.6b-base-bf16.gguf",
+     ".cache\\gguf\\qwen3-0.6b-base-bf16.gguf",
      "-ngl",
      "99",
      "-dev",
@@ -119,9 +119,9 @@
      "json"
     ],
     [
-     "C:\\Vibe Coding\\LittleMore\\engine\\build\\bin\\llama-bench.exe",
+     "engine\\build\\bin\\llama-bench.exe",
      "-m",
-     "C:\\Vibe Coding\\LittleMore\\.cache\\gguf\\qwen3-0.6b-base-bf16.gguf",
+     ".cache\\gguf\\qwen3-0.6b-base-bf16.gguf",
      "-ngl",
      "99",
      "-dev",
@@ -182,9 +182,9 @@
    "n_gpu_layers": 99,
    "cmd": [
     [
-     "C:\\Vibe Coding\\LittleMore\\engine\\build\\bin\\llama-bench.exe",
+     "engine\\build\\bin\\llama-bench.exe",
      "-m",
-     "C:\\Vibe Coding\\LittleMore\\.cache\\gguf\\qwen3-0.6b-lb2-0.55-b1-q8_0head.gguf",
+     ".cache\\gguf\\qwen3-0.6b-lb2-0.55-b1-q8_0head.gguf",
      "-ngl",
      "99",
      "-dev",
@@ -199,9 +199,9 @@
      "json"
     ],
     [
-     "C:\\Vibe Coding\\LittleMore\\engine\\build\\bin\\llama-bench.exe",
+     "engine\\build\\bin\\llama-bench.exe",
      "-m",
-     "C:\\Vibe Coding\\LittleMore\\.cache\\gguf\\qwen3-0.6b-lb2-0.55-b1-q8_0head.gguf",
+     ".cache\\gguf\\qwen3-0.6b-lb2-0.55-b1-q8_0head.gguf",
      "-ngl",
      "99",
      "-dev",
@@ -262,9 +262,9 @@
    "n_gpu_layers": 99,
    "cmd": [
     [
-     "C:\\Vibe Coding\\LittleMore\\engine\\build\\bin\\llama-bench.exe",
+     "engine\\build\\bin\\llama-bench.exe",
      "-m",
-     "C:\\Vibe Coding\\LittleMore\\.cache\\gguf\\qwen3-0.6b-lb2-0.55-b1-q6_khead.gguf",
+     ".cache\\gguf\\qwen3-0.6b-lb2-0.55-b1-q6_khead.gguf",
      "-ngl",
      "99",
      "-dev",
@@ -279,9 +279,9 @@
      "json"
     ],
     [
-     "C:\\Vibe Coding\\LittleMore\\engine\\build\\bin\\llama-bench.exe",
+     "engine\\build\\bin\\llama-bench.exe",
      "-m",
-     "C:\\Vibe Coding\\LittleMore\\.cache\\gguf\\qwen3-0.6b-lb2-0.55-b1-q6_khead.gguf",
+     ".cache\\gguf\\qwen3-0.6b-lb2-0.55-b1-q6_khead.gguf",
      "-ngl",
      "99",
      "-dev",
@@ -342,9 +342,9 @@
    "n_gpu_layers": 99,
    "cmd": [
     [
-     "C:\\Vibe Coding\\LittleMore\\engine\\build\\bin\\llama-bench.exe",
+     "engine\\build\\bin\\llama-bench.exe",
      "-m",
-     "C:\\Vibe Coding\\LittleMore\\.cache\\gguf\\qwen3-0.6b-lb2-0.1-b1.gguf",
+     ".cache\\gguf\\qwen3-0.6b-lb2-0.1-b1.gguf",
      "-ngl",
      "99",
      "-dev",
@@ -359,9 +359,9 @@
      "json"
     ],
     [
-     "C:\\Vibe Coding\\LittleMore\\engine\\build\\bin\\llama-bench.exe",
+     "engine\\build\\bin\\llama-bench.exe",
      "-m",
-     "C:\\Vibe Coding\\LittleMore\\.cache\\gguf\\qwen3-0.6b-lb2-0.1-b1.gguf",
+     ".cache\\gguf\\qwen3-0.6b-lb2-0.1-b1.gguf",
      "-ngl",
      "99",
      "-dev",
@@ -422,9 +422,9 @@
    "n_gpu_layers": 99,
    "cmd": [
     [
-     "C:\\Vibe Coding\\LittleMore\\engine\\build\\bin\\llama-bench.exe",
+     "engine\\build\\bin\\llama-bench.exe",
      "-m",
-     "C:\\Vibe Coding\\LittleMore\\.cache\\gguf\\qwen3-0.6b-lb2-0.1-b1-q8_0head.gguf",
+     ".cache\\gguf\\qwen3-0.6b-lb2-0.1-b1-q8_0head.gguf",
      "-ngl",
      "99",
      "-dev",
@@ -439,9 +439,9 @@
      "json"
     ],
     [
-     "C:\\Vibe Coding\\LittleMore\\engine\\build\\bin\\llama-bench.exe",
+     "engine\\build\\bin\\llama-bench.exe",
      "-m",
-     "C:\\Vibe Coding\\LittleMore\\.cache\\gguf\\qwen3-0.6b-lb2-0.1-b1-q8_0head.gguf",
+     ".cache\\gguf\\qwen3-0.6b-lb2-0.1-b1-q8_0head.gguf",
      "-ngl",
      "99",
      "-dev",
@@ -502,9 +502,9 @@
    "n_gpu_layers": 99,
    "cmd": [
     [
-     "C:\\Vibe Coding\\LittleMore\\engine\\build\\bin\\llama-bench.exe",
+     "engine\\build\\bin\\llama-bench.exe",
      "-m",
-     "C:\\Vibe Coding\\LittleMore\\.cache\\gguf\\qwen3-0.6b-base-f16.gguf",
+     ".cache\\gguf\\qwen3-0.6b-base-f16.gguf",
      "-ngl",
      "99",
      "-dev",
@@ -519,9 +519,9 @@
      "json"
     ],
     [
-     "C:\\Vibe Coding\\LittleMore\\engine\\build\\bin\\llama-bench.exe",
+     "engine\\build\\bin\\llama-bench.exe",
      "-m",
-     "C:\\Vibe Coding\\LittleMore\\.cache\\gguf\\qwen3-0.6b-base-f16.gguf",
+     ".cache\\gguf\\qwen3-0.6b-base-f16.gguf",
      "-ngl",
      "99",
      "-dev",
@@ -582,9 +582,9 @@
    "n_gpu_layers": 99,
    "cmd": [
     [
-     "C:\\Vibe Coding\\LittleMore\\engine\\build\\bin\\llama-bench.exe",
+     "engine\\build\\bin\\llama-bench.exe",
      "-m",
-     "C:\\Vibe Coding\\LittleMore\\.cache\\gguf\\qwen3-0.6b-base-q4_k_m.gguf",
+     ".cache\\gguf\\qwen3-0.6b-base-q4_k_m.gguf",
      "-ngl",
      "99",
      "-dev",
@@ -599,9 +599,9 @@
      "json"
     ],
     [
-     "C:\\Vibe Coding\\LittleMore\\engine\\build\\bin\\llama-bench.exe",
+     "engine\\build\\bin\\llama-bench.exe",
      "-m",
-     "C:\\Vibe Coding\\LittleMore\\.cache\\gguf\\qwen3-0.6b-base-q4_k_m.gguf",
+     ".cache\\gguf\\qwen3-0.6b-base-q4_k_m.gguf",
      "-ngl",
      "99",
      "-dev",
@@ -662,9 +662,9 @@
    "n_gpu_layers": 99,
    "cmd": [
     [
-     "C:\\Vibe Coding\\LittleMore\\engine\\build\\bin\\llama-bench.exe",
+     "engine\\build\\bin\\llama-bench.exe",
      "-m",
-     "C:\\Vibe Coding\\LittleMore\\.cache\\gguf\\qwen3-1.7b-lb2-0.55-b1.gguf",
+     ".cache\\gguf\\qwen3-1.7b-lb2-0.55-b1.gguf",
      "-ngl",
      "99",
      "-dev",
@@ -679,9 +679,9 @@
      "json"
     ],
     [
-     "C:\\Vibe Coding\\LittleMore\\engine\\build\\bin\\llama-bench.exe",
+     "engine\\build\\bin\\llama-bench.exe",
      "-m",
-     "C:\\Vibe Coding\\LittleMore\\.cache\\gguf\\qwen3-1.7b-lb2-0.55-b1.gguf",
+     ".cache\\gguf\\qwen3-1.7b-lb2-0.55-b1.gguf",
      "-ngl",
      "99",
      "-dev",
@@ -742,9 +742,9 @@
    "n_gpu_layers": 99,
    "cmd": [
     [
-     "C:\\Vibe Coding\\LittleMore\\engine\\build\\bin\\llama-bench.exe",
+     "engine\\build\\bin\\llama-bench.exe",
      "-m",
-     "C:\\Vibe Coding\\LittleMore\\.cache\\gguf\\qwen3-1.7b-base-bf16.gguf",
+     ".cache\\gguf\\qwen3-1.7b-base-bf16.gguf",
      "-ngl",
      "99",
      "-dev",
@@ -759,9 +759,9 @@
      "json"
     ],
     [
-     "C:\\Vibe Coding\\LittleMore\\engine\\build\\bin\\llama-bench.exe",
+     "engine\\build\\bin\\llama-bench.exe",
      "-m",
-     "C:\\Vibe Coding\\LittleMore\\.cache\\gguf\\qwen3-1.7b-base-bf16.gguf",
+     ".cache\\gguf\\qwen3-1.7b-base-bf16.gguf",
      "-ngl",
      "99",
      "-dev",
@@ -822,9 +822,9 @@
    "n_gpu_layers": 99,
    "cmd": [
     [
-     "C:\\Vibe Coding\\LittleMore\\engine\\build\\bin\\llama-bench.exe",
+     "engine\\build\\bin\\llama-bench.exe",
      "-m",
-     "C:\\Vibe Coding\\LittleMore\\.cache\\gguf\\qwen3-1.7b-lb2-0.55-b1-q8_0head.gguf",
+     ".cache\\gguf\\qwen3-1.7b-lb2-0.55-b1-q8_0head.gguf",
      "-ngl",
      "99",
      "-dev",
@@ -839,9 +839,9 @@
      "json"
     ],
     [
-     "C:\\Vibe Coding\\LittleMore\\engine\\build\\bin\\llama-bench.exe",
+     "engine\\build\\bin\\llama-bench.exe",
      "-m",
-     "C:\\Vibe Coding\\LittleMore\\.cache\\gguf\\qwen3-1.7b-lb2-0.55-b1-q8_0head.gguf",
+     ".cache\\gguf\\qwen3-1.7b-lb2-0.55-b1-q8_0head.gguf",
      "-ngl",
      "99",
      "-dev",
@@ -902,9 +902,9 @@
    "n_gpu_layers": 99,
    "cmd": [
     [
-     "C:\\Vibe Coding\\LittleMore\\engine\\build\\bin\\llama-bench.exe",
+     "engine\\build\\bin\\llama-bench.exe",
      "-m",
-     "C:\\Vibe Coding\\LittleMore\\.cache\\gguf\\qwen3-1.7b-lb2-0.55-b1-q6_khead.gguf",
+     ".cache\\gguf\\qwen3-1.7b-lb2-0.55-b1-q6_khead.gguf",
      "-ngl",
      "99",
      "-dev",
@@ -919,9 +919,9 @@
      "json"
     ],
     [
-     "C:\\Vibe Coding\\LittleMore\\engine\\build\\bin\\llama-bench.exe",
+     "engine\\build\\bin\\llama-bench.exe",
      "-m",
-     "C:\\Vibe Coding\\LittleMore\\.cache\\gguf\\qwen3-1.7b-lb2-0.55-b1-q6_khead.gguf",
+     ".cache\\gguf\\qwen3-1.7b-lb2-0.55-b1-q6_khead.gguf",
      "-ngl",
      "99",
      "-dev",
@@ -982,9 +982,9 @@
    "n_gpu_layers": 99,
    "cmd": [
     [
-     "C:\\Vibe Coding\\LittleMore\\engine\\build\\bin\\llama-bench.exe",
+     "engine\\build\\bin\\llama-bench.exe",
      "-m",
-     "C:\\Vibe Coding\\LittleMore\\.cache\\gguf\\qwen3-1.7b-base-f16.gguf",
+     ".cache\\gguf\\qwen3-1.7b-base-f16.gguf",
      "-ngl",
      "99",
      "-dev",
@@ -999,9 +999,9 @@
      "json"
     ],
     [
-     "C:\\Vibe Coding\\LittleMore\\engine\\build\\bin\\llama-bench.exe",
+     "engine\\build\\bin\\llama-bench.exe",
      "-m",
-     "C:\\Vibe Coding\\LittleMore\\.cache\\gguf\\qwen3-1.7b-base-f16.gguf",
+     ".cache\\gguf\\qwen3-1.7b-base-f16.gguf",
      "-ngl",
      "99",
      "-dev",
@@ -1062,9 +1062,9 @@
    "n_gpu_layers": 99,
    "cmd": [
     [
-     "C:\\Vibe Coding\\LittleMore\\engine\\build\\bin\\llama-bench.exe",
+     "engine\\build\\bin\\llama-bench.exe",
      "-m",
-     "C:\\Vibe Coding\\LittleMore\\.cache\\gguf\\qwen3-1.7b-base-q4_k_m.gguf",
+     ".cache\\gguf\\qwen3-1.7b-base-q4_k_m.gguf",
      "-ngl",
      "99",
      "-dev",
@@ -1079,9 +1079,9 @@
      "json"
     ],
     [
-     "C:\\Vibe Coding\\LittleMore\\engine\\build\\bin\\llama-bench.exe",
+     "engine\\build\\bin\\llama-bench.exe",
      "-m",
-     "C:\\Vibe Coding\\LittleMore\\.cache\\gguf\\qwen3-1.7b-base-q4_k_m.gguf",
+     ".cache\\gguf\\qwen3-1.7b-base-q4_k_m.gguf",
      "-ngl",
      "99",
      "-dev",
@@ -1142,9 +1142,9 @@
    "n_gpu_layers": 99,
    "cmd": [
     [
-     "C:\\Vibe Coding\\LittleMore\\engine\\build\\bin\\llama-bench.exe",
+     "engine\\build\\bin\\llama-bench.exe",
      "-m",
-     "C:\\Vibe Coding\\LittleMore\\.cache\\gguf\\qwen3-1.7b-proxy-lb2-0.55-b1.gguf",
+     ".cache\\gguf\\qwen3-1.7b-proxy-lb2-0.55-b1.gguf",
      "-ngl",
      "99",
      "-dev",
@@ -1159,9 +1159,9 @@
      "json"
     ],
     [
-     "C:\\Vibe Coding\\LittleMore\\engine\\build\\bin\\llama-bench.exe",
+     "engine\\build\\bin\\llama-bench.exe",
      "-m",
-     "C:\\Vibe Coding\\LittleMore\\.cache\\gguf\\qwen3-1.7b-proxy-lb2-0.55-b1.gguf",
+     ".cache\\gguf\\qwen3-1.7b-proxy-lb2-0.55-b1.gguf",
      "-ngl",
      "99",
      "-dev",
@@ -1222,9 +1222,9 @@
    "n_gpu_layers": 99,
    "cmd": [
     [
-     "C:\\Vibe Coding\\LittleMore\\engine\\build\\bin\\llama-bench.exe",
+     "engine\\build\\bin\\llama-bench.exe",
      "-m",
-     "C:\\Vibe Coding\\LittleMore\\.cache\\gguf\\qwen3-1.7b-proxy-bf16.gguf",
+     ".cache\\gguf\\qwen3-1.7b-proxy-bf16.gguf",
      "-ngl",
      "99",
      "-dev",
@@ -1239,9 +1239,9 @@
      "json"
     ],
     [
-     "C:\\Vibe Coding\\LittleMore\\engine\\build\\bin\\llama-bench.exe",
+     "engine\\build\\bin\\llama-bench.exe",
      "-m",
-     "C:\\Vibe Coding\\LittleMore\\.cache\\gguf\\qwen3-1.7b-proxy-bf16.gguf",
+     ".cache\\gguf\\qwen3-1.7b-proxy-bf16.gguf",
      "-ngl",
      "99",
      "-dev",

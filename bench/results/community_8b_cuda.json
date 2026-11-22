@@ -23,9 +23,9 @@
    "n_gpu_layers": 99,
    "cmd": [
     [
-     "C:\\Vibe Coding\\LittleMore\\engine\\build\\bin\\llama-bench.exe",
+     "engine\\build\\bin\\llama-bench.exe",
      "-m",
-     "C:\\Vibe Coding\\LittleMore\\.cache\\gguf\\littlebit-qwen3-8b-0.55bpw-b1.gguf",
+     ".cache\\gguf\\littlebit-qwen3-8b-0.55bpw-b1.gguf",
      "-ngl",
      "99",
      "-dev",
@@ -40,9 +40,9 @@
      "json"
     ],
     [
-     "C:\\Vibe Coding\\LittleMore\\engine\\build\\bin\\llama-bench.exe",
+     "engine\\build\\bin\\llama-bench.exe",
      "-m",
-     "C:\\Vibe Coding\\LittleMore\\.cache\\gguf\\littlebit-qwen3-8b-0.55bpw-b1.gguf",
+     ".cache\\gguf\\littlebit-qwen3-8b-0.55bpw-b1.gguf",
      "-ngl",
      "99",
      "-dev",
@@ -117,9 +117,9 @@
    "n_gpu_layers": 99,
    "cmd": [
     [
-     "C:\\Vibe Coding\\LittleMore\\engine\\build\\bin\\llama-bench.exe",
+     "engine\\build\\bin\\llama-bench.exe",
      "-m",
-     "C:\\Vibe Coding\\LittleMore\\.cache\\gguf\\littlebit-qwen3-8b-0.55bpw-b1.gguf",
+     ".cache\\gguf\\littlebit-qwen3-8b-0.55bpw-b1.gguf",
      "-ngl",
      "99",
      "-dev",
@@ -134,9 +134,9 @@
      "json"
     ],
     [
-     "C:\\Vibe Coding\\LittleMore\\engine\\build\\bin\\llama-bench.exe",
+     "engine\\build\\bin\\llama-bench.exe",
      "-m",
-     "C:\\Vibe Coding\\LittleMore\\.cache\\gguf\\littlebit-qwen3-8b-0.55bpw-b1.gguf",
+     ".cache\\gguf\\littlebit-qwen3-8b-0.55bpw-b1.gguf",
      "-ngl",
      "99",
      "-dev",
@@ -212,9 +212,9 @@
    "n_gpu_layers": 99,
    "cmd": [
     [
-     "C:\\Vibe Coding\\LittleMore\\engine\\build\\bin\\llama-bench.exe",
+     "engine\\build\\bin\\llama-bench.exe",
      "-m",
-     "C:\\Vibe Coding\\LittleMore\\.cache\\gguf\\littlebit-qwen3-8b-0.55bpw-b1.gguf",
+     ".cache\\gguf\\littlebit-qwen3-8b-0.55bpw-b1.gguf",
      "-ngl",
      "99",
      "-dev",
@@ -229,9 +229,9 @@
      "json"
     ],
     [
-     "C:\\Vibe Coding\\LittleMore\\engine\\build\\bin\\llama-bench.exe",
+     "engine\\build\\bin\\llama-bench.exe",
      "-m",
-     "C:\\Vibe Coding\\LittleMore\\.cache\\gguf\\littlebit-qwen3-8b-0.55bpw-b1.gguf",
+     ".cache\\gguf\\littlebit-qwen3-8b-0.55bpw-b1.gguf",
      "-ngl",
      "99",
      "-dev",

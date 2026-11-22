@@ -87,6 +87,25 @@ endif()
 set(CMAKE_RUNTIME_OUTPUT_DIRECTORY "${CMAKE_BINARY_DIR}/bin")
 set(CMAKE_LIBRARY_OUTPUT_DIRECTORY "${CMAKE_BINARY_DIR}/bin")
 include(GNUInstallDirs)
+
+# Run-time search path of the shared libraries (Linux and macOS; Windows looks next to the executable by itself).
+# The C library, llama/ggml and the backend plugins are shipped together in ONE folder (the build's bin/, the wheel's
+# littlemore/_bin/, or the install prefix's bin/), and each of them must find the others there after the folder has
+# been copied somewhere else: an absolute path into the build tree (CMake's default) would break that. So every
+# target gets an origin-relative RPATH, in the build tree too (BUILD_WITH_INSTALL_RPATH): "$ORIGIN" is the folder
+# of the library itself, and ../lib covers an install where the engine's core libraries go to the library directory.
+# Set here, before add_subdirectory, so the engine's targets inherit it. NOT yet verified on Linux or macOS (only
+# the CMake configuration is exercised on Windows, where RPATH does not exist); CI builds it on Linux.
+if (NOT WIN32)
+    if (APPLE)
+        set(_lm_origin "@loader_path")
+    else()
+        set(_lm_origin "$ORIGIN")
+    endif()
+    set(CMAKE_BUILD_WITH_INSTALL_RPATH ON)
+    set(CMAKE_INSTALL_RPATH "${_lm_origin};${_lm_origin}/../${CMAKE_INSTALL_LIBDIR}")
+    set(CMAKE_SKIP_BUILD_RPATH OFF)
+endif()
 add_subdirectory(engine)
 
 # ---------------------------------------------------------------------------------------------------------------
@@ -128,7 +147,8 @@ add_dependencies(littlemore ggml)
 # plugin; the plugins go to ${CMAKE_INSTALL_BINDIR} (ggml's default when GGML_BACKEND_DIR is not set). The
 # library loads its plugins from its own directory, so it is installed into that same directory on every
 # platform (on Windows a DLL goes to bin anyway; on Linux/macOS this puts the .so/.dylib next to the plugins).
-# Only the Windows layout is verified so far.
+# Only the Windows layout is verified so far; on Linux/macOS the library is installed into bin (next to the plugins)
+# rather than the conventional lib, which is unusual but consistent with the package file below.
 # ---------------------------------------------------------------------------------------------------------------
 install(TARGETS littlemore
         RUNTIME DESTINATION ${CMAKE_INSTALL_BINDIR}
@@ -146,8 +166,12 @@ if (NOT TARGET littlemore::littlemore)
     add_library(littlemore::littlemore SHARED IMPORTED)
     set_target_properties(littlemore::littlemore PROPERTIES
         INTERFACE_INCLUDE_DIRECTORIES \"\${_lm_prefix}/${CMAKE_INSTALL_INCLUDEDIR}\"
-        IMPORTED_LOCATION \"\${_lm_prefix}/${CMAKE_INSTALL_BINDIR}/$<TARGET_FILE_NAME:littlemore>\"
-        IMPORTED_IMPLIB \"\${_lm_prefix}/${CMAKE_INSTALL_LIBDIR}/$<TARGET_LINKER_FILE_NAME:littlemore>\")
+        IMPORTED_LOCATION \"\${_lm_prefix}/${CMAKE_INSTALL_BINDIR}/$<TARGET_FILE_NAME:littlemore>\")
+    # only Windows has an import library (littlemore.lib); elsewhere the shared library itself is linked
+    if (WIN32)
+        set_target_properties(littlemore::littlemore PROPERTIES
+            IMPORTED_IMPLIB \"\${_lm_prefix}/${CMAKE_INSTALL_LIBDIR}/$<TARGET_LINKER_FILE_NAME:littlemore>\")
+    endif()
 endif()
 unset(_lm_prefix)
 ")

@@ -27,7 +27,9 @@ import numpy as np
 ROOT = Path(__file__).resolve().parents[2]
 CACHE = ROOT / ".cache"
 ENGINE = ROOT / "engine"
-BIN = ENGINE / "build" / "bin"
+# Folder with llama-debug and the backend plugins: the engine's own build by default; LITTLEMORE_ENGINE_BIN points at
+# another build (CI uses the top-level CMake build, where the engine programs land in build/bin).
+BIN = Path(os.environ["LITTLEMORE_ENGINE_BIN"]) if os.environ.get("LITTLEMORE_ENGINE_BIN") else ENGINE / "build" / "bin"
 EXE = ".exe" if os.name == "nt" else ""
 # ggml-cuda.dll links CUDA 12.9 runtime DLLs; CUDA 13 is also installed here, so
 # the 12.9 bin dir must be found first on PATH or the CUDA backend fails to load.
@@ -120,7 +122,7 @@ def copy_gguf(src: Path, dst: Path, replace=None, extra=(), extra_kv=(), drop=No
 
     `replace(tensor)` may return `(array, raw_dtype)` to swap one tensor's data (None keeps it);
     `extra` is a list of `(name, array, raw_dtype)` tensors appended; `extra_kv` a list of
-    `(key, value, value_type[, sub_type])` metadata entries added; `drop(name)` returning True leaves that tensor
+    `(key, value, value_type[, sub_type])` metadata entries added (replacing a copied entry of the same key); `drop(name)` returning True leaves that tensor
     out.  Used to derive test variants.
     """
     _add_path(ENGINE / "gguf-py")
@@ -128,8 +130,9 @@ def copy_gguf(src: Path, dst: Path, replace=None, extra=(), extra_kv=(), drop=No
     reader = gguf.GGUFReader(str(src))
     writer = gguf.GGUFWriter(str(dst), reader.get_field("general.architecture").contents())
     skip = ("GGUF.", "general.architecture", "general.alignment")
+    overridden = {kv[0] for kv in extra_kv}  # a metadata key given in `extra_kv` replaces the copied one
     for key, field in reader.fields.items():
-        if not key.startswith(skip):
+        if not key.startswith(skip) and key not in overridden:
             writer.add_key_value(key, field.contents(), field.types[0],
                                  field.types[-1] if field.types[0] == gguf.GGUFValueType.ARRAY else None)
     for kv in extra_kv:

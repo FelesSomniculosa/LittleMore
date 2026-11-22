@@ -21,8 +21,11 @@ aims to make the small size actually usable at run time.
 The four promises of the project:
 
 1. **Small memory.** Signs are stored at exactly 1 bit each (a new ggml type, `GGML_TYPE_B1`).
-2. **Faster than the uncompressed model.** One fused op (`GGML_OP_LITTLEBIT`) computes a whole LittleBit linear layer,
-   with CPU (scalar, AVX2) and CUDA kernels. This is checked by a speed gate, see [Measured speed](#measured-speed).
+2. **Faster than the uncompressed model, for token generation.** One fused op (`GGML_OP_LITTLEBIT`) computes a whole
+   LittleBit linear layer, with CPU (scalar, AVX2) and CUDA kernels. The speed gate covers *token generation* on CUDA for
+   Qwen3-0.6B and 1.7B, measured on one RTX 4050 Laptop GPU; see [Measured speed](#measured-speed). It does **not** cover
+   prompt processing: on the GPU, the 1.7B model's prompt speed is about 0.84-0.87x that of the F16 model
+   ([bench/results/phase1_13c.md](bench/results/phase1_13c.md)).
 3. **Automatic hardware use.** The backends (CPU variants, CUDA, Vulkan) are runtime-loaded plugins, and the library
    fits as many layers as possible into the free GPU memory by itself.
 4. **A simple library API.** A small C API (`include/littlemore.h`) and a Python SDK / CLI on top of it.
@@ -85,7 +88,7 @@ The walk-through with every measurement is [docs/quickstart.md](docs/quickstart.
 hf download LittleBitLLM/littlebit-qwen3-8b-0.55bpw --local-dir model-dir --exclude "logs/*" "runs/*"
 
 # 2. convert it to GGUF (the converter also validates every layer; needs PyTorch, see docs/setup-windows.md)
-littlemore convert model-dir -o model.gguf
+littlemore convert --repo /path/to/this/checkout model-dir -o model.gguf
 
 # 3. run it
 littlemore run model.gguf --prompt "Hello"
@@ -136,11 +139,12 @@ the whole setup is in [docs/setup-windows.md](docs/setup-windows.md); the comman
 ```
 git submodule update --init --recursive
 cmake -G Ninja -B build -DCMAKE_BUILD_TYPE=Release -DGGML_CUDA=OFF -DGGML_VULKAN=OFF \
-      -DLLAMA_BUILD_COMMON=ON -DLLAMA_BUILD_TESTS=ON -DLLAMA_CURL=OFF
+      -DLLAMA_BUILD_COMMON=ON -DLLAMA_BUILD_TESTS=ON -DLLAMA_BUILD_EXAMPLES=ON -DLLAMA_CURL=OFF
 cmake --build build --parallel
 ctest --test-dir build --output-on-failure -R "test-utf8|test-api|littlemore-tiny-gguf|test-b1|test-gguf|test-alloc"
 build/bin/test-backend-ops test -o LITTLEBIT -b CPU
 python -m pytest -m "not smoke and not engine_run" -q       # tests that need no GPU and no model download
+LITTLEMORE_ENGINE_BIN=build/bin python -m pytest tests/engine/test_fused_graph_families.py -m engine_run -k "llama or gemma" -q   # engine vs PyTorch reference, tiny models (needs the llama-debug target)
 ```
 
 (`-m "not smoke ..."` leaves out the slow end-to-end tests that need the engine binaries and downloaded models; they are

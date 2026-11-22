@@ -1,11 +1,11 @@
 ggml_cuda_init: found 1 CUDA devices (Total VRAM: 6140 MiB):
   Device 0: NVIDIA GeForce RTX 4050 Laptop GPU, compute capability 8.9, VMM: yes, VRAM: 6140 MiB
-load_backend: loaded CUDA backend from C:\Vibe Coding\LittleMore\engine\build\bin\ggml-cuda.dll
+load_backend: loaded CUDA backend from engine\build\bin\ggml-cuda.dll
 ggml_vulkan: Found 2 Vulkan devices:
 ggml_vulkan: 0 = NVIDIA GeForce RTX 4050 Laptop GPU (NVIDIA) | uma: 0 | rebar: 1 | fp16: 1 | bf16: 1 | fp4: 0 | warp size: 32 | shared memory: 49152 | int dot: 1 | matrix cores: NV_coopmat2
 ggml_vulkan: 1 = Intel(R) UHD Graphics (Intel Corporation) | uma: 1 | rebar: 1 | fp16: 1 | bf16: 0 | fp4: 0 | warp size: 32 | shared memory: 32768 | int dot: 1 | matrix cores: none
-load_backend: loaded Vulkan backend from C:\Vibe Coding\LittleMore\engine\build\bin\ggml-vulkan.dll
-load_backend: loaded CPU backend from C:\Vibe Coding\LittleMore\engine\build\bin\ggml-cpu-alderlake.dll
+load_backend: loaded Vulkan backend from engine\build\bin\ggml-vulkan.dll
+load_backend: loaded CPU backend from engine\build\bin\ggml-cpu-alderlake.dll
 LITTLEBIT  d_in= 1024 d_out= 2048 r= 256 r2= 256 n=   9  layers= 64:       73.2 us/op    0.39 TFLOPS (work)    0.52 TFLOPS (dense-equivalent)
 LITTLEBIT  d_in= 1024 d_out= 2048 r= 256 r2= 256 n=  12  layers= 64:       81.5 us/op    0.46 TFLOPS (work)    0.62 TFLOPS (dense-equivalent)
 LITTLEBIT  d_in= 1024 d_out= 2048 r= 256 r2= 256 n=  16  layers= 64:       99.8 us/op    0.50 TFLOPS (work)    0.67 TFLOPS (dense-equivalent)
@@ -24,12 +24,12 @@ LITTLEBIT  d_in= 1024 d_out= 2048 r= 256 r2= 256 n= 112  layers= 64:      152.3 
 LITTLEBIT  d_in= 1024 d_out= 2048 r= 256 r2= 256 n= 128  layers= 64:      157.3 us/op    2.56 TFLOPS (work)    3.41 TFLOPS (dense-equivalent)
 ggml_cuda_init: found 1 CUDA devices (Total VRAM: 6140 MiB):
   Device 0: NVIDIA GeForce RTX 4050 Laptop GPU, compute capability 8.9, VMM: yes, VRAM: 6140 MiB
-load_backend: loaded CUDA backend from C:\Vibe Coding\LittleMore\engine\build\bin\ggml-cuda.dll
+load_backend: loaded CUDA backend from engine\build\bin\ggml-cuda.dll
 ggml_vulkan: Found 2 Vulkan devices:
 ggml_vulkan: 0 = NVIDIA GeForce RTX 4050 Laptop GPU (NVIDIA) | uma: 0 | rebar: 1 | fp16: 1 | bf16: 1 | fp4: 0 | warp size: 32 | shared memory: 49152 | int dot: 1 | matrix cores: NV_coopmat2
 ggml_vulkan: 1 = Intel(R) UHD Graphics (Intel Corporation) | uma: 1 | rebar: 1 | fp16: 1 | bf16: 0 | fp4: 0 | warp size: 32 | shared memory: 32768 | int dot: 1 | matrix cores: none
-load_backend: loaded Vulkan backend from C:\Vibe Coding\LittleMore\engine\build\bin\ggml-vulkan.dll
-load_backend: loaded CPU backend from C:\Vibe Coding\LittleMore\engine\build\bin\ggml-cpu-alderlake.dll
+load_backend: loaded Vulkan backend from engine\build\bin\ggml-vulkan.dll
+load_backend: loaded CPU backend from engine\build\bin\ggml-cpu-alderlake.dll
 LITTLEBIT  d_in= 1024 d_out= 1024 r= 128 r2= 128 n=   9  layers= 64:       30.0 us/op    0.31 TFLOPS (work)    0.63 TFLOPS (dense-equivalent)
 LITTLEBIT  d_in= 1024 d_out= 1024 r= 128 r2= 128 n=  12  layers= 64:       31.3 us/op    0.40 TFLOPS (work)    0.80 TFLOPS (dense-equivalent)
 LITTLEBIT  d_in= 1024 d_out= 1024 r= 128 r2= 128 n=  16  layers= 64:       34.6 us/op    0.49 TFLOPS (work)    0.97 TFLOPS (dense-equivalent)
@@ -48,12 +48,12 @@ LITTLEBIT  d_in= 1024 d_out= 1024 r= 128 r2= 128 n= 112  layers= 64:       60.5 
 LITTLEBIT  d_in= 1024 d_out= 1024 r= 128 r2= 128 n= 128  layers= 64:       62.5 us/op    2.15 TFLOPS (work)    4.29 TFLOPS (dense-equivalent)
 ggml_cuda_init: found 1 CUDA devices (Total VRAM: 6140 MiB):
   Device 0: NVIDIA GeForce RTX 4050 Laptop GPU, compute capability 8.9, VMM: yes, VRAM: 6140 MiB
-load_backend: loaded CUDA backend from C:\Vibe Coding\LittleMore\engine\build\bin\ggml-cuda.dll
+load_backend: loaded CUDA backend from engine\build\bin\ggml-cuda.dll
 ggml_vulkan: Found 2 Vulkan devices:
 ggml_vulkan: 0 = NVIDIA GeForce RTX 4050 Laptop GPU (NVIDIA) | uma: 0 | rebar: 1 | fp16: 1 | bf16: 1 | fp4: 0 | warp size: 32 | shared memory: 49152 | int dot: 1 | matrix cores: NV_coopmat2
 ggml_vulkan: 1 = Intel(R) UHD Graphics (Intel Corporation) | uma: 1 | rebar: 1 | fp16: 1 | bf16: 0 | fp4: 0 | warp size: 32 | shared memory: 32768 | int dot: 1 | matrix cores: none
-load_backend: loaded Vulkan backend from C:\Vibe Coding\LittleMore\engine\build\bin\ggml-vulkan.dll
-load_backend: loaded CPU backend from C:\Vibe Coding\LittleMore\engine\build\bin\ggml-cpu-alderlake.dll
+load_backend: loaded Vulkan backend from engine\build\bin\ggml-vulkan.dll
+load_backend: loaded CPU backend from engine\build\bin\ggml-cpu-alderlake.dll
 LITTLEBIT  d_in= 2048 d_out= 1024 r= 256 r2= 256 n=   9  layers= 64:       63.7 us/op    0.44 TFLOPS (work)    0.59 TFLOPS (dense-equivalent)
 LITTLEBIT  d_in= 2048 d_out= 1024 r= 256 r2= 256 n=  12  layers= 64:       71.3 us/op    0.53 TFLOPS (work)    0.71 TFLOPS (dense-equivalent)
 LITTLEBIT  d_in= 2048 d_out= 1024 r= 256 r2= 256 n=  16  layers= 64:       65.8 us/op    0.76 TFLOPS (work)    1.02 TFLOPS (dense-equivalent)
@@ -72,12 +72,12 @@ LITTLEBIT  d_in= 2048 d_out= 1024 r= 256 r2= 256 n= 112  layers= 64:      161.9 
 LITTLEBIT  d_in= 2048 d_out= 1024 r= 256 r2= 256 n= 128  layers= 64:      134.6 us/op    2.99 TFLOPS (work)    3.99 TFLOPS (dense-equivalent)
 ggml_cuda_init: found 1 CUDA devices (Total VRAM: 6140 MiB):
   Device 0: NVIDIA GeForce RTX 4050 Laptop GPU, compute capability 8.9, VMM: yes, VRAM: 6140 MiB
-load_backend: loaded CUDA backend from C:\Vibe Coding\LittleMore\engine\build\bin\ggml-cuda.dll
+load_backend: loaded CUDA backend from engine\build\bin\ggml-cuda.dll
 ggml_vulkan: Found 2 Vulkan devices:
 ggml_vulkan: 0 = NVIDIA GeForce RTX 4050 Laptop GPU (NVIDIA) | uma: 0 | rebar: 1 | fp16: 1 | bf16: 1 | fp4: 0 | warp size: 32 | shared memory: 49152 | int dot: 1 | matrix cores: NV_coopmat2
 ggml_vulkan: 1 = Intel(R) UHD Graphics (Intel Corporation) | uma: 1 | rebar: 1 | fp16: 1 | bf16: 0 | fp4: 0 | warp size: 32 | shared memory: 32768 | int dot: 1 | matrix cores: none
-load_backend: loaded Vulkan backend from C:\Vibe Coding\LittleMore\engine\build\bin\ggml-vulkan.dll
-load_backend: loaded CPU backend from C:\Vibe Coding\LittleMore\engine\build\bin\ggml-cpu-alderlake.dll
+load_backend: loaded Vulkan backend from engine\build\bin\ggml-vulkan.dll
+load_backend: loaded CPU backend from engine\build\bin\ggml-cpu-alderlake.dll
 LITTLEBIT  d_in= 1024 d_out= 3072 r= 256 r2= 256 n=   9  layers= 64:       90.8 us/op    0.42 TFLOPS (work)    0.62 TFLOPS (dense-equivalent)
 LITTLEBIT  d_in= 1024 d_out= 3072 r= 256 r2= 256 n=  12  layers= 64:      102.5 us/op    0.49 TFLOPS (work)    0.74 TFLOPS (dense-equivalent)
 LITTLEBIT  d_in= 1024 d_out= 3072 r= 256 r2= 256 n=  16  layers= 64:      122.9 us/op    0.55 TFLOPS (work)    0.82 TFLOPS (dense-equivalent)
@@ -96,12 +96,12 @@ LITTLEBIT  d_in= 1024 d_out= 3072 r= 256 r2= 256 n= 112  layers= 64:      178.3 
 LITTLEBIT  d_in= 1024 d_out= 3072 r= 256 r2= 256 n= 128  layers= 64:      183.1 us/op    2.93 TFLOPS (work)    4.40 TFLOPS (dense-equivalent)
 ggml_cuda_init: found 1 CUDA devices (Total VRAM: 6140 MiB):
   Device 0: NVIDIA GeForce RTX 4050 Laptop GPU, compute capability 8.9, VMM: yes, VRAM: 6140 MiB
-load_backend: loaded CUDA backend from C:\Vibe Coding\LittleMore\engine\build\bin\ggml-cuda.dll
+load_backend: loaded CUDA backend from engine\build\bin\ggml-cuda.dll
 ggml_vulkan: Found 2 Vulkan devices:
 ggml_vulkan: 0 = NVIDIA GeForce RTX 4050 Laptop GPU (NVIDIA) | uma: 0 | rebar: 1 | fp16: 1 | bf16: 1 | fp4: 0 | warp size: 32 | shared memory: 49152 | int dot: 1 | matrix cores: NV_coopmat2
 ggml_vulkan: 1 = Intel(R) UHD Graphics (Intel Corporation) | uma: 1 | rebar: 1 | fp16: 1 | bf16: 0 | fp4: 0 | warp size: 32 | shared memory: 32768 | int dot: 1 | matrix cores: none
-load_backend: loaded Vulkan backend from C:\Vibe Coding\LittleMore\engine\build\bin\ggml-vulkan.dll
-load_backend: loaded CPU backend from C:\Vibe Coding\LittleMore\engine\build\bin\ggml-cpu-alderlake.dll
+load_backend: loaded Vulkan backend from engine\build\bin\ggml-vulkan.dll
+load_backend: loaded CPU backend from engine\build\bin\ggml-cpu-alderlake.dll
 LITTLEBIT  d_in= 3072 d_out= 1024 r= 256 r2= 256 n=   9  layers= 64:       86.6 us/op    0.44 TFLOPS (work)    0.65 TFLOPS (dense-equivalent)
 LITTLEBIT  d_in= 3072 d_out= 1024 r= 256 r2= 256 n=  12  layers= 64:       95.9 us/op    0.53 TFLOPS (work)    0.79 TFLOPS (dense-equivalent)
 LITTLEBIT  d_in= 3072 d_out= 1024 r= 256 r2= 256 n=  16  layers= 64:       78.5 us/op    0.85 TFLOPS (work)    1.28 TFLOPS (dense-equivalent)
@@ -120,12 +120,12 @@ LITTLEBIT  d_in= 3072 d_out= 1024 r= 256 r2= 256 n= 112  layers= 64:      161.1 
 LITTLEBIT  d_in= 3072 d_out= 1024 r= 256 r2= 256 n= 128  layers= 64:      170.0 us/op    3.16 TFLOPS (work)    4.74 TFLOPS (dense-equivalent)
 ggml_cuda_init: found 1 CUDA devices (Total VRAM: 6140 MiB):
   Device 0: NVIDIA GeForce RTX 4050 Laptop GPU, compute capability 8.9, VMM: yes, VRAM: 6140 MiB
-load_backend: loaded CUDA backend from C:\Vibe Coding\LittleMore\engine\build\bin\ggml-cuda.dll
+load_backend: loaded CUDA backend from engine\build\bin\ggml-cuda.dll
 ggml_vulkan: Found 2 Vulkan devices:
 ggml_vulkan: 0 = NVIDIA GeForce RTX 4050 Laptop GPU (NVIDIA) | uma: 0 | rebar: 1 | fp16: 1 | bf16: 1 | fp4: 0 | warp size: 32 | shared memory: 49152 | int dot: 1 | matrix cores: NV_coopmat2
 ggml_vulkan: 1 = Intel(R) UHD Graphics (Intel Corporation) | uma: 1 | rebar: 1 | fp16: 1 | bf16: 0 | fp4: 0 | warp size: 32 | shared memory: 32768 | int dot: 1 | matrix cores: none
-load_backend: loaded Vulkan backend from C:\Vibe Coding\LittleMore\engine\build\bin\ggml-vulkan.dll
-load_backend: loaded CPU backend from C:\Vibe Coding\LittleMore\engine\build\bin\ggml-cpu-alderlake.dll
+load_backend: loaded Vulkan backend from engine\build\bin\ggml-vulkan.dll
+load_backend: loaded CPU backend from engine\build\bin\ggml-cpu-alderlake.dll
 LITTLEBIT  d_in= 2048 d_out= 2048 r= 384 r2= 384 n=   9  layers= 64:      116.4 us/op    0.49 TFLOPS (work)    0.65 TFLOPS (dense-equivalent)
 LITTLEBIT  d_in= 2048 d_out= 2048 r= 384 r2= 384 n=  12  layers= 64:      139.5 us/op    0.54 TFLOPS (work)    0.72 TFLOPS (dense-equivalent)
 LITTLEBIT  d_in= 2048 d_out= 2048 r= 384 r2= 384 n=  16  layers= 64:      167.0 us/op    0.60 TFLOPS (work)    0.80 TFLOPS (dense-equivalent)
@@ -144,12 +144,12 @@ LITTLEBIT  d_in= 2048 d_out= 2048 r= 384 r2= 384 n= 112  layers= 64:      291.1 
 LITTLEBIT  d_in= 2048 d_out= 2048 r= 384 r2= 384 n= 128  layers= 64:      305.4 us/op    2.64 TFLOPS (work)    3.52 TFLOPS (dense-equivalent)
 ggml_cuda_init: found 1 CUDA devices (Total VRAM: 6140 MiB):
   Device 0: NVIDIA GeForce RTX 4050 Laptop GPU, compute capability 8.9, VMM: yes, VRAM: 6140 MiB
-load_backend: loaded CUDA backend from C:\Vibe Coding\LittleMore\engine\build\bin\ggml-cuda.dll
+load_backend: loaded CUDA backend from engine\build\bin\ggml-cuda.dll
 ggml_vulkan: Found 2 Vulkan devices:
 ggml_vulkan: 0 = NVIDIA GeForce RTX 4050 Laptop GPU (NVIDIA) | uma: 0 | rebar: 1 | fp16: 1 | bf16: 1 | fp4: 0 | warp size: 32 | shared memory: 49152 | int dot: 1 | matrix cores: NV_coopmat2
 ggml_vulkan: 1 = Intel(R) UHD Graphics (Intel Corporation) | uma: 1 | rebar: 1 | fp16: 1 | bf16: 0 | fp4: 0 | warp size: 32 | shared memory: 32768 | int dot: 1 | matrix cores: none
-load_backend: loaded Vulkan backend from C:\Vibe Coding\LittleMore\engine\build\bin\ggml-vulkan.dll
-load_backend: loaded CPU backend from C:\Vibe Coding\LittleMore\engine\build\bin\ggml-cpu-alderlake.dll
+load_backend: loaded Vulkan backend from engine\build\bin\ggml-vulkan.dll
+load_backend: loaded CPU backend from engine\build\bin\ggml-cpu-alderlake.dll
 LITTLEBIT  d_in= 2048 d_out= 6144 r= 512 r2= 512 n=   9  layers= 61:      316.2 us/op    0.48 TFLOPS (work)    0.72 TFLOPS (dense-equivalent)
 LITTLEBIT  d_in= 2048 d_out= 6144 r= 512 r2= 512 n=  12  layers= 61:      414.2 us/op    0.49 TFLOPS (work)    0.73 TFLOPS (dense-equivalent)
 LITTLEBIT  d_in= 2048 d_out= 6144 r= 512 r2= 512 n=  16  layers= 61:      485.1 us/op    0.55 TFLOPS (work)    0.83 TFLOPS (dense-equivalent)
@@ -168,12 +168,12 @@ LITTLEBIT  d_in= 2048 d_out= 6144 r= 512 r2= 512 n= 112  layers= 61:      764.3 
 LITTLEBIT  d_in= 2048 d_out= 6144 r= 512 r2= 512 n= 128  layers= 61:      803.3 us/op    2.67 TFLOPS (work)    4.01 TFLOPS (dense-equivalent)
 ggml_cuda_init: found 1 CUDA devices (Total VRAM: 6140 MiB):
   Device 0: NVIDIA GeForce RTX 4050 Laptop GPU, compute capability 8.9, VMM: yes, VRAM: 6140 MiB
-load_backend: loaded CUDA backend from C:\Vibe Coding\LittleMore\engine\build\bin\ggml-cuda.dll
+load_backend: loaded CUDA backend from engine\build\bin\ggml-cuda.dll
 ggml_vulkan: Found 2 Vulkan devices:
 ggml_vulkan: 0 = NVIDIA GeForce RTX 4050 Laptop GPU (NVIDIA) | uma: 0 | rebar: 1 | fp16: 1 | bf16: 1 | fp4: 0 | warp size: 32 | shared memory: 49152 | int dot: 1 | matrix cores: NV_coopmat2
 ggml_vulkan: 1 = Intel(R) UHD Graphics (Intel Corporation) | uma: 1 | rebar: 1 | fp16: 1 | bf16: 0 | fp4: 0 | warp size: 32 | shared memory: 32768 | int dot: 1 | matrix cores: none
-load_backend: loaded Vulkan backend from C:\Vibe Coding\LittleMore\engine\build\bin\ggml-vulkan.dll
-load_backend: loaded CPU backend from C:\Vibe Coding\LittleMore\engine\build\bin\ggml-cpu-alderlake.dll
+load_backend: loaded Vulkan backend from engine\build\bin\ggml-vulkan.dll
+load_backend: loaded CPU backend from engine\build\bin\ggml-cpu-alderlake.dll
 LITTLEBIT  d_in= 6144 d_out= 2048 r= 512 r2= 512 n=   9  layers= 61:      308.0 us/op    0.49 TFLOPS (work)    0.74 TFLOPS (dense-equivalent)
 LITTLEBIT  d_in= 6144 d_out= 2048 r= 512 r2= 512 n=  12  layers= 61:      362.5 us/op    0.56 TFLOPS (work)    0.83 TFLOPS (dense-equivalent)
 LITTLEBIT  d_in= 6144 d_out= 2048 r= 512 r2= 512 n=  16  layers= 61:      420.6 us/op    0.64 TFLOPS (work)    0.96 TFLOPS (dense-equivalent)
@@ -192,12 +192,12 @@ LITTLEBIT  d_in= 6144 d_out= 2048 r= 512 r2= 512 n= 112  layers= 61:      688.1 
 LITTLEBIT  d_in= 6144 d_out= 2048 r= 512 r2= 512 n= 128  layers= 61:      684.6 us/op    3.14 TFLOPS (work)    4.71 TFLOPS (dense-equivalent)
 ggml_cuda_init: found 1 CUDA devices (Total VRAM: 6140 MiB):
   Device 0: NVIDIA GeForce RTX 4050 Laptop GPU, compute capability 8.9, VMM: yes, VRAM: 6140 MiB
-load_backend: loaded CUDA backend from C:\Vibe Coding\LittleMore\engine\build\bin\ggml-cuda.dll
+load_backend: loaded CUDA backend from engine\build\bin\ggml-cuda.dll
 ggml_vulkan: Found 2 Vulkan devices:
 ggml_vulkan: 0 = NVIDIA GeForce RTX 4050 Laptop GPU (NVIDIA) | uma: 0 | rebar: 1 | fp16: 1 | bf16: 1 | fp4: 0 | warp size: 32 | shared memory: 49152 | int dot: 1 | matrix cores: NV_coopmat2
 ggml_vulkan: 1 = Intel(R) UHD Graphics (Intel Corporation) | uma: 1 | rebar: 1 | fp16: 1 | bf16: 0 | fp4: 0 | warp size: 32 | shared memory: 32768 | int dot: 1 | matrix cores: none
-load_backend: loaded Vulkan backend from C:\Vibe Coding\LittleMore\engine\build\bin\ggml-vulkan.dll
-load_backend: loaded CPU backend from C:\Vibe Coding\LittleMore\engine\build\bin\ggml-cpu-alderlake.dll
+load_backend: loaded Vulkan backend from engine\build\bin\ggml-vulkan.dll
+load_backend: loaded CPU backend from engine\build\bin\ggml-cpu-alderlake.dll
 LITTLEBIT  d_in= 2560 d_out= 4096 r= 512 r2= 512 n=   9  layers= 64:      268.8 us/op    0.46 TFLOPS (work)    0.70 TFLOPS (dense-equivalent)
 LITTLEBIT  d_in= 2560 d_out= 4096 r= 512 r2= 512 n=  12  layers= 64:      330.0 us/op    0.50 TFLOPS (work)    0.76 TFLOPS (dense-equivalent)
 LITTLEBIT  d_in= 2560 d_out= 4096 r= 512 r2= 512 n=  16  layers= 64:      384.9 us/op    0.57 TFLOPS (work)    0.87 TFLOPS (dense-equivalent)
@@ -216,12 +216,12 @@ LITTLEBIT  d_in= 2560 d_out= 4096 r= 512 r2= 512 n= 112  layers= 64:      599.6 
 LITTLEBIT  d_in= 2560 d_out= 4096 r= 512 r2= 512 n= 128  layers= 64:      636.4 us/op    2.74 TFLOPS (work)    4.22 TFLOPS (dense-equivalent)
 ggml_cuda_init: found 1 CUDA devices (Total VRAM: 6140 MiB):
   Device 0: NVIDIA GeForce RTX 4050 Laptop GPU, compute capability 8.9, VMM: yes, VRAM: 6140 MiB
-load_backend: loaded CUDA backend from C:\Vibe Coding\LittleMore\engine\build\bin\ggml-cuda.dll
+load_backend: loaded CUDA backend from engine\build\bin\ggml-cuda.dll
 ggml_vulkan: Found 2 Vulkan devices:
 ggml_vulkan: 0 = NVIDIA GeForce RTX 4050 Laptop GPU (NVIDIA) | uma: 0 | rebar: 1 | fp16: 1 | bf16: 1 | fp4: 0 | warp size: 32 | shared memory: 49152 | int dot: 1 | matrix cores: NV_coopmat2
 ggml_vulkan: 1 = Intel(R) UHD Graphics (Intel Corporation) | uma: 1 | rebar: 1 | fp16: 1 | bf16: 0 | fp4: 0 | warp size: 32 | shared memory: 32768 | int dot: 1 | matrix cores: none
-load_backend: loaded Vulkan backend from C:\Vibe Coding\LittleMore\engine\build\bin\ggml-vulkan.dll
-load_backend: loaded CPU backend from C:\Vibe Coding\LittleMore\engine\build\bin\ggml-cpu-alderlake.dll
+load_backend: loaded Vulkan backend from engine\build\bin\ggml-vulkan.dll
+load_backend: loaded CPU backend from engine\build\bin\ggml-cpu-alderlake.dll
 LITTLEBIT  d_in= 2560 d_out= 1024 r= 256 r2= 256 n=   9  layers= 64:       78.1 us/op    0.42 TFLOPS (work)    0.60 TFLOPS (dense-equivalent)
 LITTLEBIT  d_in= 2560 d_out= 1024 r= 256 r2= 256 n=  12  layers= 64:       83.9 us/op    0.53 TFLOPS (work)    0.75 TFLOPS (dense-equivalent)
 LITTLEBIT  d_in= 2560 d_out= 1024 r= 256 r2= 256 n=  16  layers= 64:       74.1 us/op    0.79 TFLOPS (work)    1.13 TFLOPS (dense-equivalent)
@@ -240,12 +240,12 @@ LITTLEBIT  d_in= 2560 d_out= 1024 r= 256 r2= 256 n= 112  layers= 64:      144.0 
 LITTLEBIT  d_in= 2560 d_out= 1024 r= 256 r2= 256 n= 128  layers= 64:      147.9 us/op    3.18 TFLOPS (work)    4.54 TFLOPS (dense-equivalent)
 ggml_cuda_init: found 1 CUDA devices (Total VRAM: 6140 MiB):
   Device 0: NVIDIA GeForce RTX 4050 Laptop GPU, compute capability 8.9, VMM: yes, VRAM: 6140 MiB
-load_backend: loaded CUDA backend from C:\Vibe Coding\LittleMore\engine\build\bin\ggml-cuda.dll
+load_backend: loaded CUDA backend from engine\build\bin\ggml-cuda.dll
 ggml_vulkan: Found 2 Vulkan devices:
 ggml_vulkan: 0 = NVIDIA GeForce RTX 4050 Laptop GPU (NVIDIA) | uma: 0 | rebar: 1 | fp16: 1 | bf16: 1 | fp4: 0 | warp size: 32 | shared memory: 49152 | int dot: 1 | matrix cores: NV_coopmat2
 ggml_vulkan: 1 = Intel(R) UHD Graphics (Intel Corporation) | uma: 1 | rebar: 1 | fp16: 1 | bf16: 0 | fp4: 0 | warp size: 32 | shared memory: 32768 | int dot: 1 | matrix cores: none
-load_backend: loaded Vulkan backend from C:\Vibe Coding\LittleMore\engine\build\bin\ggml-vulkan.dll
-load_backend: loaded CPU backend from C:\Vibe Coding\LittleMore\engine\build\bin\ggml-cpu-alderlake.dll
+load_backend: loaded Vulkan backend from engine\build\bin\ggml-vulkan.dll
+load_backend: loaded CPU backend from engine\build\bin\ggml-cpu-alderlake.dll
 LITTLEBIT  d_in= 4096 d_out= 2560 r= 512 r2= 512 n=   9  layers= 64:      253.8 us/op    0.48 TFLOPS (work)    0.74 TFLOPS (dense-equivalent)
 LITTLEBIT  d_in= 4096 d_out= 2560 r= 512 r2= 512 n=  12  layers= 64:      311.2 us/op    0.53 TFLOPS (work)    0.81 TFLOPS (dense-equivalent)
 LITTLEBIT  d_in= 4096 d_out= 2560 r= 512 r2= 512 n=  16  layers= 64:      369.5 us/op    0.59 TFLOPS (work)    0.91 TFLOPS (dense-equivalent)
@@ -264,12 +264,12 @@ LITTLEBIT  d_in= 4096 d_out= 2560 r= 512 r2= 512 n= 112  layers= 64:      501.2 
 LITTLEBIT  d_in= 4096 d_out= 2560 r= 512 r2= 512 n= 128  layers= 64:      503.2 us/op    3.47 TFLOPS (work)    5.33 TFLOPS (dense-equivalent)
 ggml_cuda_init: found 1 CUDA devices (Total VRAM: 6140 MiB):
   Device 0: NVIDIA GeForce RTX 4050 Laptop GPU, compute capability 8.9, VMM: yes, VRAM: 6140 MiB
-load_backend: loaded CUDA backend from C:\Vibe Coding\LittleMore\engine\build\bin\ggml-cuda.dll
+load_backend: loaded CUDA backend from engine\build\bin\ggml-cuda.dll
 ggml_vulkan: Found 2 Vulkan devices:
 ggml_vulkan: 0 = NVIDIA GeForce RTX 4050 Laptop GPU (NVIDIA) | uma: 0 | rebar: 1 | fp16: 1 | bf16: 1 | fp4: 0 | warp size: 32 | shared memory: 49152 | int dot: 1 | matrix cores: NV_coopmat2
 ggml_vulkan: 1 = Intel(R) UHD Graphics (Intel Corporation) | uma: 1 | rebar: 1 | fp16: 1 | bf16: 0 | fp4: 0 | warp size: 32 | shared memory: 32768 | int dot: 1 | matrix cores: none
-load_backend: loaded Vulkan backend from C:\Vibe Coding\LittleMore\engine\build\bin\ggml-vulkan.dll
-load_backend: loaded CPU backend from C:\Vibe Coding\LittleMore\engine\build\bin\ggml-cpu-alderlake.dll
+load_backend: loaded Vulkan backend from engine\build\bin\ggml-vulkan.dll
+load_backend: loaded CPU backend from engine\build\bin\ggml-cpu-alderlake.dll
 LITTLEBIT  d_in= 2560 d_out= 9728 r= 640 r2= 640 n=   9  layers= 33:      633.3 us/op    0.45 TFLOPS (work)    0.71 TFLOPS (dense-equivalent)
 LITTLEBIT  d_in= 2560 d_out= 9728 r= 640 r2= 640 n=  12  layers= 33:      807.1 us/op    0.47 TFLOPS (work)    0.74 TFLOPS (dense-equivalent)
 LITTLEBIT  d_in= 2560 d_out= 9728 r= 640 r2= 640 n=  16  layers= 33:      935.9 us/op    0.54 TFLOPS (work)    0.85 TFLOPS (dense-equivalent)
@@ -288,12 +288,12 @@ LITTLEBIT  d_in= 2560 d_out= 9728 r= 640 r2= 640 n= 112  layers= 33:     1345.0 
 LITTLEBIT  d_in= 2560 d_out= 9728 r= 640 r2= 640 n= 128  layers= 33:     1354.4 us/op    2.97 TFLOPS (work)    4.71 TFLOPS (dense-equivalent)
 ggml_cuda_init: found 1 CUDA devices (Total VRAM: 6140 MiB):
   Device 0: NVIDIA GeForce RTX 4050 Laptop GPU, compute capability 8.9, VMM: yes, VRAM: 6140 MiB
-load_backend: loaded CUDA backend from C:\Vibe Coding\LittleMore\engine\build\bin\ggml-cuda.dll
+load_backend: loaded CUDA backend from engine\build\bin\ggml-cuda.dll
 ggml_vulkan: Found 2 Vulkan devices:
 ggml_vulkan: 0 = NVIDIA GeForce RTX 4050 Laptop GPU (NVIDIA) | uma: 0 | rebar: 1 | fp16: 1 | bf16: 1 | fp4: 0 | warp size: 32 | shared memory: 49152 | int dot: 1 | matrix cores: NV_coopmat2
 ggml_vulkan: 1 = Intel(R) UHD Graphics (Intel Corporation) | uma: 1 | rebar: 1 | fp16: 1 | bf16: 0 | fp4: 0 | warp size: 32 | shared memory: 32768 | int dot: 1 | matrix cores: none
-load_backend: loaded Vulkan backend from C:\Vibe Coding\LittleMore\engine\build\bin\ggml-vulkan.dll
-load_backend: loaded CPU backend from C:\Vibe Coding\LittleMore\engine\build\bin\ggml-cpu-alderlake.dll
+load_backend: loaded Vulkan backend from engine\build\bin\ggml-vulkan.dll
+load_backend: loaded CPU backend from engine\build\bin\ggml-cpu-alderlake.dll
 LITTLEBIT  d_in= 9728 d_out= 2560 r= 640 r2= 640 n=   9  layers= 33:      550.1 us/op    0.51 TFLOPS (work)    0.81 TFLOPS (dense-equivalent)
 LITTLEBIT  d_in= 9728 d_out= 2560 r= 640 r2= 640 n=  12  layers= 33:      597.5 us/op    0.63 TFLOPS (work)    1.00 TFLOPS (dense-equivalent)
 LITTLEBIT  d_in= 9728 d_out= 2560 r= 640 r2= 640 n=  16  layers= 33:      633.0 us/op    0.80 TFLOPS (work)    1.26 TFLOPS (dense-equivalent)
@@ -312,12 +312,12 @@ LITTLEBIT  d_in= 9728 d_out= 2560 r= 640 r2= 640 n= 112  layers= 33:     1103.9 
 LITTLEBIT  d_in= 9728 d_out= 2560 r= 640 r2= 640 n= 128  layers= 33:     1143.9 us/op    3.52 TFLOPS (work)    5.57 TFLOPS (dense-equivalent)
 ggml_cuda_init: found 1 CUDA devices (Total VRAM: 6140 MiB):
   Device 0: NVIDIA GeForce RTX 4050 Laptop GPU, compute capability 8.9, VMM: yes, VRAM: 6140 MiB
-load_backend: loaded CUDA backend from C:\Vibe Coding\LittleMore\engine\build\bin\ggml-cuda.dll
+load_backend: loaded CUDA backend from engine\build\bin\ggml-cuda.dll
 ggml_vulkan: Found 2 Vulkan devices:
 ggml_vulkan: 0 = NVIDIA GeForce RTX 4050 Laptop GPU (NVIDIA) | uma: 0 | rebar: 1 | fp16: 1 | bf16: 1 | fp4: 0 | warp size: 32 | shared memory: 49152 | int dot: 1 | matrix cores: NV_coopmat2
 ggml_vulkan: 1 = Intel(R) UHD Graphics (Intel Corporation) | uma: 1 | rebar: 1 | fp16: 1 | bf16: 0 | fp4: 0 | warp size: 32 | shared memory: 32768 | int dot: 1 | matrix cores: none
-load_backend: loaded Vulkan backend from C:\Vibe Coding\LittleMore\engine\build\bin\ggml-vulkan.dll
-load_backend: loaded CPU backend from C:\Vibe Coding\LittleMore\engine\build\bin\ggml-cpu-alderlake.dll
+load_backend: loaded Vulkan backend from engine\build\bin\ggml-vulkan.dll
+load_backend: loaded CPU backend from engine\build\bin\ggml-cpu-alderlake.dll
 LITTLEBIT  d_in= 4096 d_out= 4096 r= 640 r2= 640 n=   9  layers= 49:      428.2 us/op    0.44 TFLOPS (work)    0.71 TFLOPS (dense-equivalent)
 LITTLEBIT  d_in= 4096 d_out= 4096 r= 640 r2= 640 n=  12  layers= 49:      538.2 us/op    0.47 TFLOPS (work)    0.75 TFLOPS (dense-equivalent)
 LITTLEBIT  d_in= 4096 d_out= 4096 r= 640 r2= 640 n=  16  layers= 49:      602.8 us/op    0.56 TFLOPS (work)    0.89 TFLOPS (dense-equivalent)
@@ -336,12 +336,12 @@ LITTLEBIT  d_in= 4096 d_out= 4096 r= 640 r2= 640 n= 112  layers= 49:      863.4 
 LITTLEBIT  d_in= 4096 d_out= 4096 r= 640 r2= 640 n= 128  layers= 49:      873.1 us/op    3.07 TFLOPS (work)    4.92 TFLOPS (dense-equivalent)
 ggml_cuda_init: found 1 CUDA devices (Total VRAM: 6140 MiB):
   Device 0: NVIDIA GeForce RTX 4050 Laptop GPU, compute capability 8.9, VMM: yes, VRAM: 6140 MiB
-load_backend: loaded CUDA backend from C:\Vibe Coding\LittleMore\engine\build\bin\ggml-cuda.dll
+load_backend: loaded CUDA backend from engine\build\bin\ggml-cuda.dll
 ggml_vulkan: Found 2 Vulkan devices:
 ggml_vulkan: 0 = NVIDIA GeForce RTX 4050 Laptop GPU (NVIDIA) | uma: 0 | rebar: 1 | fp16: 1 | bf16: 1 | fp4: 0 | warp size: 32 | shared memory: 49152 | int dot: 1 | matrix cores: NV_coopmat2
 ggml_vulkan: 1 = Intel(R) UHD Graphics (Intel Corporation) | uma: 1 | rebar: 1 | fp16: 1 | bf16: 0 | fp4: 0 | warp size: 32 | shared memory: 32768 | int dot: 1 | matrix cores: none
-load_backend: loaded Vulkan backend from C:\Vibe Coding\LittleMore\engine\build\bin\ggml-vulkan.dll
-load_backend: loaded CPU backend from C:\Vibe Coding\LittleMore\engine\build\bin\ggml-cpu-alderlake.dll
+load_backend: loaded Vulkan backend from engine\build\bin\ggml-vulkan.dll
+load_backend: loaded CPU backend from engine\build\bin\ggml-cpu-alderlake.dll
 LITTLEBIT  d_in= 4096 d_out= 1024 r= 256 r2= 256 n=   9  layers= 64:      104.3 us/op    0.45 TFLOPS (work)    0.72 TFLOPS (dense-equivalent)
 LITTLEBIT  d_in= 4096 d_out= 1024 r= 256 r2= 256 n=  12  layers= 64:      116.1 us/op    0.54 TFLOPS (work)    0.87 TFLOPS (dense-equivalent)
 LITTLEBIT  d_in= 4096 d_out= 1024 r= 256 r2= 256 n=  16  layers= 64:       92.9 us/op    0.90 TFLOPS (work)    1.44 TFLOPS (dense-equivalent)
@@ -360,12 +360,12 @@ LITTLEBIT  d_in= 4096 d_out= 1024 r= 256 r2= 256 n= 112  layers= 64:      256.9 
 LITTLEBIT  d_in= 4096 d_out= 1024 r= 256 r2= 256 n= 128  layers= 64:      254.1 us/op    2.64 TFLOPS (work)    4.23 TFLOPS (dense-equivalent)
 ggml_cuda_init: found 1 CUDA devices (Total VRAM: 6140 MiB):
   Device 0: NVIDIA GeForce RTX 4050 Laptop GPU, compute capability 8.9, VMM: yes, VRAM: 6140 MiB
-load_backend: loaded CUDA backend from C:\Vibe Coding\LittleMore\engine\build\bin\ggml-cuda.dll
+load_backend: loaded CUDA backend from engine\build\bin\ggml-cuda.dll
 ggml_vulkan: Found 2 Vulkan devices:
 ggml_vulkan: 0 = NVIDIA GeForce RTX 4050 Laptop GPU (NVIDIA) | uma: 0 | rebar: 1 | fp16: 1 | bf16: 1 | fp4: 0 | warp size: 32 | shared memory: 49152 | int dot: 1 | matrix cores: NV_coopmat2
 ggml_vulkan: 1 = Intel(R) UHD Graphics (Intel Corporation) | uma: 1 | rebar: 1 | fp16: 1 | bf16: 0 | fp4: 0 | warp size: 32 | shared memory: 32768 | int dot: 1 | matrix cores: none
-load_backend: loaded Vulkan backend from C:\Vibe Coding\LittleMore\engine\build\bin\ggml-vulkan.dll
-load_backend: loaded CPU backend from C:\Vibe Coding\LittleMore\engine\build\bin\ggml-cpu-alderlake.dll
+load_backend: loaded Vulkan backend from engine\build\bin\ggml-vulkan.dll
+load_backend: loaded CPU backend from engine\build\bin\ggml-cpu-alderlake.dll
 LITTLEBIT  d_in= 4096 d_out=14336 r= 896 r2= 896 n=   9  layers= 16:     1174.1 us/op    0.51 TFLOPS (work)    0.90 TFLOPS (dense-equivalent)
 LITTLEBIT  d_in= 4096 d_out=14336 r= 896 r2= 896 n=  12  layers= 16:     1219.0 us/op    0.65 TFLOPS (work)    1.16 TFLOPS (dense-equivalent)
 LITTLEBIT  d_in= 4096 d_out=14336 r= 896 r2= 896 n=  16  layers= 16:     1319.7 us/op    0.80 TFLOPS (work)    1.42 TFLOPS (dense-equivalent)
@@ -384,12 +384,12 @@ LITTLEBIT  d_in= 4096 d_out=14336 r= 896 r2= 896 n= 112  layers= 16:     2850.3 
 LITTLEBIT  d_in= 4096 d_out=14336 r= 896 r2= 896 n= 128  layers= 16:     2805.7 us/op    3.01 TFLOPS (work)    5.36 TFLOPS (dense-equivalent)
 ggml_cuda_init: found 1 CUDA devices (Total VRAM: 6140 MiB):
   Device 0: NVIDIA GeForce RTX 4050 Laptop GPU, compute capability 8.9, VMM: yes, VRAM: 6140 MiB
-load_backend: loaded CUDA backend from C:\Vibe Coding\LittleMore\engine\build\bin\ggml-cuda.dll
+load_backend: loaded CUDA backend from engine\build\bin\ggml-cuda.dll
 ggml_vulkan: Found 2 Vulkan devices:
 ggml_vulkan: 0 = NVIDIA GeForce RTX 4050 Laptop GPU (NVIDIA) | uma: 0 | rebar: 1 | fp16: 1 | bf16: 1 | fp4: 0 | warp size: 32 | shared memory: 49152 | int dot: 1 | matrix cores: NV_coopmat2
 ggml_vulkan: 1 = Intel(R) UHD Graphics (Intel Corporation) | uma: 1 | rebar: 1 | fp16: 1 | bf16: 0 | fp4: 0 | warp size: 32 | shared memory: 32768 | int dot: 1 | matrix cores: none
-load_backend: loaded Vulkan backend from C:\Vibe Coding\LittleMore\engine\build\bin\ggml-vulkan.dll
-load_backend: loaded CPU backend from C:\Vibe Coding\LittleMore\engine\build\bin\ggml-cpu-alderlake.dll
+load_backend: loaded Vulkan backend from engine\build\bin\ggml-vulkan.dll
+load_backend: loaded CPU backend from engine\build\bin\ggml-cpu-alderlake.dll
 LITTLEBIT  d_in=14336 d_out= 4096 r= 896 r2= 896 n=   9  layers= 16:     1299.1 us/op    0.46 TFLOPS (work)    0.81 TFLOPS (dense-equivalent)
 LITTLEBIT  d_in=14336 d_out= 4096 r= 896 r2= 896 n=  12  layers= 16:     1265.0 us/op    0.63 TFLOPS (work)    1.11 TFLOPS (dense-equivalent)
 LITTLEBIT  d_in=14336 d_out= 4096 r= 896 r2= 896 n=  16  layers= 16:     1348.9 us/op    0.78 TFLOPS (work)    1.39 TFLOPS (dense-equivalent)
@@ -408,12 +408,12 @@ LITTLEBIT  d_in=14336 d_out= 4096 r= 896 r2= 896 n= 112  layers= 16:     2385.5 
 LITTLEBIT  d_in=14336 d_out= 4096 r= 896 r2= 896 n= 128  layers= 16:     2478.0 us/op    3.41 TFLOPS (work)    6.07 TFLOPS (dense-equivalent)
 ggml_cuda_init: found 1 CUDA devices (Total VRAM: 6140 MiB):
   Device 0: NVIDIA GeForce RTX 4050 Laptop GPU, compute capability 8.9, VMM: yes, VRAM: 6140 MiB
-load_backend: loaded CUDA backend from C:\Vibe Coding\LittleMore\engine\build\bin\ggml-cuda.dll
+load_backend: loaded CUDA backend from engine\build\bin\ggml-cuda.dll
 ggml_vulkan: Found 2 Vulkan devices:
 ggml_vulkan: 0 = NVIDIA GeForce RTX 4050 Laptop GPU (NVIDIA) | uma: 0 | rebar: 1 | fp16: 1 | bf16: 1 | fp4: 0 | warp size: 32 | shared memory: 49152 | int dot: 1 | matrix cores: NV_coopmat2
 ggml_vulkan: 1 = Intel(R) UHD Graphics (Intel Corporation) | uma: 1 | rebar: 1 | fp16: 1 | bf16: 0 | fp4: 0 | warp size: 32 | shared memory: 32768 | int dot: 1 | matrix cores: none
-load_backend: loaded Vulkan backend from C:\Vibe Coding\LittleMore\engine\build\bin\ggml-vulkan.dll
-load_backend: loaded CPU backend from C:\Vibe Coding\LittleMore\engine\build\bin\ggml-cpu-alderlake.dll
+load_backend: loaded Vulkan backend from engine\build\bin\ggml-vulkan.dll
+load_backend: loaded CPU backend from engine\build\bin\ggml-cpu-alderlake.dll
 LITTLEBIT  d_in= 1024 d_out= 1024 r= 256 r2= 128 n=   9  layers= 64:       38.1 us/op    0.37 TFLOPS (work)    0.50 TFLOPS (dense-equivalent)
 LITTLEBIT  d_in= 1024 d_out= 1024 r= 256 r2= 128 n=  12  layers= 64:       41.4 us/op    0.46 TFLOPS (work)    0.61 TFLOPS (dense-equivalent)
 LITTLEBIT  d_in= 1024 d_out= 1024 r= 256 r2= 128 n=  16  layers= 64:       41.6 us/op    0.61 TFLOPS (work)    0.81 TFLOPS (dense-equivalent)

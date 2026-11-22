@@ -1,6 +1,6 @@
 """The `littlemore` command line: `convert`, `run` and `bench`.
 
-    littlemore convert CHECKPOINT_DIR -o model.gguf     LittleBit checkpoint -> GGUF (source checkout only)
+    littlemore convert --repo CHECKOUT CHECKPOINT_DIR -o model.gguf   LittleBit checkpoint -> GGUF (needs a source checkout)
     littlemore run model.gguf                           chat in the terminal (or --prompt "..." for one answer)
     littlemore bench model.gguf                         quick speed measurement through the SDK
 
@@ -17,6 +17,7 @@ from __future__ import annotations
 import argparse
 import importlib
 import json
+import os
 import statistics
 import sys
 import time
@@ -69,28 +70,54 @@ def _open_model(a: argparse.Namespace, n_ctx: int | None = None) -> "Model":
 # --------------------------------------------------------------------------------------------------------------
 # convert
 # --------------------------------------------------------------------------------------------------------------
-def _find_converter() -> tuple[Path | None, list[Path]]:
-    """Locate `tools/convert/lb_to_gguf.py`: first in the source checkout this package lives in, then in the working
-    directory (running from the repository root). Returns (repository root or None, the roots that were searched)."""
-    roots = [_lib._REPO_ROOT, Path.cwd()]
-    for root in roots:
-        if (root / "tools" / "convert" / "lb_to_gguf.py").is_file():
-            return root, roots
-    return None, roots
+def _looks_like_repo(root: Path) -> bool:
+    """True when `root` looks like the LittleMore source repository (converter, public header and its CMake project)."""
+    cmake = root / "CMakeLists.txt"
+    try:
+        return ((root / "tools" / "convert" / "lb_to_gguf.py").is_file() and (root / "include" / "littlemore.h").is_file()
+                and cmake.is_file() and "project(littlemore" in cmake.read_text(encoding="utf-8", errors="replace"))
+    except OSError:
+        return False
+
+
+def _split_repo_option(argv: Sequence[str]) -> tuple[str | None, list[str]]:
+    """Take `--repo PATH` / `--repo=PATH` out of the converter's arguments. Returns (path or None, remaining arguments)."""
+    rest: list[str] = []
+    repo: str | None = None
+    it = iter(argv)
+    for arg in it:
+        if arg == "--repo":
+            repo = next(it, None)
+            if repo is None:
+                raise LittleMoreError("--repo needs a folder", None, "USAGE")
+        elif arg.startswith("--repo="):
+            repo = arg[len("--repo="):]
+        else:
+            rest.append(arg)
+    return repo, rest
 
 
 def _cmd_convert(argv: Sequence[str]) -> int:
-    """Forward `argv` to the repository's converter (`tools/convert/lb_to_gguf.py`), unchanged.
+    """Forward `argv` to the converter of a LittleMore source checkout, which must be named explicitly.
 
-    The converter is imported from the folder where its file was found, never from whatever `tools` package happens
-    to be first on `sys.path` (a generic name that other projects use too)."""
-    root, searched = _find_converter()
-    if root is None:
-        print("error: `littlemore convert` needs the converter script tools/convert/lb_to_gguf.py of the LittleMore "
-              "source repository, which the installed package does not include. It was not found under "
-              + " or ".join(str(r) for r in searched) + ". Run the command from a source checkout "
-              "(see docs/development.md).", file=sys.stderr)
+    The converter is Python code that gets executed, so it is never searched for in the working directory (a
+    folder you merely happen to be in could hold anything): pass `--repo PATH` or set LITTLEMORE_REPO, and the folder
+    must look like the LittleMore repository. The path used is printed. The converter is imported from that folder,
+    never from whatever `tools` package happens to be first on `sys.path` (a generic name that other projects use too)."""
+    repo_arg, argv = _split_repo_option(argv)
+    repo_arg = repo_arg or os.environ.get("LITTLEMORE_REPO")
+    if not repo_arg:
+        print("error: `littlemore convert` runs the converter of the LittleMore source repository, which the installed "
+              "package does not include. Name the checkout explicitly: `littlemore convert --repo PATH ...` or set "
+              "LITTLEMORE_REPO (it is deliberately not searched for in the current directory, because the converter "
+              "is code that gets executed). See docs/quickstart.md.", file=sys.stderr)
         return 1
+    root = Path(repo_arg).expanduser().resolve()
+    if not _looks_like_repo(root):
+        print(f"error: {root} does not look like the LittleMore repository (expected tools/convert/lb_to_gguf.py, "
+              "include/littlemore.h and a CMakeLists.txt that defines the project).", file=sys.stderr)
+        return 1
+    print(f"littlemore convert: using the converter of {root}", file=sys.stderr)
     script = (root / "tools" / "convert" / "lb_to_gguf.py").resolve()
     for name in [n for n in sys.modules if n == "tools" or n.startswith("tools.")]:
         mod_file = getattr(sys.modules[name], "__file__", None)

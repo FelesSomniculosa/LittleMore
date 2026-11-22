@@ -64,7 +64,10 @@ class build_py(_build_py):
 
 
 class bdist_wheel(_bdist_wheel):
-    """Platform-specific but Python-version independent wheel: py3-none-<platform>."""
+    """Platform-specific but Python-version independent wheel: py3-none-<platform>.
+
+    The platform part is whatever the build machine is (win_amd64, linux_x86_64, ...). A linux_x86_64 wheel cannot go
+    to PyPI (manylinux needs `auditwheel repair` in a manylinux container, not done yet); it is for local use and CI."""
 
     def finalize_options(self) -> None:
         """Mark the wheel as non-pure: it bundles native libraries, so it needs a platform tag and goes to platlib."""

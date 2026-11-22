@@ -172,7 +172,7 @@ def test_cli_convert_then_run(tmp_path: Path, lib_path: Path, monkeypatch) -> No
     except ImportError as e:  # pragma: no cover - missing torch/transformers
         pytest.skip(f"cannot build a tiny checkpoint: {e!r}")
     out = tmp_path / "tiny.gguf"
-    r = _cli("convert", str(ck), "-o", str(out))
+    r = _cli("convert", "--repo", str(ROOT), str(ck), "-o", str(out))
     assert r.returncode == 0, r.stderr[-2000:]
     assert out.stat().st_size > 10_000
     r = _cli("run", str(out), "--prompt", "Hello", "--max-tokens", "6", "--cpu-only")
@@ -781,27 +781,12 @@ def test_run_with_invalid_sampling_value_is_a_clean_usage_error(tiny_gguf: Path)
     assert r.returncode == 2 and "Traceback" not in r.stderr and "seed" in r.stderr, r.stderr[-500:]
 
 
-def test_convert_reports_precisely_what_is_missing(monkeypatch, tmp_path: Path, capsys) -> None:
-    from littlemore import cli
-    monkeypatch.setattr(_lib, "_REPO_ROOT", tmp_path / "no-repo")
-    monkeypatch.chdir(tmp_path)
-    assert cli._cmd_convert([]) == 1
-    err = capsys.readouterr().err
-    assert "tools" in err and "lb_to_gguf.py" in err and str(tmp_path / "no-repo") in err
-    # An unrelated `tools` package in the working directory is not mistaken for the converter.
-    (tmp_path / "tools").mkdir()
-    (tmp_path / "tools" / "__init__.py").write_text("", encoding="utf-8")
-    monkeypatch.syspath_prepend(str(tmp_path))
-    assert cli._cmd_convert([]) == 1
-    assert "lb_to_gguf.py" in capsys.readouterr().err
-
-
 @pytest.mark.smoke
 def test_convert_finds_the_converter_despite_an_unrelated_tools_package(tmp_path: Path, lib_path: Path) -> None:
     (tmp_path / "tools").mkdir()
     (tmp_path / "tools" / "__init__.py").write_text("raise SystemExit('the wrong tools package was imported')\n",
                                                     encoding="utf-8")
-    r = _cli("convert", "--help", cwd=tmp_path)  # `python -m` puts the working directory first on sys.path
+    r = _cli("convert", "--repo", str(ROOT), "--help", cwd=tmp_path)  # `python -m` puts the working directory first on sys.path
     assert r.returncode == 0 and "checkpoint" in r.stdout.lower(), (r.stdout + r.stderr)[-800:]
 
 
@@ -816,3 +801,55 @@ def test_licence_files_are_in_place() -> None:
     assert "Copyright (c) 2023-2026 The ggml authors" in notices
     meta = (PYDIR / "pyproject.toml").read_text(encoding="utf-8")
     assert 'license = "MIT"' in meta and "license-files" in meta and "THIRD_PARTY_NOTICES" in meta
+
+
+# --------------------------------------------------------------------------------------------------------------
+# `littlemore convert` never runs code from the current directory
+# --------------------------------------------------------------------------------------------------------------
+def _fake_repo(root: Path, marker: Path) -> Path:
+    """A folder that looks like the LittleMore repository whose converter only writes `marker` (and returns 0)."""
+    (root / "tools" / "convert").mkdir(parents=True)
+    (root / "include").mkdir()
+    (root / "include" / "littlemore.h").write_text("/* fake */\n")
+    (root / "CMakeLists.txt").write_text("project(littlemore)\n")
+    (root / "tools" / "convert" / "__init__.py").write_text("")
+    (root / "tools" / "convert" / "lb_to_gguf.py").write_text(
+        f"from pathlib import Path\ndef main(argv):\n    Path({str(marker)!r}).write_text(' '.join(argv))\n    return 0\n")
+    return root
+
+
+def test_convert_does_not_search_the_current_directory(tmp_path: Path, monkeypatch, capsys) -> None:
+    """A converter in the working directory is NOT executed; without --repo / LITTLEMORE_REPO the command refuses."""
+    from littlemore import cli
+    marker = tmp_path / "ran.txt"
+    _fake_repo(tmp_path / "cwd_repo", marker)
+    monkeypatch.chdir(tmp_path / "cwd_repo")
+    monkeypatch.delenv("LITTLEMORE_REPO", raising=False)
+    assert cli.main(["convert", "ckpt", "-o", "out.gguf"]) == 1
+    assert not marker.exists(), "code from the current directory was executed"
+    assert "--repo" in capsys.readouterr().err
+
+
+def test_convert_with_explicit_repo_runs_its_converter_and_names_it(tmp_path: Path, monkeypatch, capsys) -> None:
+    """`--repo PATH` (or LITTLEMORE_REPO) is used, the path is printed and the other arguments are forwarded."""
+    from littlemore import cli
+    marker = tmp_path / "ran.txt"
+    repo = _fake_repo(tmp_path / "repo", marker)
+    monkeypatch.chdir(tmp_path)
+    assert cli.main(["convert", "--repo", str(repo), "ckpt", "-o", "out.gguf"]) == 0
+    assert marker.read_text() == "ckpt -o out.gguf"
+    assert str(repo.resolve()) in capsys.readouterr().err
+    marker.unlink()
+    monkeypatch.setenv("LITTLEMORE_REPO", str(repo))
+    assert cli.main(["convert", "ckpt"]) == 0 and marker.read_text() == "ckpt"
+
+
+def test_convert_refuses_a_folder_that_is_not_the_repository(tmp_path: Path, capsys) -> None:
+    """A folder without the repository's marker files is refused, and nothing in it is executed."""
+    from littlemore import cli
+    marker = tmp_path / "ran.txt"
+    (tmp_path / "fake" / "tools" / "convert").mkdir(parents=True)
+    (tmp_path / "fake" / "tools" / "convert" / "lb_to_gguf.py").write_text(f"open({str(marker)!r}, 'w')\n")
+    assert cli.main(["convert", "--repo", str(tmp_path / "fake"), "ckpt"]) == 1
+    assert not marker.exists()
+    assert "does not look like" in capsys.readouterr().err

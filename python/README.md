@@ -27,7 +27,7 @@ littlemore run model.gguf                       # chat in the terminal (/exit, /
 littlemore run model.gguf --prompt "Hello"      # one answer, for scripts
 littlemore run model.gguf --cpu-only            # no GPU at all
 littlemore bench model.gguf                     # load time, first-piece latency, generation speed
-littlemore convert CHECKPOINT_DIR -o model.gguf # LittleBit checkpoint -> GGUF (source checkout only, see below)
+littlemore convert --repo CHECKOUT CHECKPOINT_DIR -o model.gguf  # LittleBit checkpoint -> GGUF (source checkout only, see below)
 ```
 
 ## What to know
@@ -73,6 +73,10 @@ python -m build --wheel --outdir dist python
 ```
 
 The result is `dist/littlemore-<version>-py3-none-<platform>.whl`: platform specific, independent of the Python version.
+On Linux the tag is `linux_x86_64`, which **PyPI does not accept** (it needs a `manylinux` tag, made by running
+`auditwheel repair` on a build from a manylinux container; not done yet): such a wheel is for local use and CI tests
+only. The libraries in the wheel find each other through an origin-relative RPATH (`$ORIGIN`, set in `CMakeLists.txt`);
+that has not been run on Linux by the maintainer yet, the CI job "Install the wheel and import it" is its first test.
 It carries `LICENSE` (MIT) and `THIRD_PARTY_NOTICES` (the llama.cpp / ggml licence for the bundled binaries) in its
 `dist-info/licenses/` folder.
 The files come from `build/bin` (override with `LITTLEMORE_BIN_DIR`).
@@ -80,9 +84,15 @@ In a source checkout the SDK uses the newer of `littlemore/_bin` and `build/bin`
 
 ## `littlemore convert`
 
-`convert` runs the converter of the source repository (`tools/convert/lb_to_gguf.py`) and passes all options through
-(`littlemore convert --help`). It needs PyTorch, transformers and the GGUF writer, which the wheel does not carry, so
-run it from a repository checkout with the development environment.
+`convert` runs the converter of the source repository (`tools/convert/lb_to_gguf.py`) and passes all other options
+through. You must name the checkout explicitly, with `--repo PATH` or the environment variable `LITTLEMORE_REPO`: the
+converter is code that gets executed, so it is never looked up in the current directory. The folder must look like the
+LittleMore repository, and the path used is printed. It needs PyTorch, transformers and the GGUF writer, which the
+wheel does not carry, so use the development environment of that checkout:
+
+```
+littlemore convert --repo /path/to/LittleMore CHECKPOINT_DIR -o model.gguf
+```
 
 ## Tests
 

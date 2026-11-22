@@ -1,7 +1,7 @@
 {
  "runs": [
   {
-   "file": "C:\\Vibe Coding\\LittleMore\\.cache\\gguf\\qwen3-0.6b-lb2-0.55-b1.gguf",
+   "file": ".cache\\gguf\\qwen3-0.6b-lb2-0.55-b1.gguf",
    "pp512_samples": [
     9978.17,
     7583.15,
@@ -17,7 +17,7 @@
    "round": 0
   },
   {
-   "file": "C:\\Vibe Coding\\LittleMore\\.cache\\gguf\\qwen3-0.6b-base-f16.gguf",
+   "file": ".cache\\gguf\\qwen3-0.6b-base-f16.gguf",
    "pp512_samples": [
     12211.4,
     11389.6,
@@ -29,7 +29,7 @@
    "round": 0
   },
   {
-   "file": "C:\\Vibe Coding\\LittleMore\\.cache\\gguf\\qwen3-1.7b-lb2-0.55-b1.gguf",
+   "file": ".cache\\gguf\\qwen3-1.7b-lb2-0.55-b1.gguf",
    "pp512_samples": [
     4136.92,
     3994.19,
@@ -45,7 +45,7 @@
    "round": 0
   },
   {
-   "file": "C:\\Vibe Coding\\LittleMore\\.cache\\gguf\\qwen3-1.7b-base-f16.gguf",
+   "file": ".cache\\gguf\\qwen3-1.7b-base-f16.gguf",
    "pp512_samples": [
     4788.27,
     5145.95,
@@ -61,7 +61,7 @@
    "round": 0
   },
   {
-   "file": "C:\\Vibe Coding\\LittleMore\\.cache\\gguf\\qwen3-0.6b-lb2-0.55-b1.gguf",
+   "file": ".cache\\gguf\\qwen3-0.6b-lb2-0.55-b1.gguf",
    "pp512_samples": [
     10719.8,
     10120.3,
@@ -77,7 +77,7 @@
    "round": 1
   },
   {
-   "file": "C:\\Vibe Coding\\LittleMore\\.cache\\gguf\\qwen3-0.6b-base-f16.gguf",
+   "file": ".cache\\gguf\\qwen3-0.6b-base-f16.gguf",
    "pp512_samples": [
     10961.0,
     10815.1,
@@ -93,7 +93,7 @@
    "round": 1
   },
   {
-   "file": "C:\\Vibe Coding\\LittleMore\\.cache\\gguf\\qwen3-1.7b-lb2-0.55-b1.gguf",
+   "file": ".cache\\gguf\\qwen3-1.7b-lb2-0.55-b1.gguf",
    "pp512_samples": [
     4356.61,
     4155.51,
@@ -109,7 +109,7 @@
    "round": 1
   },
   {
-   "file": "C:\\Vibe Coding\\LittleMore\\.cache\\gguf\\qwen3-1.7b-base-f16.gguf",
+   "file": ".cache\\gguf\\qwen3-1.7b-base-f16.gguf",
    "pp512_samples": [
     5749.18,
     4817.86,
@@ -125,7 +125,7 @@
    "round": 1
   },
   {
-   "file": "C:\\Vibe Coding\\LittleMore\\.cache\\gguf\\qwen3-0.6b-lb2-0.55-b1.gguf",
+   "file": ".cache\\gguf\\qwen3-0.6b-lb2-0.55-b1.gguf",
    "pp512_samples": [
     11227.2,
     10443.2,
@@ -141,7 +141,7 @@
    "round": 2
   },
   {
-   "file": "C:\\Vibe Coding\\LittleMore\\.cache\\gguf\\qwen3-0.6b-base-f16.gguf",
+   "file": ".cache\\gguf\\qwen3-0.6b-base-f16.gguf",
    "pp512_samples": [
     12126.1,
     11068.8,
@@ -153,7 +153,7 @@
    "round": 2
   },
   {
-   "file": "C:\\Vibe Coding\\LittleMore\\.cache\\gguf\\qwen3-1.7b-lb2-0.55-b1.gguf",
+   "file": ".cache\\gguf\\qwen3-1.7b-lb2-0.55-b1.gguf",
    "pp512_samples": [
     4774.98,
     4522.06,
@@ -169,7 +169,7 @@
    "round": 2
   },
   {
-   "file": "C:\\Vibe Coding\\LittleMore\\.cache\\gguf\\qwen3-1.7b-base-f16.gguf",
+   "file": ".cache\\gguf\\qwen3-1.7b-base-f16.gguf",
    "pp512_samples": [
     4925.68,
     4973.43,
@@ -185,7 +185,7 @@
    "round": 2
   },
   {
-   "file": "C:\\Vibe Coding\\LittleMore\\.cache\\gguf\\qwen3-0.6b-lb2-0.55-b1.gguf",
+   "file": ".cache\\gguf\\qwen3-0.6b-lb2-0.55-b1.gguf",
    "pp512_samples": [
     10986.8,
     10520.7,
@@ -201,7 +201,7 @@
    "round": 3
   },
   {
-   "file": "C:\\Vibe Coding\\LittleMore\\.cache\\gguf\\qwen3-0.6b-base-f16.gguf",
+   "file": ".cache\\gguf\\qwen3-0.6b-base-f16.gguf",
    "pp512_samples": [
     11729.0,
     11073.5,
@@ -217,7 +217,7 @@
    "round": 3
   },
   {
-   "file": "C:\\Vibe Coding\\LittleMore\\.cache\\gguf\\qwen3-1.7b-lb2-0.55-b1.gguf",
+   "file": ".cache\\gguf\\qwen3-1.7b-lb2-0.55-b1.gguf",
    "pp512_samples": [
     4444.94,
     4430.84,
@@ -233,7 +233,7 @@
    "round": 3
   },
   {
-   "file": "C:\\Vibe Coding\\LittleMore\\.cache\\gguf\\qwen3-1.7b-base-f16.gguf",
+   "file": ".cache\\gguf\\qwen3-1.7b-base-f16.gguf",
    "pp512_samples": [
     5342.26,
     5179.7,
@@ -249,7 +249,7 @@
    "round": 3
   },
   {
-   "file": "C:\\Vibe Coding\\LittleMore\\.cache\\gguf\\qwen3-0.6b-lb2-0.55-b1.gguf",
+   "file": ".cache\\gguf\\qwen3-0.6b-lb2-0.55-b1.gguf",
    "pp512_samples": [
     10187.8,
     9895.06,
@@ -265,7 +265,7 @@
    "round": 4
   },
   {
-   "file": "C:\\Vibe Coding\\LittleMore\\.cache\\gguf\\qwen3-0.6b-base-f16.gguf",
+   "file": ".cache\\gguf\\qwen3-0.6b-base-f16.gguf",
    "pp512_samples": [
     8337.7,
     11444.9,
@@ -277,7 +277,7 @@
    "round": 4
   },
   {
-   "file": "C:\\Vibe Coding\\LittleMore\\.cache\\gguf\\qwen3-1.7b-lb2-0.55-b1.gguf",
+   "file": ".cache\\gguf\\qwen3-1.7b-lb2-0.55-b1.gguf",
    "pp512_samples": [
     4603.03,
     4434.81,
@@ -293,7 +293,7 @@
    "round": 4
   },
   {
-   "file": "C:\\Vibe Coding\\LittleMore\\.cache\\gguf\\qwen3-1.7b-base-f16.gguf",
+   "file": ".cache\\gguf\\qwen3-1.7b-base-f16.gguf",
    "pp512_samples": [
     5600.37,
     5405.69,
@@ -309,7 +309,7 @@
    "round": 4
   },
   {
-   "file": "C:\\Vibe Coding\\LittleMore\\.cache\\gguf\\qwen3-0.6b-lb2-0.55-b1.gguf",
+   "file": ".cache\\gguf\\qwen3-0.6b-lb2-0.55-b1.gguf",
    "pp512_samples": [
     9825.54,
     9988.28,
@@ -325,7 +325,7 @@
    "round": 5
   },
   {
-   "file": "C:\\Vibe Coding\\LittleMore\\.cache\\gguf\\qwen3-0.6b-base-f16.gguf",
+   "file": ".cache\\gguf\\qwen3-0.6b-base-f16.gguf",
    "pp512_samples": [
     11756.4,
     12205.6,
@@ -341,7 +341,7 @@
    "round": 5
   },
   {
-   "file": "C:\\Vibe Coding\\LittleMore\\.cache\\gguf\\qwen3-1.7b-lb2-0.55-b1.gguf",
+   "file": ".cache\\gguf\\qwen3-1.7b-lb2-0.55-b1.gguf",
    "pp512_samples": [
     4480.14,
     4322.7,
@@ -357,7 +357,7 @@
    "round": 5
   },
   {
-   "file": "C:\\Vibe Coding\\LittleMore\\.cache\\gguf\\qwen3-1.7b-base-f16.gguf",
+   "file": ".cache\\gguf\\qwen3-1.7b-base-f16.gguf",
    "pp512_samples": [
     5178.33,
     4819.19,
