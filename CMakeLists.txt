@@ -239,6 +239,17 @@ if (LITTLEMORE_BUILD_TESTS)
         target_compile_options(null_harness PRIVATE -Wall -Wextra)
     endif()
     add_test(NAME test-api-null COMMAND null_harness "${LITTLEMORE_TEST_MODEL}")
+
+    # The header's minimal example as a program (run on the real 8B model by tests/robustness/test_h_8b_end_to_end.py;
+    # here on the tiny model, so the example itself is built and run by every CTest run).
+    add_executable(example_chat tests/robustness/c/example_chat.c)
+    set_source_files_properties(tests/robustness/c/example_chat.c PROPERTIES LANGUAGE C)
+    target_link_libraries(example_chat PRIVATE littlemore)
+    if (MSVC)
+        target_compile_options(example_chat PRIVATE /W4 /utf-8)
+    endif()
+    add_test(NAME test-example-chat COMMAND example_chat "${LITTLEMORE_TEST_MODEL}" "Hello" 8)
+    set_tests_properties(test-example-chat PROPERTIES TIMEOUT 120)
     set_tests_properties(test-api-null PROPERTIES SKIP_RETURN_CODE 77 TIMEOUT 120)
 
     # The same API test, but run from a copy of test_api in another directory with that directory as the
@@ -267,7 +278,7 @@ if (LITTLEMORE_BUILD_TESTS)
                  COMMAND "${LITTLEMORE_PYTHON}" "${CMAKE_CURRENT_SOURCE_DIR}/tests/c/make_tiny_gguf.py" "${LITTLEMORE_TEST_MODEL}"
                  WORKING_DIRECTORY "${CMAKE_CURRENT_SOURCE_DIR}")
         set_tests_properties(littlemore-tiny-gguf PROPERTIES FIXTURES_SETUP lm_tiny_gguf TIMEOUT 900)
-        set_tests_properties(${_lm_api_tests} test-api-null PROPERTIES FIXTURES_REQUIRED lm_tiny_gguf)
+        set_tests_properties(${_lm_api_tests} test-api-null test-example-chat PROPERTIES FIXTURES_REQUIRED lm_tiny_gguf)
     endif()
 
     # The CUDA plugin links the CUDA runtime DLLs of the toolkit it was built with; put that toolkit's bin

@@ -37,11 +37,23 @@ class PMC(ctypes.Structure):
                 ('QuotaPagedPoolUsage', ctypes.c_size_t), ('QuotaPeakNonPagedPoolUsage', ctypes.c_size_t),
                 ('QuotaNonPagedPoolUsage', ctypes.c_size_t), ('PagefileUsage', ctypes.c_size_t),
                 ('PeakPagefileUsage', ctypes.c_size_t), ('PrivateUsage', ctypes.c_size_t)]
+_k32 = ctypes.WinDLL('kernel32'); _k32.GetCurrentProcess.restype = wintypes.HANDLE
+_psapi = ctypes.WinDLL('psapi'); _psapi.GetProcessMemoryInfo.argtypes = [wintypes.HANDLE, ctypes.c_void_p, wintypes.DWORD]
 def mem():
     c = PMC(); c.cb = ctypes.sizeof(c)
-    ctypes.windll.psapi.GetProcessMemoryInfo(ctypes.windll.kernel32.GetCurrentProcess(), ctypes.byref(c), c.cb)
+    assert _psapi.GetProcessMemoryInfo(_k32.GetCurrentProcess(), ctypes.byref(c), c.cb)
     return dict(private_mib=c.PrivateUsage / 2**20, ws_mib=c.WorkingSetSize / 2**20, peak_ws_mib=c.PeakWorkingSetSize / 2**20,
                 peak_private_mib=c.PeakPagefileUsage / 2**20)
+def cuda_used():
+    # GPU memory this process holds, MiB (cudaMemGetInfo seen from this process: total minus free); -1 without CUDA
+    try:
+        rt = ctypes.CDLL('cudart64_12.dll')
+        free, total = ctypes.c_size_t(), ctypes.c_size_t()
+        if rt.cudaMemGetInfo(ctypes.byref(free), ctypes.byref(total)) != 0:
+            return -1
+        return (total.value - free.value) >> 20
+    except OSError:
+        return -1
 def vram():
     try:
         out = subprocess.run(['nvidia-smi', '--query-gpu=memory.used', '--format=csv,noheader,nounits'],
@@ -289,17 +301,27 @@ emit(**r)
 # --------------------------------------------------------------------------------------------------------------
 # Leaks and soak
 # --------------------------------------------------------------------------------------------------------------
+def _growth(samples: list[dict], key: str) -> float:
+    """Growth of `key` between the start (after a warm-up sample) and the end, robust to the allocator's bimodal
+    states (measured: the CPU heap of a load/free cycle alternates between two levels 32 MiB apart, with no trend over
+    200 cycles): the change of the floor (minimum) and of the ceiling (maximum) of the first and last five samples,
+    whichever is larger."""
+    vals = [x[key] for x in samples[1:]]
+    head, tail = vals[:5], vals[-5:]
+    return max(min(tail) - min(head), max(tail) - max(head))
+
+
 LEAK_GEN = MEM + """
 import time
 st, m = load(MODEL, OPTS)
 _, s = session(m, {'n_ctx': 256})
 samples = []
 t0 = time.time()
-for i in range(N):
+for i in range(__N__):
     g = generate(s, b'The capital of France is', {'temperature': 0.0, 'max_tokens': 8})
     assert g[0] == 'LM_OK', (i, g[0], err())
-    if i % 50 == 0 or i == N - 1:
-        samples.append(dict(i=i, vram=vram(), **mem()))
+    if i % 50 == 0 or i == __N__ - 1:
+        samples.append(dict(i=i, vram=vram(), own=cuda_used() if OWN else -1, **mem()))
 emit(samples=samples, seconds=round(time.time() - t0, 1))
 free_session(s); free_model(m)
 """
@@ -311,28 +333,29 @@ def test_no_leak_over_500_generations(qwen06: Path, has_cuda: bool, devices: str
     memory (nvidia-smi, all processes) within 64 MiB."""
     if devices != "none" and not has_cuda:
         pytest.skip("needs CUDA")
-    o = _rb.run_child(LEAK_GEN.replace("MODEL", repr(str(qwen06))).replace("OPTS", repr({"devices": devices})).replace("N", "500")
-                      .replace("range(500)", "range(500)"), timeout=1800)
+    o = _rb.run_child(LEAK_GEN.replace("MODEL", repr(str(qwen06))).replace("OPTS", repr({"devices": devices})).replace("__N__", "500").replace("OWN", str(devices != "none")),
+                      timeout=1800)
     assert o.clean, o.describe()
     s = o.result["samples"]
     print(ascii(json.dumps(s[:2] + s[-2:])), o.result["seconds"], "s")
-    grow = s[-1]["private_mib"] - s[1]["private_mib"]
-    vgrow = s[-1]["vram"] - s[1]["vram"] if s[1]["vram"] >= 0 else 0
-    print(f"{devices}: private growth {grow:.1f} MiB, VRAM growth {vgrow} MiB, peak working set {s[-1]['peak_ws_mib']:.0f} MiB")
+    grow = _growth(s, "private_mib")
+    vgrow = _growth(s, "own") if devices != "none" else 0
+    print(f"{devices}: private growth {grow:.1f} MiB, own GPU memory growth {vgrow} MiB (nvidia-smi {s[1]['vram']} -> "
+          f"{s[-1]['vram']} MiB), peak working set {s[-1]['peak_ws_mib']:.0f} MiB")
     assert grow <= 16 and vgrow <= 64, (grow, vgrow)
 
 
 LEAK_LOAD = MEM + """
 import time
 samples = []
-for i in range(N):
+for i in range(__N__):
     st, m = load(MODEL, OPTS)
     assert st == 'LM_OK', (i, st, err())
     _, s = session(m, {'n_ctx': 256})
     assert generate(s, b'Hi', {'temperature': 0.0, 'max_tokens': 2})[0] == 'LM_OK'
     free_session(s); free_model(m)
-    if i % 10 == 0 or i == N - 1:
-        samples.append(dict(i=i, vram=vram(), **mem()))
+    if i % 10 == 0 or i == __N__ - 1:
+        samples.append(dict(i=i, vram=vram(), own=cuda_used() if OWN else -1, **mem()))
 emit(samples=samples)
 """
 
@@ -343,13 +366,13 @@ def test_no_leak_over_100_load_free_cycles(qwen06: Path, has_cuda: bool, devices
     within 32 MiB, GPU memory within 64 MiB."""
     if devices != "none" and not has_cuda:
         pytest.skip("needs CUDA")
-    o = _rb.run_child(LEAK_LOAD.replace("MODEL", repr(str(qwen06))).replace("OPTS", repr({"devices": devices})).replace("range(N)", "range(100)")
-                      .replace("N - 1", "99"), timeout=3600)
+    o = _rb.run_child(LEAK_LOAD.replace("MODEL", repr(str(qwen06))).replace("OPTS", repr({"devices": devices})).replace("__N__", "100").replace("OWN", str(devices != "none")),
+                      timeout=3600)
     assert o.clean, o.describe()
     s = o.result["samples"]
-    grow = s[-1]["private_mib"] - s[1]["private_mib"]
-    vgrow = s[-1]["vram"] - s[1]["vram"] if s[1]["vram"] >= 0 else 0
-    print(ascii(json.dumps([s[0], s[1], s[-1]])))
+    grow = _growth(s, "private_mib")
+    vgrow = _growth(s, "vram") if devices != "none" else 0   # the model is freed each cycle: nvidia-smi between cycles
+    print(ascii(json.dumps([(x["i"], round(x["private_mib"], 1), x["vram"]) for x in s])))
     print(f"{devices}: 100 cycles, private growth {grow:.1f} MiB, VRAM growth {vgrow} MiB, peak working set {s[-1]['peak_ws_mib']:.0f} MiB")
     assert grow <= 32 and vgrow <= 64, (grow, vgrow)
 
@@ -390,8 +413,8 @@ while time.time() - t0 < SECONDS:
     if not ok:
         errors.append((kind, err()[:200]))
     if time.time() - t0 >= next_sample:
-        samples.append(dict(t=round(time.time() - t0), vram=vram(), **mem())); next_sample += 30
-samples.append(dict(t=round(time.time() - t0), vram=vram(), **mem()))
+        samples.append(dict(t=round(time.time() - t0), vram=vram(), own=cuda_used(), **mem())); next_sample += 30
+samples.append(dict(t=round(time.time() - t0), vram=vram(), own=cuda_used(), **mem()))
 emit(samples=samples, errors=errors[:20], n_errors=len(errors), counts=counts)
 for s in sessions: free_session(s)
 free_model(m)
@@ -409,7 +432,8 @@ def test_soak_10_minutes(qwen06: Path, quiet_gpu) -> None:
     s = r["samples"]
     base = next(x for x in s if x["t"] >= 60) if seconds >= 120 else s[0]
     grow = s[-1]["private_mib"] - base["private_mib"]
-    vgrow = s[-1]["vram"] - base["vram"]
+    vgrow = s[-1]["own"] - base["own"]   # this process's own GPU memory (nvidia-smi also counts other programs)
+    print(ascii(json.dumps([(x["t"], round(x["private_mib"], 1), x["vram"], x["own"]) for x in s])))
     print(ascii(json.dumps({"counts": r["counts"], "n_errors": r["n_errors"], "first": s[0], "base": base, "last": s[-1],
                             "private_growth_mib": round(grow, 1), "vram_growth_mib": vgrow,
                             "peak_vram_mib": max(x["vram"] for x in s)})))

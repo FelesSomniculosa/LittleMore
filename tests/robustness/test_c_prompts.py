@@ -449,3 +449,15 @@ def test_cuda_vs_cpu_greedy_divergence_is_numeric_noise(qwen06: Path, has_cuda: 
     cross = r["pairs"]["cpu vs cuda"]
     full = min(len(t) for t in r["texts"].values())
     assert (full if cross is None else cross) >= same_device_bound(r), r["pairs"]
+
+
+def test_cpu_exact_bound_can_fail(qwen06: Path) -> None:
+    """Negative control of CPU_EXACT_MAX_ABS: the CPU in its DEFAULT configuration (flash attention, f16 KV cache) is
+    not exact, and the bound must say so (measured 1.3e-2 at 16 tokens in tests/engine/test_fused_graph_qwen3_06b.py)."""
+    if not (QWEN06_CKPT / "model.safetensors").exists() or not QWEN06_F32HEAD.exists():
+        pytest.skip("checkpoint or F32-head GGUF missing")
+    text, ids = prompt_of(33)
+    lg, _ = debug_logits(QWEN06_F32HEAD, text, 0, ())
+    err = float(np.abs(lg - reference_logits(ids)).max())
+    print(f"cpu default config at 33 tokens: {err:.2e} (bound {CPU_EXACT_MAX_ABS:.0e})")
+    assert err > CPU_EXACT_MAX_ABS

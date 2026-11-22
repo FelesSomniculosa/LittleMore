@@ -73,7 +73,9 @@ def test_compute_sanitizer_whole_graph(tiny: Path, has_cuda: bool, tool: str) ->
         pytest.skip("needs CUDA")
     words = ("one two three four five six seven eight nine ten " * 20).split()
     bad = []
-    for n in LENGTHS:
+    # racecheck and synccheck are 10x to 100x slower: they run the decode, first-prefill and a larger length only
+    lengths = LENGTHS if tool in ("memcheck", "initcheck") else [1, 9, 33]
+    for n in lengths:
         for env in (None, {"GGML_CUDA_LITTLEBIT_F32_PREFILL": "1"}):
             prompt = " ".join(words[:n])
             rc, out = _sanitize(tool, [str(ENGINE_BIN / ("llama-debug" + EXE)), "-m", str(tiny), "-p", prompt, "-ngl", "99",
