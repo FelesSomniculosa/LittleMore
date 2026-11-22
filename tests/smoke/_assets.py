@@ -267,6 +267,9 @@ def _stamp_text(target: Path) -> str:
     return target.with_name(target.name + ".key").read_text()
 
 
+# NOTE: run_llama_cli, count_generated_tokens and engine_layer_sums run with plain `-ngl N` and rely on their prompts
+# (1 token or a few) being under 32 tokens: a CUDA build offloads batches of >= 32 tokens to the GPU even at `-ngl 0`
+# (see engine_logits, which adds `-dev none`).  Pass `-dev none` yourself before using them with a longer prompt.
 def run_llama_cli(gguf: Path, prompt: str, n_predict: int, ngl: int) -> subprocess.CompletedProcess:
     """`llama-cli -m gguf -p prompt -n N -ngl L` (stdin closed so it exits after one turn)."""
     return _run([BIN / ("llama-cli" + EXE), "-m", gguf, "-p", prompt, "-n", n_predict, "-ngl", ngl])

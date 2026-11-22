@@ -210,11 +210,11 @@ differs from its HF reference by only 1.2e-4 nats per chunk (CPU: 1.0e-4). So th
 few percent of the perplexity of single chunks) is specific to the LittleBit model on CUDA; neither the f16 attention nor
 the tensor-core prefill path, alone or together, removes it (they reduce it by up to a third). Its cause is not decided
 (hypotheses: rounding in the CUDA LittleBit kernels or the float32 GEMM path, amplified by the very flat output
-distribution of an untrained model; not tested). The sign of the per-chunk scatter is random, so the aggregate error
-shrinks with the number of chunks; the mean gap of 64 chunks (+1.27e-3) is smaller than the mean of the 32-chunk run only
-by chance: its standard error is 0.0156/sqrt(64) = 2e-3, so +1.27e-3 and -4.5e-4 are both within one standard error of 0
-(no systematic bias is visible). On the CPU the default-settings gap (about 0.3 %) is the f16 rounding of Q/K/V in
-attention: with `-fa off -ctk f32 -ctv f32` it is 1.8e-5.
+distribution of an untrained model; not tested). The standard error of the mean per-chunk gap is 0.0156/sqrt(64) = 2e-3
+over 64 chunks (2.8e-3 over 32), so the measured mean gaps of the default CUDA run (-4.5e-4 over 32 chunks, +1.27e-3 over
+64 chunks) are both within one standard error of zero, i.e. consistent with zero; no trend with the chunk count is
+claimed. On the CPU the default-settings perplexity gap is 1.16e-3 over 32 chunks (3.4e-3 over the first 8 chunks); it
+is the f16 rounding of Q/K/V in attention: with `-fa off -ctk f32 -ctv f32` it is 1.8e-5 over 32 chunks (2.7e-5 over 8).
 
 Gotcha (`-ngl 0` is not a CPU run on a CUDA build): llama.cpp offloads the matmuls of every batch of 32 tokens or
 more to the GPU ("op offload") even with `-ngl 0`. A "CPU" run must pass `-dev none` (or `--no-op-offload`). The test

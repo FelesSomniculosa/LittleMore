@@ -244,8 +244,8 @@ CPU = ("-ngl", 0, "-dev", "none")   # see the module docstring: `-ngl 0` alone s
 
 
 # CPU with every f16 rounding of the attention path removed (no flash attention, f32 KV cache).  The engine's default
-# attention path rounds Q/K/V to f16, which the reference (fp32) does not; that rounding is the ~0.3 % default-settings
-# gap on the CPU (measured over 8 chunks: default 3.4e-3, exact 2.7e-5).  In this configuration the two sides compute
+# attention path rounds Q/K/V to f16, which the reference (fp32) does not; that rounding is the default-settings
+# gap on the CPU (default 1.16e-3 over 32 chunks, 3.4e-3 over 8; exact 1.8e-5 over 32, 2.7e-5 over 8).  In this configuration the two sides compute
 # the same function, so a much tighter bound applies: 1e-3, about 55x the gap measured over the 32 default chunks
 # (1.8e-5; 2.7e-5 over the first 8).
 CPU_EXACT = CPU + ("-fa", "off", "-ctk", "f32", "-ctv", "f32")
