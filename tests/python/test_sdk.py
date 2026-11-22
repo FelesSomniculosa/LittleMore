@@ -671,6 +671,31 @@ def test_numeric_options_are_validated_not_wrapped(lib_path: Path) -> None:
 
 
 @pytest.mark.smoke
+def test_sdk_normalizes_text_to_nfc(model) -> None:
+    """The SDK normalizes text to NFC before tokenize / generate / chat (the Hugging Face tokenizers of Qwen and others
+    do; llama.cpp does not, and the C API passes bytes unchanged). Negative control: the raw C call gives different
+    tokens for the decomposed (NFD) and the composed (NFC) form of the same text, so the check can fail."""
+    import unicodedata
+    nfc = "café naïve Ångström 한국어"
+    nfd = unicodedata.normalize("NFD", nfc)
+    assert nfd != nfc
+    lib = _lib.load()
+
+    def raw(text: str) -> list[int]:
+        b = text.encode("utf-8")
+        buf = (ctypes.c_int32 * 256)()
+        n = ctypes.c_size_t(0)
+        _lib.check(lib.lm_tokenize(model._model, b, len(b), buf, 256, 0, ctypes.byref(n)), lib)
+        return list(buf[: n.value])
+
+    assert raw(nfd) != raw(nfc)                       # the C API does not normalize
+    assert model.tokenize(nfd) == model.tokenize(nfc) == raw(nfc)
+    g = dict(temperature=0, max_tokens=8)
+    assert model.generate(nfd, **g) == model.generate(nfc, **g)
+    assert model.chat([{"role": "user", "content": nfd}], **g) == model.chat([{"role": "user", "content": nfc}], **g)
+
+
+@pytest.mark.smoke
 def test_token_ids_are_range_checked(model) -> None:
     for bad in ([2**31], [-2**31 - 1], [1.5], ["a"]):
         with pytest.raises((ValueError, TypeError)):

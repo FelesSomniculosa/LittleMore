@@ -48,6 +48,13 @@ littlemore convert --repo CHECKOUT CHECKPOINT_DIR -o model.gguf  # LittleBit che
   `STREAM_OPEN`) instead of deadlocking; other threads wait until the stream ends or is closed. Several threads can call
   `chat` on one model; the calls run one after another. Closing the model, or leaving the program, stops open streams.
 - **Text decoding** never raises: pieces are decoded incrementally as UTF-8 and invalid bytes become U+FFFD.
+- **Unicode normalization**: the SDK normalizes every text it passes to the library (`generate` prompts, `chat`
+  messages, `tokenize`) to NFC, as the Hugging Face tokenizers of Qwen3 and many other models do. Without it a decomposed
+  text (e.g. "e" + U+0301 instead of "é", or Korean as conjoining jamo) got different, more tokens (Qwen3: 16 instead of 8
+  for "café naïve Ångström" in NFD). So `detokenize(tokenize(text))` returns the NFC form of `text`. The C API itself
+  does **not** normalize: it passes bytes on unchanged (docs/c-api.md, "Tokenizer and Unicode normalization").
+- **Chat with a reasoning model** (Qwen3): `<think>...</think>` blocks of earlier assistant turns are removed by the
+  library, as Qwen3's own chat template does, so the history may contain the model's full earlier answers.
 - **Errors** are `littlemore.LittleMoreError` with `.status`, `.status_name` (e.g. `LM_ERR_MODEL_LOAD`) and the
   library's own message.
 - **Closing**: `with Model(...)`, or `model.close()` (safe to repeat). Using a closed model raises `LittleMoreError`.

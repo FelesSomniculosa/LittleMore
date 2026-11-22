@@ -461,3 +461,21 @@ def test_cpu_exact_bound_can_fail(qwen06: Path) -> None:
     err = float(np.abs(lg - reference_logits(ids)).max())
     print(f"cpu default config at 33 tokens: {err:.2e} (bound {CPU_EXACT_MAX_ABS:.0e})")
     assert err > CPU_EXACT_MAX_ABS
+
+
+@pytest.mark.parametrize("case", sorted(NFC_SENSITIVE))
+def test_sdk_tokens_match_hugging_face_for_non_nfc_text(qwen06: Path, case: str) -> None:
+    """The Python SDK normalizes text to NFC (as the Qwen3 tokenizer.json does), so its tokens equal Hugging Face's
+    for decomposed text too; the C API's lm_tokenize (checked above) does not normalize and differs."""
+    tok = hf_tokenizer()
+    text = TEXTS[case]
+    o = _rb.run_child(f"""
+import littlemore
+m = littlemore.Model({str(qwen06)!r}, devices='none', n_ctx=256)
+emit(sdk=m.tokenize({text!r}), raw=tokenize(m._model, {text!r}.encode('utf-8'))[1])
+m.close()
+""")
+    assert o.clean, o.describe()
+    hf = tok(text, add_special_tokens=False)["input_ids"]
+    assert o.result["sdk"] == hf, (o.result["sdk"][:20], hf[:20])
+    assert o.result["raw"] != hf   # negative control: without the SDK's normalization the tokens differ

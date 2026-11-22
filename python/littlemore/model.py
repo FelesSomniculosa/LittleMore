@@ -34,6 +34,7 @@ import queue
 import re
 import sys
 import threading
+import unicodedata
 import weakref
 from codecs import getincrementaldecoder
 from os import PathLike, fspath
@@ -154,6 +155,17 @@ def _sampling_int(name: str, value: Any, low: int, high: int) -> int:
     return v
 
 
+def _nfc(text: Any) -> Any:
+    """`text` in Unicode normalization form C (composed), for every text the SDK passes to the library.
+
+    Why: the Hugging Face tokenizers of Qwen3 (and many other models) normalize to NFC before tokenizing, llama.cpp's
+    tokenizer does not, and the C API passes bytes on unchanged. A decomposed text (e.g. "e" + U+0301 instead of "é",
+    Korean as conjoining jamo, common on macOS) would otherwise get tokens the model was not trained with (measured on
+    Qwen3: 16 instead of 8 tokens for "café naïve Ångström" in NFD). Non-str values are returned unchanged so that
+    `_lib.utf8` reports the type error."""
+    return unicodedata.normalize("NFC", text) if isinstance(text, str) else text
+
+
 def _encode_messages(messages: Sequence[Mapping[str, str]]) -> tuple[Any, list[bytes]]:
     """Convert chat messages to a C array of `lm_message`.
 
@@ -173,7 +185,8 @@ def _encode_messages(messages: Sequence[Mapping[str, str]]) -> tuple[Any, list[b
     for i, m in enumerate(messages):
         if not isinstance(m, Mapping) or "role" not in m or "content" not in m:
             raise TypeError(f"message {i} must be a dict with 'role' and 'content'")
-        role, content = _lib.utf8(m["role"], f"message {i} role"), _lib.utf8(m["content"], f"message {i} content")
+        role = _lib.utf8(_nfc(m["role"]), f"message {i} role")
+        content = _lib.utf8(_nfc(m["content"]), f"message {i} content")
         keep += [role, content]
         arr[i].role, arr[i].content = role, content
     return arr, keep
@@ -561,7 +574,7 @@ class Model:
 
     def generate(self, prompt: str, stream: bool = False, **sampling: Any) -> str | Iterator[str]:
         """Continue a raw prompt (no chat template). Same `stream` and sampling rules as `chat`."""
-        text = _lib.utf8(prompt, "prompt")
+        text = _lib.utf8(_nfc(prompt), "prompt")
         smp = _make_sampling(**sampling)
         lib = _lib.load()
 
@@ -591,7 +604,7 @@ class Model:
     def tokenize(self, text: str, add_special: bool = False) -> list[int]:
         """Token ids of `text`. `add_special=True` adds the model's beginning-of-text token (if it uses one) and
         parses special-token text such as "<|im_start|>" as tokens."""
-        data = _lib.utf8(text, "text")
+        data = _lib.utf8(_nfc(text), "text")
         lib = _lib.load()
         with self._model_lock:  # the model only: works while a stream is open (the C API allows it)
             self._check_open()
