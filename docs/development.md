@@ -48,6 +48,12 @@ GPUs. `-j 6` limits parallel jobs to keep RAM use low.) The programs
 (`llama-cli`, `llama-completion`, `llama-debug`, ...) and the backend plugin
 DLLs end up in `engine/build/bin`.
 
+## 2b. Build and test the C API
+
+The C API (`include/littlemore.h`, the `littlemore` shared library) has its own top-level CMake build, which
+builds the engine again with `add_subdirectory` into `build/` and runs its C test with CTest
+(`test-api-cpu`, `test-api-cuda`). Commands, design and measurements: [c-api.md](c-api.md).
+
 ## 3. Unit tests (fast, no engine needed)
 
 ```powershell
