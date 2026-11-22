@@ -796,8 +796,14 @@ removed; one rebuild of ggml-cuda each.) So the 2.0x dense factor fails correct 
 only where the test applies it: the 16-token prompt in both configurations, the 44-token prompt in the exact one), the GPU / pure-CPU ratio has correct runs up to 2.42, and the absolute
 errors of correct runs (up to 0.20) overlap with the smallest mutation (x 1.001: from 0.075). On the test's own prompt
 both guards catch every mutation, including x 1.001. The op-level tests (`test-littlebit-ref`, `test-backend-ops`,
-NMSE <= 1e-10) remain the precise detectors of the kernels; the choice of a model-level threshold is an open decision
-(options and their measured detection / false-failure figures are in the Task 13 report).
+NMSE <= 1e-10) remain the precise detectors of the kernels; the model-level guards only catch gross integration errors.
+Decision (the user's, Task 13 fix round 2, from these figures): keep the committed guards ("B1"): default config
+LittleBit-GPU <= 2.0x LittleBit-pure-CPU, exact config LittleBit <= 2.0x the dense floor. Their measured false-failure
+rates on the 10 correct runs of the study: 1/10 for the default-config guard (2.42: forced chunked path, 48-token
+prompt; the committed prefill path 0/5) and 9/10 for the exact-config dense factor (it holds only on the test's
+prompt); on the test's prompt both catch every mutation down to x1.001. Reproduce: `tools/dev/prefill_guard_study.sh`
+(temporary builds) and `tools/dev/prefill_guard_study.py` (measure / cpu / table); raw data:
+`docs/data/prefill_guard_study_2026-11-22.jsonl` and `docs/data/prefill_guard_cpu_2026-11-22.jsonl`.
 
 ## Qwen3-0.6B on the GPU (informal speed read)
 

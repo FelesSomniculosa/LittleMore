@@ -103,6 +103,7 @@ tool sources that produced it change.
 | `dense_floor.py` | runs the dense Qwen3-0.6B and the LittleBit file through llama.cpp (CPU / GPU, default / exact) against their fp32 references and prints the noise-floor table of docs/engine-changes.md |
 | `emulate_q8_slow_path.py` | the reference plus the int8 activation noise that llama.cpp adds, so engine and reference can be compared fairly |
 | `dequant_gguf_to_hf.py` | rebuilds a Hugging Face directory from a quantized Qwen3 GGUF (dequantized weights): a "proxy" base model with the right shapes for SPEED measurements when the original weights are not downloaded (not for accuracy) |
+| `prefill_guard_study.py` / `.sh` | measures the model-level GPU error of the Qwen3-0.6B LittleBit file on 5 long prompts, on both CUDA paths and on deliberately broken builds (the evidence for the coarse prefill guards; see docs/engine-changes.md) |
 
 Example, making a checkpoint by hand:
 

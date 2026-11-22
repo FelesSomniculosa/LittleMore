@@ -139,7 +139,14 @@ def test_gpu_error_is_within_dense_floor_factor(ggufs, cfg, prompt):
       * mutations of the prefill epilogue (residual term times 1.001, 1.01, 1.1, residual dropped) are all caught by both
         guards on PROMPT_PREFILL (smallest effect, x1.001: default 0.172 = 7.8x the pure CPU, exact 0.163 = 13x the
         dense floor).  The op-level tests (test-littlebit-ref, test-backend-ops, NMSE <= 1e-10) are the precise
-        detectors; this model-level test only catches gross integration errors, and its thresholds are an open decision.
+        detectors (precise to rounding); this model-level test only catches gross integration errors.
+      * decision (the user's, Task 13 fix round 2, from these measurements): keep both guards as they are (option "B1"):
+        default config LittleBit-GPU <= 2.0x LittleBit-pure-CPU, exact config LittleBit <= 2.0x the dense floor.
+        Measured false-failure rate of the default-config guard over the 10 correct runs of the study: 1/10 (the forced
+        chunked path on the 48-token prompt, 2.42; the committed prefill path 0/5); the exact-config dense factor holds
+        only on this test's prompt (9/10 correct runs of the study exceed it).  Smallest mutation caught on this prompt
+        by both: the residual term x1.001.  Reproduce: tools/dev/prefill_guard_study.sh / .py; raw data in
+        docs/data/prefill_guard_study_2026-11-22.jsonl and docs/data/prefill_guard_cpu_2026-11-22.jsonl.
     """
     b1, _ = ggufs
     dense = A.ensure_dense_floor_gguf()

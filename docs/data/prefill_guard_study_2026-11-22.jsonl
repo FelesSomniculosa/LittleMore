@@ -1,0 +1,30 @@
+{"tag": "prefill", "prompt": 0, "n_tok": 44, "lb_gpu_default": 0.030867338180541992, "dense_gpu_default": 0.014858245849609375, "lb_gpu_exact": 0.019435882568359375, "dense_gpu_exact": 0.012313604354858398, "lb_cpu_default": 0.022009849548339844}
+{"tag": "prefill", "prompt": 1, "n_tok": 22, "lb_gpu_default": 0.07671007513999939, "dense_gpu_default": 0.015613794326782227, "lb_gpu_exact": 0.13092350959777832, "dense_gpu_exact": 0.014647960662841797, "lb_cpu_default": 0.05188095569610596}
+{"tag": "prefill", "prompt": 2, "n_tok": 33, "lb_gpu_default": 0.07809162139892578, "dense_gpu_default": 0.01333475112915039, "lb_gpu_exact": 0.10337972640991211, "dense_gpu_exact": 0.009212136268615723, "lb_cpu_default": 0.04333782196044922}
+{"tag": "prefill", "prompt": 3, "n_tok": 48, "lb_gpu_default": 0.05394411087036133, "dense_gpu_default": 0.011335909366607666, "lb_gpu_exact": 0.04946088790893555, "dense_gpu_exact": 0.009592890739440918, "lb_cpu_default": 0.030591487884521484}
+{"tag": "prefill", "prompt": 4, "n_tok": 62, "lb_gpu_default": 0.19063782691955566, "dense_gpu_default": 0.009627819061279297, "lb_gpu_exact": 0.18943333625793457, "dense_gpu_exact": 0.007552385330200195, "lb_cpu_default": 0.11965250968933105}
+{"tag": "chunked", "prompt": 0, "n_tok": 44, "lb_gpu_default": 0.025164365768432617, "lb_gpu_exact": 0.02905094623565674}
+{"tag": "chunked", "prompt": 1, "n_tok": 22, "lb_gpu_default": 0.08545064926147461, "lb_gpu_exact": 0.12368249893188477}
+{"tag": "chunked", "prompt": 2, "n_tok": 33, "lb_gpu_default": 0.0657503604888916, "lb_gpu_exact": 0.09650421142578125}
+{"tag": "chunked", "prompt": 3, "n_tok": 48, "lb_gpu_default": 0.0740976333618164, "lb_gpu_exact": 0.03572726249694824}
+{"tag": "chunked", "prompt": 4, "n_tok": 62, "lb_gpu_default": 0.20192837715148926, "lb_gpu_exact": 0.1699279546737671}
+{"tag": "mut_s_u1r_x1.001", "prompt": 0, "n_tok": 44, "lb_gpu_default": 0.1719052791595459, "lb_gpu_exact": 0.16295623779296875}
+{"tag": "mut_s_u1r_x1.001", "prompt": 1, "n_tok": 22, "lb_gpu_default": 0.3504043221473694, "lb_gpu_exact": 0.3101245164871216}
+{"tag": "mut_s_u1r_x1.001", "prompt": 2, "n_tok": 33, "lb_gpu_default": 0.28682994842529297, "lb_gpu_exact": 0.2982468605041504}
+{"tag": "mut_s_u1r_x1.001", "prompt": 3, "n_tok": 48, "lb_gpu_default": 0.10531008243560791, "lb_gpu_exact": 0.07452011108398438}
+{"tag": "mut_s_u1r_x1.001", "prompt": 4, "n_tok": 62, "lb_gpu_default": 0.43942880630493164, "lb_gpu_exact": 0.4936513900756836}
+{"tag": "mut_s_u1r_x1.01", "prompt": 0, "n_tok": 44, "lb_gpu_default": 1.6344985961914062, "lb_gpu_exact": 1.6095170974731445}
+{"tag": "mut_s_u1r_x1.01", "prompt": 1, "n_tok": 22, "lb_gpu_default": 3.0878329277038574, "lb_gpu_exact": 3.12009334564209}
+{"tag": "mut_s_u1r_x1.01", "prompt": 2, "n_tok": 33, "lb_gpu_default": 2.915717840194702, "lb_gpu_exact": 3.0014874935150146}
+{"tag": "mut_s_u1r_x1.01", "prompt": 3, "n_tok": 48, "lb_gpu_default": 0.9793611764907837, "lb_gpu_exact": 0.9752563238143921}
+{"tag": "mut_s_u1r_x1.01", "prompt": 4, "n_tok": 62, "lb_gpu_default": 2.5878515243530273, "lb_gpu_exact": 2.581571578979492}
+{"tag": "mut_s_u1r_x1.1", "prompt": 0, "n_tok": 44, "lb_gpu_default": 13.342135429382324, "lb_gpu_exact": 13.34520149230957}
+{"tag": "mut_s_u1r_x1.1", "prompt": 1, "n_tok": 22, "lb_gpu_default": 22.32266616821289, "lb_gpu_exact": 22.364425659179688}
+{"tag": "mut_s_u1r_x1.1", "prompt": 2, "n_tok": 33, "lb_gpu_default": 10.164972305297852, "lb_gpu_exact": 10.171391487121582}
+{"tag": "mut_s_u1r_x1.1", "prompt": 3, "n_tok": 48, "lb_gpu_default": 7.717949867248535, "lb_gpu_exact": 7.683894157409668}
+{"tag": "mut_s_u1r_x1.1", "prompt": 4, "n_tok": 62, "lb_gpu_default": 10.378559112548828, "lb_gpu_exact": 10.446579933166504}
+{"tag": "mut_drop_residual", "prompt": 0, "n_tok": 44, "lb_gpu_default": 21.81551170349121, "lb_gpu_exact": 21.81643295288086}
+{"tag": "mut_drop_residual", "prompt": 1, "n_tok": 22, "lb_gpu_default": 25.475006103515625, "lb_gpu_exact": 25.47975730895996}
+{"tag": "mut_drop_residual", "prompt": 2, "n_tok": 33, "lb_gpu_default": 23.233701705932617, "lb_gpu_exact": 23.2327938079834}
+{"tag": "mut_drop_residual", "prompt": 3, "n_tok": 48, "lb_gpu_default": 22.80190086364746, "lb_gpu_exact": 22.79749870300293}
+{"tag": "mut_drop_residual", "prompt": 4, "n_tok": 62, "lb_gpu_default": 20.4713191986084, "lb_gpu_exact": 20.137081146240234}
