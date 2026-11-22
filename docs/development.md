@@ -315,6 +315,48 @@ and the results in [bench/results/phase1.md](../bench/results/phase1.md). Prompt
 prefill path (`bench/plans/phase1_13b.json`, where "13b" labels the first tensor-core build as explained in [bench/README.md](../bench/README.md), measures LittleBit with and without it, `"env"` in a plan entry):
 [bench/results/phase1_13b.md](../bench/results/phase1_13b.md).
 
+## 9. Robustness campaign (opt-in)
+
+`tests/robustness` checks that the whole stack fails cleanly instead of crashing, hanging or giving silently wrong
+results. It is slow (hundreds of child processes, GPU memory pressure, sanitizers), so it is not in `testpaths` and is
+skipped unless the run selects it:
+
+```powershell
+.venv\Scripts\python.exe -m pytest tests/robustness -m robust -q                         # A-G, about an hour
+$env:LITTLEMORE_RUN_8B = "1"; .venv\Scripts\python.exe -m pytest tests/robustness -m robust -q -k "8b or test_h"   # + the 8B model
+```
+
+Every probe runs in its own child process (`tests/robustness/_child.py`, raw C API calls through the SDK's ctypes
+declarations) with a timeout, and the way it ended is classified (`_rb.Outcome`: clean, Python error, abort, access
+violation, timeout); a test passes only on a clean end with the expected status. The files:
+
+| File | What it covers |
+|---|---|
+| `test_a_model_files.py` | non-GGUF files, 300+ truncation points, 500 seeded metadata mutations of the tiny model and 60 of Qwen3-0.6B, 70 named damage cases (through the plain loader and the auto-fit parser), odd paths (spaces, non-ASCII, over 260 characters, invalid UTF-8), files deleted / overwritten / locked, several models at once |
+| `test_b_options.py` | every `lm_*` option field at its edges, sampling extremes, SDK integer wraparound |
+| `test_c_prompts.py` | tokenizer vs Hugging Face, logits at every CUDA dispatch boundary (1 to 513 tokens; CPU AVX2, both CUDA prefill paths, the dense model's floor per length), context limits, 4k / 8k prompts, determinism, CPU vs CUDA greedy divergence |
+| `test_d_misuse.py` | odd conversations, templates, streaming byte-exactness, callbacks that stop or raise, Ctrl+C, threads, freeing during generation, the generated NULL harness |
+| `test_e_resources.py` | GPU memory held by another process, a hard process memory limit (Windows job object), CUDA hidden or plugins missing, CUDA out of memory, leak checks, a 10-minute soak (`LITTLEMORE_SOAK_SECONDS`) |
+| `test_f_sanitizers.py` | compute-sanitizer (memcheck, racecheck, synccheck, initcheck) over the LittleBit op test and whole graphs; MSVC AddressSanitizer runs |
+| `test_g_cli_convert.py` | the CLI under bad arguments, closed stdin, Ctrl+C (Windows console API), no GPU; the converter on corrupted checkpoints |
+| `test_h_8b_end_to_end.py` | the community 8B model end to end, including the perplexity (`LITTLEMORE_8B_PPL_WINDOWS`) |
+
+`gen_null_harness.py` writes `tests/robustness/c/null_harness.c` from the header (NULL in every pointer parameter of
+every exported function); CTest runs it as `test-api-null`, and `test-example-chat` runs the header's minimal example
+(`tests/robustness/c/example_chat.c`). The AddressSanitizer build is a separate CPU-only build (from a "Developer
+PowerShell for VS 2022" or after `vcvars64.bat`; the ASan runtime DLL comes from the MSVC tools folder):
+
+```
+cmake -G Ninja -S . -B .cache/robust/build-asan -DCMAKE_BUILD_TYPE=RelWithDebInfo -DGGML_CUDA=OFF -DGGML_VULKAN=OFF ^
+  -DGGML_CPU_ALL_VARIANTS=OFF -DGGML_NATIVE=OFF -DGGML_AVX=ON -DGGML_AVX2=ON -DGGML_FMA=ON -DGGML_F16C=ON -DGGML_BMI2=ON ^
+  -DLLAMA_CURL=OFF "-DCMAKE_C_FLAGS=/fsanitize=address" "-DCMAKE_CXX_FLAGS=/fsanitize=address /EHsc" ^
+  "-DCMAKE_C_FLAGS_RELWITHDEBINFO=/Zi /O1 /DNDEBUG" "-DCMAKE_CXX_FLAGS_RELWITHDEBINFO=/Zi /O1 /DNDEBUG" ^
+  -DCMAKE_EXE_LINKER_FLAGS=/INCREMENTAL:NO -DCMAKE_SHARED_LINKER_FLAGS=/INCREMENTAL:NO
+cmake --build .cache/robust/build-asan -j 3
+```
+
+Scratch files go to `.cache/robust/` (ignored by git).
+
 ## Glossary
 
 - **LittleBit / LittleBit-2**: methods that store a weight matrix as low-rank

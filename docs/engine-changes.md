@@ -20,6 +20,7 @@ The engine is upstream llama.cpp plus these additions (details in the sections b
 | Pre-packed residual scales `lb_s_pkr` in the GGUF (no per-call CONCAT nodes) | "Loader" under LittleBit in the graph |
 | Model-level speed on the GPU (informal) | [Qwen3-0.6B on the GPU](#qwen3-06b-on-the-gpu-informal-speed-read) |
 | Test coverage and measured accuracy, including the GPU noise floor | the end of "LittleBit in the graph", then "GPU offload error" |
+| Robustness fixes outside LittleBit: bad model hyperparameters, host out-of-memory, tiny sampling temperatures fail cleanly instead of aborting or sampling NaN | [Robustness fixes](#robustness-fixes-task-20) |
 
 The rest of this file records how the fork was made (pin, cherry-pick) and what was measured.
 
@@ -1076,6 +1077,18 @@ Reproduce: `llama-bench.exe -m <gguf> -ngl 99 -p 512 -n 128 -r 3` from `engine/b
 is `tests/smoke/_assets.copy_gguf(b1, dst, B1 -> Q1_0)` on the B1 file (the cached slow-path baseline widens its head
 to F32 and is not comparable for speed); the profile: `nsys profile -t cuda --cuda-graph-trace=node llama-bench.exe ...`
 then `nsys stats -r cuda_gpu_kern_sum`.
+
+## Robustness fixes (Task 20)
+
+Found by the opt-in robustness campaign (`tests/robustness`, see docs/development.md section 9). Each made a case of
+that suite abort the host process or sample garbage before the fix; none changes a result of a well-formed model.
+
+| Change | Where | Before |
+|---|---|---|
+| Hyperparameters read from the GGUF are checked with an exception (`LLAMA_HPARAM_CHECK`), not `GGML_ASSERT`: block count outside [1, 512], next-token layers, the MoE counts, an unknown rope scaling type; a negative or NaN norm epsilon is refused at load | `src/llama-model.cpp`, `load_hparams` | abort at load; the epsilon passed and aborted at the first decode (`GGML_ASSERT(eps >= 0)` in the CPU and CUDA norm ops) |
+| `ggml_init` returns NULL when its buffer cannot be allocated (llama.cpp's callers check for NULL) | `ggml/src/ggml.c` | `GGML_ASSERT(ctx->mem_buffer != NULL)` |
+| `ggml_backend_sched_new` returns NULL when one of its allocations fails; `llama_context` throws | `ggml/src/ggml-backend.cpp`, `src/llama-context.cpp` | unchecked mallocs, then `GGML_ABORT` in `ggml_backend_sched_split_graph` (measured under a 260 to 420 MiB process memory limit) |
+| The temperature sampler takes the greedy limit when `logit / temp` overflows (e.g. temp 1e-45, or 1e-38 with real logits); every temperature that does not overflow is unchanged bit for bit | `src/llama-sampler.cpp`, `llama_sampler_temp_impl` | the softmax computed inf - inf = NaN and an arbitrary token was drawn |
 
 ## Known gaps / TODO
 
