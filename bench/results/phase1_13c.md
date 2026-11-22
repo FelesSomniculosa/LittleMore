@@ -25,21 +25,46 @@ this sustained load is power-capped and varies from run to run, so times alone a
 ## Model level (bench/clock_matched.py, pp512, first timed repetition; `phase1_13c_clock.json`)
 
 Three rounds; in each round the 13b build and the 13c build each ran once with all four files (the ggml-cuda DLL
-swapped between them). Only runs whose first repetition ran entirely at 2340 MHz are used for ratios.
+swapped between them).
+
+**Selection rule (one rule for every run of both builds and of F16):** a run counts only if its first timed
+repetition has clock samples and all of them are 2340 MHz (min = max = 2340). The clock at the start of the
+repetition is not used. Excluded by this rule (5 of 24 runs):
+- 13b round 0, 1.7B LittleBit 4522 (rep-1 clock 1620-2340);
+- 13c round 0, 0.6B LittleBit 12349 (no clock sample inside rep 1);
+- 13c round 1, 1.7B F16 6089 (1470 MHz);
+- 13b round 2, 0.6B LittleBit 11028 (no clock sample);
+- 13b round 2, 1.7B LittleBit 4159 (1800-2340) and 1.7B F16 5997 (1575 MHz).
 
 | run | Qwen3-0.6B LittleBit | 0.6B F16 | Qwen3-1.7B LittleBit | 1.7B F16 |
 |---|---|---|---|---|
-| 13b round 0 | 12127 | 14486 | 4522 (clock 1620-2340) | 5656 |
-| 13c round 0 | 12349 (no clock sample) | 13001 | 3775 (clock at start 1665) | 6342 |
+| 13b round 0 | 12127 | 14486 | (4522, excluded) | 5656 |
+| 13c round 0 | (12349, excluded) | 13001 | 3775 | 6342 |
 | 13b round 1 | 12000 | 11836 | 4350 | 5385 |
-| 13c round 1 | 13541 | 12708 | 4871 | 6089 (1470 MHz) |
-| 13b round 2 | 11028 (no clock sample) | 9050 | 4159 (1800-2340) | 5997 (1575 MHz) |
+| 13c round 1 | 13541 | 12708 | 4871 | (6089, excluded) |
+| 13b round 2 | (11028, excluded) | 9050 | (4159, excluded) | (5997, excluded) |
 | 13c round 2 | 12985 | 13936 | 4756 | 5495 |
 
-Reading, at 2340 MHz only:
-- **LittleBit itself:** Qwen3-0.6B 12000-12127 (13b) against 12985-13541 (13c), about +9 %; Qwen3-1.7B 4350 against
-  4756-4871, about +11 %.
-- **Against F16:** the F16 first repetitions at 2340 MHz spread 11836-14486 (0.6B) and 5385-6342 (1.7B) between runs,
-  so single-run ratios are noisy (0.6B 13c: 1.07 and 0.93; 1.7B 13c: 0.87). Against the median of all F16 runs at
-  2340 MHz (0.6B 13001, 1.7B 5576): 0.6B 0.93 (13b) to 1.02 (13c); 1.7B 0.78 (13b) to 0.86 (13c).
-- **Verdict:** Qwen3-0.6B reaches parity with F16 at equal clocks within this noise; Qwen3-1.7B does not (about 0.86).
+Reading (included runs only; ratios against the median of all included F16 runs, which are interchangeable between
+builds since the F16 files do not use the changed code):
+- **F16 spread at the same 2340 MHz:** Qwen3-0.6B 9050-14486 (median 12854, 6 runs), Qwen3-1.7B 5385-6342 (median
+  5576, 4 runs). Single-run ratios are therefore uncertain by tens of percent.
+- **Qwen3-0.6B:** 13b 12000-12127 = 0.93-0.94; 13c 12985-13541 = 1.01-1.05. Parity at equal clocks, within this noise.
+  (Op-level bound: 0.82x cycles per layer allows up to 0.94 / 0.82 = 1.14; the observed gain is inside it.)
+- **Qwen3-1.7B:** 13b one run 4350 = 0.78; 13c runs 3775 / 4871 / 4756 = 0.68 / 0.87 / 0.85 (median 0.85; the 3775 run
+  is about 20 % below the other two at the same clock and is not explained). The op-level data (0.93x cycles per
+  layer) bounds the model gain to about 7.5 %, i.e. 0.78 / 0.93 = 0.84 from the 13b run; the observed 0.85-0.87 is not
+  distinguishable from that bound within the run-to-run noise. Plainly: about 0.84-0.87, below F16.
+
+## VRAM (measured)
+
+Peak GPU memory during `llama-bench -m <LittleBit file> -ngl 99 -p 512 -n 0 -r 3`: the maximum of `nvidia-smi
+memory.used` sampled every 50 ms during the run minus the value just before it (0 MiB at idle on this laptop), 2
+interleaved rounds per build, ggml-cuda DLL swapped:
+
+| model | 13b | 13c | change |
+|---|---|---|---|
+| Qwen3-0.6B | 801, 801 MiB | 791, 791 MiB | -10 MiB |
+| Qwen3-1.7B | 1191, 1191 MiB | 1181, 1181 MiB | -10 MiB |
+
+(The planes of x no longer go to the CUDA pool; computed for 1.7B down at 512 tokens: 13.1 MB -> 3.7 MB of scratch.)

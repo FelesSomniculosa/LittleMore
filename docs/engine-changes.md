@@ -725,7 +725,9 @@ Adopted (engine commits `20e96284a`, `9f531c3f5`; test case `2d9b9e98b`):
    bytes per input value) are gone. Same arithmetic, bit-identical results.
 2. **One basic block for products, build and loads; `mma` asm no longer `volatile`.** The compiler can then put the
    build's shuffles and integer work between the dependent instructions of the Horner chains. The last chunk (nothing
-   to build) is peeled off.
+   to build) is peeled off. Plainly: its speed effect (0.94-0.98 cycles, about 3 %) is **below the 5 % rule and within
+   the noise**; it is kept as part of lever 1, which was adopted for removing a kernel launch per call and the global
+   planes-of-x scratch (bit-identical results), not for a speed gain of this step.
 3. **Output-stage row split.** About 4 blocks per resident block slot (at least one row tile per warp) instead of the
    former "fewest waves x tiles" rule, which gave e.g. 32 large blocks on 20 SMs (12 SMs doing twice the work of 8).
 
@@ -759,17 +761,27 @@ path 1 using s_v2 instead of s_v2r: fails, 314/452, error 2.2; the build written
 375/452; the peeled last chunk dropped: fails, 241/452, error 1.08; the prefetch of x one chunk early: fails,
 376/453, error 1.93; the token-chunk offset of x ignored: first **passed every test** (with only the planes of t in
 the 12 MiB budget the 5248 x 37 case no longer splits into two token chunks), so a case with two token chunks was
-added (256 x 37, 1024 + 1024 latent units, 2048 tokens, both test programs): now fails, 452/453, error 1.56.
+added (256 x 37, 1024 + 1024 latent units, 2048 tokens, both test programs): now fails, 452/453, error 1.56. A ragged case followed (review fix: 640 x 37, 1152 + 1152 latent units, 2050 tokens: token chunks of 1040 +
+1010 with a partial token tile, 2.5 chunks of x, 4.5 chunks of t per path, three output windows; engine `b564b699b`):
+it passes, and the same mutation fails both new cases (452/454, errors 1.56 and 1.27).
 
 **Task 13c result** (bench/results/phase1_13c.md). Op level, cycles against the Task 13b build (3 interleaved rounds,
 512 tokens): Qwen3-0.6B layers 0.81-0.85 (one whole layer 0.82), Qwen3-1.7B q / o 0.92, k / v 0.85, gate / up 0.99,
-down 0.87 (one layer 0.93). Model level (`bench/clock_matched.py`, pp512 first repetition, runs at 2340 MHz only):
-LittleBit Qwen3-0.6B 12000-12127 -> 12985-13541 t/s, Qwen3-1.7B 4350 -> 4756-4871 t/s; against the median F16 run
-at 2340 MHz (F16 itself spreads 11836-14486 and 5385-6342 between runs): Qwen3-0.6B 0.93 -> 1.02 (parity within the
-noise), Qwen3-1.7B 0.78 -> 0.86 (still below F16). VRAM: the scratch no longer holds the planes of x (e.g. 1.7B down
-at 512 tokens: 13.1 MB -> 3.7 MB of pool scratch, computed from the allocation sizes; not measured). Accuracy and
+down 0.87 (one layer 0.93). Model level (`bench/clock_matched.py`, pp512 first repetition; one rule for all runs: only runs whose first
+repetition is entirely at 2340 MHz, 5 of 24 runs excluded and listed in the results file): Qwen3-0.6B LittleBit
+12000-12127 -> 12985-13541 t/s, i.e. 0.93-0.94 -> 1.01-1.05 against the median F16 run (12854; F16 itself spreads
+9050-14486 at that clock): parity within the noise. Qwen3-1.7B 4350 (one run) -> 3775 / 4871 / 4756, i.e. 0.78 ->
+0.68 / 0.87 / 0.85 against the F16 median 5576; the op-level 0.93x cycles per layer bounds the gain to about 7.5 %
+(0.78 -> 0.84), and the observed 0.85-0.87 is not distinguishable from that bound: about 0.84-0.87, still below F16.
+VRAM, measured (peak `nvidia-smi` memory during `llama-bench -p 512`, 2 rounds each): 801 -> 791 MiB (0.6B), 1191 ->
+1181 MiB (1.7B); the scratch no longer holds the planes of x (computed for 1.7B down at 512 tokens: 13.1 MB -> 3.7
+MB). Accuracy and
 determinism unchanged: every change is bit-identical (test-littlebit-ref worst 1.806e-7, NMSE 2.251e-12, as before).
-Not done: merging the q / k / v and gate / up ops into shared launches (graph-level reordering plus multi-op
+Not tried (lever 3 of the plan): cp.async prefetch of the weight bits (the diagnostic build without any per-chunk weight
+loads saved little, and the loads are already issued one chunk / one row tile ahead), persistent or stream-K
+scheduling (the row split, a cheaper form of the same balancing, took most of what imbalance cost), smaller tiles for
+small shapes (the m16n8k256 instruction fixes 8 tokens and 16 rows per tile; smaller blocks were not built). Not
+done: merging the q / k / v and gate / up ops into shared launches (graph-level reordering plus multi-op
 kernels); the in-model trace shows no launch gaps (0.16 ms per pass), so its gain would come only from fuller grids
 on the small k / v layers. Where the 1.7B time is now: the latent stage (per-chunk plane build, repeated for each 256
 latent rows) and the output stage of gate / up, both at roughly 60-75 % of the instruction peak per cycle.
