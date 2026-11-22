@@ -304,10 +304,11 @@ emit(**r)
 def _growth(samples: list[dict], key: str) -> float:
     """Growth of `key` between the start (after a warm-up sample) and the end, robust to the allocator's bimodal
     states (measured: the CPU heap of a load/free cycle alternates between two levels 32 MiB apart, with no trend over
-    200 cycles): the change of the floor (minimum) and of the ceiling (maximum) of the first and last five samples,
+    200 cycles): the change of the floor (minimum) and of the ceiling (maximum) of the first and last samples (up to five each, never overlapping),
     whichever is larger."""
     vals = [x[key] for x in samples[1:]]
-    head, tail = vals[:5], vals[-5:]
+    k = max(1, min(5, len(vals) // 2))  # non-overlapping head and tail, up to five samples each
+    head, tail = vals[:k], vals[-k:]
     return max(min(tail) - min(head), max(tail) - max(head))
 
 
