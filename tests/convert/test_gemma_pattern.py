@@ -26,6 +26,7 @@ class _Writer:
         self.calls = []
 
     def add_sliding_window_pattern(self, v):
+        """Record the sliding-window pattern the converter asks for."""
         self.calls.append(v)
 
 

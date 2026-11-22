@@ -55,6 +55,7 @@ class build_py(_build_py):
     """build_py that also copies the native files into build/lib/littlemore/_bin/."""
 
     def run(self) -> None:
+        """Build as usual, then copy the native library and plugins into the package (they are not Python files)."""
         super().run()
         dest = Path(self.build_lib) / "littlemore" / "_bin"
         dest.mkdir(parents=True, exist_ok=True)
@@ -66,10 +67,12 @@ class bdist_wheel(_bdist_wheel):
     """Platform-specific but Python-version independent wheel: py3-none-<platform>."""
 
     def finalize_options(self) -> None:
+        """Mark the wheel as non-pure: it bundles native libraries, so it needs a platform tag and goes to platlib."""
         super().finalize_options()
         self.root_is_pure = False  # contains native libraries: goes to platlib and gets a platform tag
 
     def get_tag(self) -> tuple[str, str, str]:
+        """Keep the platform tag but drop the Python-version tag: no CPython extension module, so any Python 3 works."""
         _, _, plat = super().get_tag()
         return "py3", "none", plat
 
@@ -78,6 +81,7 @@ class BinaryDistribution(Distribution):
     """Tells setuptools the distribution has platform-specific content."""
 
     def has_ext_modules(self) -> bool:
+        """Report platform-specific content (the bundled native files) although there is no extension module."""
         return True
 
 

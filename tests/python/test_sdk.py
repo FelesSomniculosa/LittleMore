@@ -106,6 +106,7 @@ def test_chat_applies_template(model) -> None:
     answer `generate` gives to the same conversation written out as ChatML text (greedy, and also with a seeded
     sampler, where equal text is much stronger evidence), and differs when the message or the system prompt changes."""
     def framed(content: str) -> str:
+        """The ChatML text of one user turn, as the model's chat template renders it."""
         return "<|im_start|>user\n" + content + "<|im_end|>\n<|im_start|>assistant\n"
 
     user = [{"role": "user", "content": "Hello"}]
@@ -322,6 +323,7 @@ def _fake_invoke(pieces: list[bytes], delivered: list[bytes]):
     """An `invoke` for the streaming helper that plays the part of lm_generate: it hands scripted raw byte pieces
     to the callback, stops as soon as the callback returns non-zero, and returns LM_OK (0) like the C library."""
     def invoke(cb) -> int:
+        """Fake C generation call: deliver the pieces through the callback until it asks to stop."""
         for p in pieces:
             buf = ctypes.create_string_buffer(p)
             delivered.append(p)
@@ -338,6 +340,7 @@ def _stream(pieces: list[bytes], delivered: list[bytes] | None = None, lock: thr
 
 
 def _stream_threads() -> list[threading.Thread]:
+    """Live stream worker threads of the SDK (named `littlemore-stream`); tests use it to prove none is left behind."""
     return [t for t in threading.enumerate() if t.name == "littlemore-stream"]
 
 
@@ -385,6 +388,7 @@ def test_stream_consumed_from_another_thread() -> None:
 
 def test_error_in_the_c_call_reaches_the_consumer() -> None:
     def failing(cb) -> int:
+        """Fake C generation call that fails, to test error propagation out of a stream."""
         raise _lib.LittleMoreError("lm_chat: boom", status=10, status_name="LM_ERR_DECODE")
     gen = _model_mod._stream_text(failing, threading.Lock(), _model_mod._ActiveStreams())
     with pytest.raises(littlemore.LittleMoreError, match="boom"):
@@ -416,6 +420,7 @@ def test_concurrent_chat_from_two_threads(model) -> None:
     errors: list[BaseException] = []
 
     def work(i: int) -> None:
+        """Worker thread: chat three times and check each answer equals the single-thread result."""
         try:
             for _ in range(3):
                 results[i] = model.chat(msgs, max_tokens=10)
@@ -463,7 +468,8 @@ def test_chat_message_validation(lib_path: Path) -> None:
 class _Handle:
     """Stand-in for the object os.add_dll_directory returns."""
 
-    def close(self) -> None: ...
+    def close(self) -> None:
+        """Stub with the one method the code under test calls."""
 
 
 @pytest.mark.skipif(os.name != "nt", reason="os.add_dll_directory exists only on Windows")
@@ -539,6 +545,7 @@ def _finishes_within(fn, seconds: float = 40):
     err: list[BaseException] = []
 
     def run() -> None:
+        """Run `fn` and keep its result or exception for the main thread."""
         try:
             box.append(fn())
         except BaseException as e:  # noqa: BLE001 - re-raised in the caller
@@ -561,6 +568,7 @@ def test_second_generation_while_a_stream_is_open_raises_instead_of_deadlocking(
     """Case A: a stream that was abandoned but is still referenced keeps the session. A new generation call on the
     same thread can never succeed (nobody would consume the stream), so it raises a clear error."""
     def body() -> None:
+        """Abandon a stream early (still alive) and check that every new generation from this thread is refused."""
         s = model.chat(_HELLO, stream=True, max_tokens=200)
         for _piece in s:
             break  # abandoned early, but `s` is still alive
@@ -583,6 +591,7 @@ def test_tokenizer_and_info_work_inside_a_stream_loop(model) -> None:
     """Case B: tokenize, detokenize and info need no session, so they run while a stream is open (the C API allows
     it during generation)."""
     def body() -> None:
+        """While a stream is open, tokenize/detokenize must keep working and give the same answers."""
         ids = model.tokenize("Hello world")
         seen = 0
         for _piece in model.generate("Hello", stream=True, max_tokens=100):
@@ -631,6 +640,7 @@ def test_half_consumed_stream_at_interpreter_exit_does_not_hang(tiny_gguf: Path)
 # --------------------------------------------------------------------------------------------------------------
 def test_failing_callback_surfaces_the_error_in_stream_and_collect(monkeypatch) -> None:
     def boom(ptr, length):
+        """Fake `ctypes.string_at` that fails, to test that errors in the callback surface."""
         raise RuntimeError("cannot copy the piece")
 
     monkeypatch.setattr(_model_mod.ctypes, "string_at", boom)
@@ -645,6 +655,7 @@ def test_failing_callback_surfaces_the_error_in_stream_and_collect(monkeypatch) 
 
 def test_keyboard_interrupt_in_the_callback_is_reraised_after_the_call(monkeypatch) -> None:
     def interrupt(ptr, length):
+        """Fake `ctypes.string_at` that raises KeyboardInterrupt, to test Ctrl+C handling."""
         raise KeyboardInterrupt
 
     monkeypatch.setattr(_model_mod.ctypes, "string_at", interrupt)
@@ -717,6 +728,7 @@ def test_nvidia_wheel_dirs_come_from_site_packages_not_the_working_directory(mon
 @pytest.mark.skipif(os.name != "nt", reason="os.add_dll_directory exists only on Windows")
 def test_add_dll_directory_failure_is_tolerated(monkeypatch, lib_path: Path) -> None:
     def refuse(path):
+        """Fake `os.add_dll_directory` that refuses, to test that the SDK carries on."""
         raise OSError("not allowed")
 
     monkeypatch.setattr(os, "add_dll_directory", refuse)

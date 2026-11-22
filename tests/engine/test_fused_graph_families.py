@@ -152,6 +152,7 @@ def test_old_format_without_packed_scales_is_bit_identical(case):
     assert not any(t.name.endswith(".lb_s_pkr") for t in gguf.GGUFReader(str(old)).tensors)
 
     def corrupt(t):
+        """Tensor rewriter for the mutation test: damage the packed residual scales (`lb_s_pkr`), leave every other tensor alone."""
         if not t.name.endswith(".lb_s_pkr"):
             return None
         a = np.array(t.data, dtype=np.float32).reshape(-1)

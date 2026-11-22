@@ -222,6 +222,7 @@ def test_littlebit_nodes_and_weights_on_cuda_at_ngl99(ggufs):
     b1, _ = ggufs
 
     def off_cuda(nodes):
+        """The graph nodes that are not entirely on CUDA0 (the node, its device and its sources are all checked)."""
         return [(n, d, s) for n, d, s in nodes if d != "CUDA0" or any(sd != "CUDA0" or "#" in sn for sn, sd in s)]
 
     gpu = littlebit_placement(b1, 99)

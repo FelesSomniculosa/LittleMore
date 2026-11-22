@@ -25,6 +25,7 @@ def _params(out_f, in_f, r, gen, residual=True):
     vectors u1, u2, v1, v2 (kept in 0.5..1.5 so no scale is near zero).
     """
     def path():
+        """Random tensors for one LittleBit path (signs, scales) of the given shape."""
         return {
             "U": _signs(out_f, r, gen), "V": _signs(r, in_f, gen),
             "u1": torch.rand(1, out_f, generator=gen) + 0.5,

@@ -79,6 +79,7 @@ thread_local ggml_log_level t_prev_level = GGML_LOG_LEVEL_NONE;
 ggml_log_level g_print_level = GGML_LOG_LEVEL_ERROR;
 bool g_print_nothing = false;
 
+// Reads LITTLEMORE_LOG once and sets which engine log lines are printed (errors are always captured for error messages).
 void read_log_env() {
     const char * v = std::getenv("LITTLEMORE_LOG");
     if (!v || !*v) {
@@ -319,6 +320,7 @@ std::string library_dir() {
 #endif
 }
 
+// One-time library setup (std::call_once): log filter, loading the backend plugins from the library's own folder, llama backend init.
 void init_once() {
     read_log_env();
     llama_log_set(log_callback, nullptr); // also sets ggml's logger, so plugin loading is filtered too
@@ -389,6 +391,7 @@ std::vector<ggml_backend_dev_t> default_gpu_devices() {
     return gpus.empty() ? igpus : gpus;
 }
 
+// Comma-separated names of the devices the engine found, for error messages.
 std::string available_devices_text() {
     std::string out;
     for (size_t i = 0; i < ggml_backend_dev_count(); ++i) {
@@ -665,6 +668,7 @@ struct lm_session {
 
 namespace {
 
+// Tokenizes `text` into `out`, growing the buffer once if the first size guess was too small.
 lm_status tokenize_into(const llama_vocab * vocab, const char * text, size_t len, bool special,
                         std::vector<llama_token> & out, const char * fn) {
     // llama_tokenize takes int32 lengths; the first guess of the token count is len + 8 (bytes bound tokens, plus
@@ -713,6 +717,7 @@ llama_sampler * make_sampler(const lm_sampling & s) {
     return chain;
 }
 
+// Validates an lm_sampling from the caller (struct size, reserved fields, ranges) into the filled-in copy `s`.
 lm_status check_sampling(const lm_sampling * in, lm_sampling & s, const char * fn) {
     lm_sampling_default(&s);
     lm_status st = read_struct(in, s, fn, "lm_sampling");
@@ -745,6 +750,7 @@ void fill_batch(llama_batch_ext * batch, const llama_token * tokens, int32_t n, 
     }
 }
 
+// Maps the engine's decode return code to an lm_status: 1 = context full, anything else non-zero = decode failure.
 lm_status decode_status(int32_t rc, const char * fn) {
     if (rc == 0) {
         return LM_OK;
@@ -870,10 +876,12 @@ struct owner_scope {
     ~owner_scope() { s->owner.store(std::thread::id()); }
 };
 
+// True when the calling thread is the one currently generating on this session (i.e. we are inside its token callback).
 bool is_reentrant(const lm_session * s) {
     return s->owner.load() == std::this_thread::get_id();
 }
 
+// Error for an API call made from inside the session's own token callback: refused, because the session lock is held by the running generation (calling back would deadlock).
 lm_status reentrant_error(const char * fn) {
     return fail(LM_ERR_REENTRANT, std::string(fn) +
                                       ": called from inside this session's own token callback; it is refused (the "

@@ -114,6 +114,7 @@ class _GpuSampler:
             return self
 
         def read() -> None:
+            """Reader thread: append each nvidia-smi line (memory MiB, SM clock MHz) and its time to the samples."""
             assert self._proc is not None and self._proc.stdout is not None
             for line in self._proc.stdout:
                 try:

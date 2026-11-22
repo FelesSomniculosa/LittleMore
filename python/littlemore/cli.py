@@ -22,11 +22,14 @@ import sys
 import time
 import types
 from pathlib import Path
-from typing import Sequence
+from typing import TYPE_CHECKING, Sequence
 
 from . import _lib
 from ._lib import LittleMoreError
 from ._version import __version__
+
+if TYPE_CHECKING:  # only for the type hints; the real import stays lazy (see _open_model)
+    from .model import Model
 
 
 # --------------------------------------------------------------------------------------------------------------
@@ -47,7 +50,7 @@ def _add_model_args(p: argparse.ArgumentParser) -> None:
     p.add_argument("--n-threads", type=int, default=0, help="CPU threads (0 = library default)")
 
 
-def _open_model(a: argparse.Namespace, n_ctx: int | None = None):
+def _open_model(a: argparse.Namespace, n_ctx: int | None = None) -> "Model":
     """Build a `Model` from the shared options (imported lazily so `--help` stays instant)."""
     from .model import Model
 
@@ -126,7 +129,7 @@ def _sampling_kwargs(a: argparse.Namespace) -> dict:
     return kw
 
 
-def _answer(model, history: list[dict[str, str]], kw: dict) -> str:
+def _answer(model: "Model", history: list[dict[str, str]], kw: dict) -> str:
     """Stream the answer to stdout and return it. Ctrl+C stops the generation and keeps what was printed."""
     parts: list[str] = []
     gen = model.chat(history, stream=True, **kw)
@@ -145,6 +148,7 @@ def _answer(model, history: list[dict[str, str]], kw: dict) -> str:
 
 
 def _cmd_run(a: argparse.Namespace) -> int:
+    """`littlemore run`: one answer for --prompt, otherwise an interactive chat loop. Returns the exit code."""
     from .model import _make_sampling
 
     kw = _sampling_kwargs(a)

@@ -32,7 +32,7 @@ from __future__ import annotations
 import re
 import contextlib
 import warnings
-from collections.abc import Mapping
+from collections.abc import Iterator, Mapping
 from dataclasses import dataclass
 from pathlib import Path
 
@@ -143,6 +143,7 @@ class LBLinear(nn.Module):
     def from_params(cls, p: LBLinearParams, packed: bool = False) -> "LBLinear":
         """Build from loaded checkpoint params (`packed`: see `__init__`)."""
         def tup(q: LBPathParams) -> tuple[Tensor, ...]:
+            """The six tensors of one path, in the order the constructor takes them."""
             return (q.U, q.V, q.u1, q.u2, q.v1, q.v2)
         return cls(*tup(p.primary), residual=tup(p.residual) if p.residual else None, packed=packed)
 
@@ -303,7 +304,7 @@ class LazyCheckpoint(Mapping):
         """Membership from the index alone (the inherited Mapping version would read and unpack the module)."""
         return mod in self._index
 
-    def __iter__(self):
+    def __iter__(self) -> "Iterator[str]":
         """Module names, in the order they first appear in the checkpoint files."""
         return iter(self._index)
 
@@ -322,7 +323,7 @@ def load_checkpoint(ckpt_dir: Path) -> dict[str, LBLinearParams]:
 
 
 @contextlib.contextmanager
-def _meta_parameters():
+def _meta_parameters() -> "Iterator[None]":
     """Create nn.Module parameters on the meta device (buffers stay real).
 
     Same idea as accelerate's init_empty_weights: the dense weights of Linears we
@@ -332,6 +333,7 @@ def _meta_parameters():
     orig = nn.Module.register_parameter
 
     def register(self, name, param):
+        """Replacement for register_parameter: keep each parameter but on the meta device (no memory)."""
         orig(self, name, param)
         if param is not None:
             self._parameters[name] = nn.Parameter(

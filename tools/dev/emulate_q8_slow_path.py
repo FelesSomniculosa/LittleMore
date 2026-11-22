@@ -117,6 +117,7 @@ def _patch_rope(enable: bool) -> None:
         _ORIG_ROPE = mq.apply_rotary_pos_emb
     if enable:
         def rope(q, k, *a, **kw):
+            """RoPE as before, then round q and k to f16 like llama.cpp does."""
             q, k = _ORIG_ROPE(q, k, *a, **kw)
             return _f16(q).to(q.dtype), _f16(k).to(k.dtype)
         mq.apply_rotary_pos_emb = rope

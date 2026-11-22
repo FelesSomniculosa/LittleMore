@@ -174,14 +174,17 @@ class _ActiveStreams:
         self._events: dict[threading.Event, int | None] = {}
 
     def add(self, ev: threading.Event, owner: int | None = None) -> None:
+        """Register a running stream's stop event, with the id of the thread that consumes it."""
         with self._lock:
             self._events[ev] = owner
 
     def discard(self, ev: threading.Event) -> None:
+        """Forget a stream that has finished or been closed."""
         with self._lock:
             self._events.pop(ev, None)
 
     def stop_all(self) -> None:
+        """Ask every open stream to stop (used when the model is closed)."""
         with self._lock:
             for ev in self._events:
                 ev.set()
@@ -334,6 +337,7 @@ _LIVE_MODELS: "weakref.WeakSet[Model]" = weakref.WeakSet()
 
 
 def _close_all_models_at_exit() -> None:
+    """atexit hook: close every live model while its worker threads can still react (see the note above)."""
     for m in list(_LIVE_MODELS):
         try:
             m.close()
@@ -453,6 +457,7 @@ class Model:
         return f"Model({getattr(self, 'path', '?')!r}{', closed' if self._closed else ''})"
 
     def _check_open(self) -> None:
+        """Raise `LittleMoreError` (status CLOSED) if the model has been closed."""
         if self._closed or self._session is None:
             raise LittleMoreError("the model is closed", None, "CLOSED")
 
@@ -514,6 +519,7 @@ class Model:
                 None, "STREAM_OPEN")
 
     def _run(self, invoke: Callable[[Any], int], stream: bool) -> str | Iterator[str]:
+        """Run one generation: refuse if a stream of this thread is open, then collect the text or return a stream."""
         self._check_open()
         self._refuse_if_stream_open_here()
         if stream:

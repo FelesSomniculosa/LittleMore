@@ -21,6 +21,7 @@ needs_qwen_tok = pytest.mark.skipif(not _tiny.qwen_tokenizer_available(), reason
 
 
 def _read(path: Path) -> dict:
+    """All tensors of a GGUF file by name."""
     return {t.name: t for t in gguf.GGUFReader(str(path)).tensors}
 
 
@@ -48,6 +49,7 @@ def _set_rank(ckpt: Path, new_r: int) -> None:
 
 @pytest.fixture(scope="module")
 def q3(tmp_path_factory):
+    """Tiny Qwen3 checkpoint (skipped when the Qwen3 tokenizer is not cached)."""
     if not _tiny.qwen_tokenizer_available():
         pytest.skip("Qwen3-0.6B tokenizer not cached")
     return _tiny.make_tiny_checkpoint("qwen3", tmp_path_factory.mktemp("q3r"))
@@ -196,6 +198,7 @@ def test_unlink_failure_does_not_mask_original_error(q3, tmp_path, monkeypatch):
     real_unlink = Path.unlink
 
     def bad_unlink(self, *a, **k):
+        """unlink that fails for `.partial` files, simulating a file still locked by a memory map."""
         if self.name.endswith(".partial"):
             raise PermissionError("simulated mmap lock")
         return real_unlink(self, *a, **k)

@@ -109,6 +109,7 @@ def test_wrong_split_dim_final_fails_before_any_tensor_is_converted(q3, tmp_path
         conv = make(*a, **k)
 
         def boom():
+            """Stand-in for prepare_tensors: fails the test if the conversion goes on after a bad checkpoint was seen."""
             raise _PrepareCalled()
         conv.prepare_tensors = boom
         return conv

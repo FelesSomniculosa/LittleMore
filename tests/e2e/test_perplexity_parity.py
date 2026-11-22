@@ -102,10 +102,12 @@ TOTAL_TOKENS = 298938  # Qwen3 tokenisation of RAW (no BOS)
 
 
 def _sha256(path) -> str:
+    """SHA-256 of a file, to check the pinned dataset."""
     return hashlib.sha256(path.read_bytes()).hexdigest()
 
 
 def n_chunks() -> int:
+    """Number of 512-token chunks to score (LITTLEMORE_PPL_CHUNKS, default DEFAULT_CHUNKS)."""
     return int(os.environ.get("LITTLEMORE_PPL_CHUNKS", DEFAULT_CHUNKS))
 
 
@@ -168,6 +170,7 @@ def reference_chunk_nll(model, ids: np.ndarray) -> float:
 
 
 def reference_nlls(model, chunk_ids: np.ndarray) -> list[float]:
+    """Per-chunk negative log-likelihood (nats per scored token) of the PyTorch reference over the chunks."""
     return [reference_chunk_nll(model, c) for c in chunk_ids]
 
 
@@ -220,6 +223,7 @@ def engine_chunk_nlls(assets, wiki_raw, n: int, device_args: tuple) -> tuple[lis
 
 
 def ppl(nlls) -> float:
+    """Perplexity from per-chunk mean negative log-likelihoods: exp(mean)."""
     return math.exp(sum(nlls) / len(nlls))
 
 

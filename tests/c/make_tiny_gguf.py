@@ -68,6 +68,7 @@ def build(out: Path) -> Path:
 
 
 def main(argv: list[str]) -> int:
+    """Command line: build the tiny GGUF at argv[1] and print where it is. Returns the exit code."""
     if len(argv) != 2:
         print(__doc__.strip().splitlines()[-1], file=sys.stderr)
         return 2

@@ -25,7 +25,7 @@ F32H16 = A.CACHE / "gguf" / "qwen3-0.6b-base-f32-head-f16.gguf"
 CONFIGS = {"default": (), "exact": ("-fa", "off", "-ctk", "f32", "-ctv", "f32")}
 
 
-def dense_reference(ids):
+def dense_reference(ids: list[int]) -> np.ndarray:
     """Last-position logits of the original dense Qwen3-0.6B in fp32 on CPU (HF transformers) for token ids `ids`."""
     from transformers import AutoModelForCausalLM
     m = AutoModelForCausalLM.from_pretrained(str(A.MODEL_DIR), dtype=torch.float32).eval()
@@ -33,13 +33,13 @@ def dense_reference(ids):
         return m(torch.tensor([ids])).logits[0, -1].numpy()
 
 
-def stats(a, b):
+def stats(a: np.ndarray, b: np.ndarray) -> tuple[float, float]:
     """(max absolute difference, root-mean-square difference) between two logit vectors."""
     d = a - b
     return float(np.abs(d).max()), float(np.sqrt(np.mean(d * d)))
 
 
-def main():
+def main() -> None:
     """Run every (prompt, -ngl, config, model) combination and print the markdown table."""
     if not F32H16.exists():   # F32 dense with only the (tied) embedding / head in F16, like the LittleBit file
         import gguf

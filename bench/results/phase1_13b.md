@@ -4,7 +4,7 @@ What: the gate harness (`bench/run_bench.py`, the protocol of the Phase 1 gate r
 llama-bench repetitions, tg128 before pp512, 3 s warm-up load kept running until llama-bench's warm-up pass) on the
 original Qwen3-0.6B and Qwen3-1.7B, for the LittleBit 0.55 bpw file (F16 head) with the engine's new default (the
 exact tensor-core prefill path, `ggml-cuda/littlebit-bp.cu`) and, in the same rounds, the same file with
-`GGML_CUDA_LITTLEBIT_F32_PREFILL=1` (the float32 GEMM prefill path, i.e. the engine before this task), plus the dense
+`GGML_CUDA_LITTLEBIT_F32_PREFILL=1` (the float32 GEMM prefill path, i.e. the engine before the tensor-core prefill path), plus the dense
 F16 and bf16 baselines. Plan: [../plans/phase1_13b.json](../plans/phase1_13b.json); raw data:
 [phase1_13b.json](phase1_13b.json), VRAM from a separate pass without the load ([phase1_13b_vram.json](phase1_13b_vram.json)).
 

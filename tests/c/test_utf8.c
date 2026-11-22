@@ -17,6 +17,7 @@ typedef struct utf8_case {
     size_t       expect;
 } utf8_case;
 
+/* Checks the UTF-8 boundary rule of the streaming code against a table of complete and split sequences. */
 int main(void) {
     static const utf8_case cases[] = {
         { "empty", "", 0, 0 },

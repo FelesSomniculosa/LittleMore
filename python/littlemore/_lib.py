@@ -219,6 +219,7 @@ def find_library() -> Path:
 
 
 def _split_paths(value: str | None) -> list[str]:
+    """Split a PATH-style string into its non-empty folders."""
     return [p for p in (value or "").split(os.pathsep) if p]
 
 
@@ -263,6 +264,7 @@ def _default_cuda_toolkit_bins() -> list[str]:
     pattern = os.path.join(root, "NVIDIA GPU Computing Toolkit", "CUDA", "v*", "bin")
 
     def version_key(p: str) -> tuple[int, ...]:
+        """Sort key: the numeric version of a toolkit folder such as CUDA/v12.9/bin."""
         name = Path(p).parent.name.lstrip("v")
         return tuple(int(x) for x in name.split(".") if x.isdigit())
 

@@ -161,7 +161,7 @@ def _layer_rank(name: str, d_out: int, d_in: int, bpw: float, residual: bool,
     return min(r, cap)
 
 
-def _path(W: Tensor, r: int, use_itq: bool, seed: int):
+def _path(W: Tensor, r: int, use_itq: bool, seed: int) -> tuple[Tensor, dict[str, Tensor]]:
     """Initialise one path of a (d_out, d_in) weight `W` at rank `r`.
 
     Returns (dense reconstruction of the path, dict of tensors to store).  The

@@ -124,6 +124,7 @@ typedef struct collector {
     int    split_piece; /* a piece that ended inside an unfinished UTF-8 sequence (only the last may) */
 } collector;
 
+/* Token callback: records the text, flags pieces whose length disagrees with their NUL terminator or that split a UTF-8 sequence, and stops after `stop_after` pieces. */
 static int collect_cb(const char * piece, size_t len, void * user) {
     collector * c = (collector *) user;
     if (strlen(piece) != len) {
@@ -141,6 +142,7 @@ static int collect_cb(const char * piece, size_t len, void * user) {
     return (c->stop_after > 0 && c->pieces >= c->stop_after) ? 1 : 0;
 }
 
+/* Resets a collector; stop_after = 0 means never ask to stop. */
 static void collector_init(collector * c, int stop_after) {
     memset(c, 0, sizeof(*c));
     c->stop_after = stop_after;
@@ -162,6 +164,7 @@ static void print_escaped(const char * label, const char * text) {
     printf("\"\n");
 }
 
+/* Sampling settings for deterministic output (temperature 0) of at most max_tokens pieces. */
 static lm_sampling greedy(int32_t max_tokens) {
     lm_sampling s;
     lm_sampling_default(&s);
@@ -202,6 +205,7 @@ typedef struct thread_job {
     lm_status    status;
 } thread_job;
 
+/* One thread's work: generate 16 greedy tokens from the job's session and prompt. */
 static void run_job(thread_job * job) {
     lm_sampling s = greedy(16);
     collector_init(&job->out, 0);
@@ -253,6 +257,7 @@ static lm_model_options mode_options(void) {
 
 /* ---- tests ------------------------------------------------------------------------------------------------ */
 
+/* The header's version constants agree with what the library reports. */
 static void test_versions(void) {
     char expect[32];
     snprintf(expect, sizeof(expect), "%d.%d.%d", LM_VERSION_MAJOR, LM_VERSION_MINOR, LM_VERSION_PATCH);
@@ -261,6 +266,7 @@ static void test_versions(void) {
     CHECK(strcmp(lm_status_name(LM_ERR_MODEL_LOAD), "LM_ERR_MODEL_LOAD") == 0, "%s", lm_status_name(LM_ERR_MODEL_LOAD));
 }
 
+/* NULL arguments are refused with LM_ERR_INVALID_ARG, the error names the failing function and outputs are set to NULL. */
 static void test_null_args(void) {
     lm_model *   m = (lm_model *) (uintptr_t) 1;   /* must be overwritten with NULL on failure */
     size_t       n = 0;
@@ -318,6 +324,7 @@ static void test_struct_size_rules(void) {
     CHECK_ERR(lm_model_load("missing.gguf", &big.o, &m), LM_ERR_UNSUPPORTED);
 }
 
+/* Loading a missing file fails with LM_ERR_MODEL_LOAD and leaves the output pointer NULL. */
 static void test_bad_path(void) {
     lm_model * m = (lm_model *) (uintptr_t) 1;
     lm_model_options o = mode_options();
@@ -326,6 +333,7 @@ static void test_bad_path(void) {
     CHECK(strstr(lm_last_error(), "does-not-exist.gguf") != NULL, "message should name the file: %s", lm_last_error());
 }
 
+/* lm_backends_info: the size query, a too-small buffer, and the device list. */
 static void test_backends_info(void) {
     size_t need = lm_backends_info(NULL, 0);
     char * buf;
@@ -356,6 +364,7 @@ static void test_backends_info(void) {
     free(buf);
 }
 
+/* Loads a model and fails the test with the library's message if that does not work. */
 static lm_model * load(const char * path, const lm_model_options * o) {
     lm_model * m = NULL;
     lm_status st = lm_model_load(path, o, &m);
@@ -363,6 +372,7 @@ static lm_model * load(const char * path, const lm_model_options * o) {
     return m;
 }
 
+/* Reads the model info using the current struct size. */
 static lm_model_info get_info(const lm_model * m) {
     lm_model_info info;
     memset(&info, 0, sizeof(info));
@@ -371,6 +381,7 @@ static lm_model_info get_info(const lm_model * m) {
     return info;
 }
 
+/* Model info after a default load: layer counts, sizes and GPU placement agree with the mode under test. */
 static void test_autofit(const char * path) {
     lm_model_options o = mode_options();
     lm_model * m;
@@ -448,6 +459,7 @@ static void test_autofit(const char * path) {
     lm_model_free(m);
 }
 
+/* tokenize / detokenize: round trip, size queries, small buffers and special tokens. */
 static void test_tokens(const lm_model * m) {
     const char * text = "the quick brown fox jumps over the lazy dog";
     int32_t tok[64];
@@ -484,6 +496,7 @@ static void test_tokens(const lm_model * m) {
     CHECK_ERR(lm_detokenize(m, tok, 1, back, sizeof(back), 0, &len), LM_ERR_TOKENIZE);
 }
 
+/* Sessions: chat template, raw generation, stopping from the callback, and seeded-sampling reproducibility. */
 static void test_chat(lm_model * m) {
     lm_session * s = NULL;
     collector    chat, raw, again, stop, seeded1, seeded2;
@@ -610,6 +623,7 @@ typedef struct reentry {
     int          calls;
 } reentry;
 
+/* Token callback that calls back into its own session, which the library must refuse. */
 static int reentry_cb(const char * piece, size_t len, void * user) {
     reentry *   r   = (reentry *) user;
     lm_message  msg = { "user", "again" };
@@ -630,6 +644,7 @@ static int reentry_cb(const char * piece, size_t len, void * user) {
     return 0;
 }
 
+/* Calling the API from inside the session's own token callback is refused; the running generation continues. */
 static void test_reentrancy(lm_model * m) {
     lm_session * s = NULL;
     reentry      r;
@@ -663,6 +678,7 @@ static void test_reentrancy(lm_model * m) {
 
 /* ---- model info from an older, smaller struct ------------------------------------------------------------- */
 
+/* An older, smaller lm_model_info struct is filled only up to its size. */
 static void test_small_info(const lm_model * m) {
     unsigned char raw[sizeof(lm_model_info)];
     lm_model_info * info = (lm_model_info *) raw;
@@ -705,6 +721,7 @@ static void * error_job_main(void * arg) {
 }
 #endif
 
+/* lm_last_error() is per thread: another thread's failure does not change this thread's message. */
 static void test_error_per_thread(void) {
     error_job job;
     char      mine[256]; /* may truncate a long engine message: the checks below only rely on its beginning */
@@ -732,6 +749,7 @@ static void test_error_per_thread(void) {
           "this thread's error changed to: %s", lm_last_error());
 }
 
+/* Two threads generating on two sessions of one model give the same text as a single thread. */
 static void test_threads(lm_model * m) {
     lm_session * s = NULL;
     thread_job   ref, a, b;
@@ -772,6 +790,7 @@ static void cycle(const char * path) {
     lm_model_free(m);
 }
 
+/* Repeated load / generate / free cycles must not grow the process's private memory (limits inside). */
 static void test_leaks(const char * path) {
     /* Limit 4 MiB over 20 cycles. Measured (Windows, this tiny model): a correct build changes by -0.6 to
      * +0.9 MiB (allocator noise); a leaked model grows by 17 MiB on the CPU and 7.5 MiB on CUDA (its weights
@@ -798,6 +817,7 @@ static void test_leaks(const char * path) {
           (unsigned long long) (after - before), n_cycles);
 }
 
+/* Runs every test in turn. Usage: test_api <model.gguf> <cpu|cuda>; returns SKIP_CODE (ctest: skipped) when the model or the CUDA device is missing. */
 int main(int argc, char ** argv) {
     const char * path = argc > 1 ? argv[1] : getenv("LITTLEMORE_TEST_MODEL");
     const char * mode = argc > 2 ? argv[2] : "cpu";

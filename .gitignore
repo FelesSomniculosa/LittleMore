@@ -8,10 +8,6 @@ __pycache__/
 # Model weights and converted model files: large, never commit them.
 *.gguf
 *.safetensors
-# Local state of the claude-flow agent tool.
-.claude-flow/
-# Local state of the swarm agent tool.
-.swarm/
 # Downloaded base models, generated checkpoints, GGUFs and logits (see docs/development.md).
 .cache/
 # Top-level CMake build of the C API, the engine and the backend plugins (see docs/development.md).

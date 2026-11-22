@@ -70,11 +70,13 @@ MUTATION_MIN_RATIO = 2.0
 
 
 def rms(a: np.ndarray, b: np.ndarray) -> float:
+    """Root-mean-square difference of two arrays."""
     return float(np.sqrt(np.mean((a - b) ** 2)))
 
 
 @pytest.fixture(scope="module")
 def gguf_path():
+    """The slow-path GGUF (skips the test when the model assets are missing)."""
     reason = A.missing_assets()
     if reason:
         pytest.skip(reason)

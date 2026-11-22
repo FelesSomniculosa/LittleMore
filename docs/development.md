@@ -312,7 +312,7 @@ perplexity bound here; the converter's bit-exact per-layer check covers them.
 "LittleBit 0.55 bpw generates faster than bf16 on CUDA for Qwen3-0.6B and Qwen3-1.7B" (Phase 1 status: PASS on
 the original weights of both models). See [bench/README.md](../bench/README.md)
 and the results in [bench/results/phase1.md](../bench/results/phase1.md). Prompt processing with the tensor-core
-prefill path (`bench/plans/phase1_13b.json` measures LittleBit with and without it, `"env"` in a plan entry):
+prefill path (`bench/plans/phase1_13b.json`, where "13b" labels the first tensor-core build as explained in [bench/README.md](../bench/README.md), measures LittleBit with and without it, `"env"` in a plan entry):
 [bench/results/phase1_13b.md](../bench/results/phase1_13b.md).
 
 ## Glossary
