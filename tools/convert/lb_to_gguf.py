@@ -71,8 +71,8 @@ Checkpoints from the LittleBit training code
 Memory
     The LittleBit linears are read one module at a time (`reference.LazyCheckpoint`); the peak is the B1 copies of all
     signs (1 bit each) plus the largest non-LittleBit tensor while llama.cpp's converter writes it (see
-    `_estimate_bytes`).  Measured for Qwen3-8B at 0.55 bits per weight: 4.9 GiB peak, 2.5 minutes including the
-    read-back validation (about 2 minutes of it).
+    `_estimate_bytes`).  Measured for Qwen3-8B at 0.55 bits per weight: about 5 GiB peak (4.92 to 4.95 GiB), about
+    3 minutes (161 to 182 s) including the read-back validation (about 2 minutes of it).
 
 Running the result and checking it
     The engine runs these B1 GGUFs through its fused LittleBit op.  Validation here does

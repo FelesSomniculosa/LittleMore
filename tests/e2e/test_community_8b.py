@@ -274,7 +274,8 @@ def test_tight_bound_fails_without_the_switch(reference, engine_default):
     """Control for the tight check: the DEFAULT engine result (no GGML_CUDA_CUBLAS_COMPUTE_TYPE) is outside TIGHT_TOL.
 
     So a tight-check pass shows that the switch reached the engine and removed the head's 16-bit accumulation, not that
-    the bound is loose.  Measured: 1.44e-3 over the default 4 chunks (4.8x TIGHT_TOL).
+    the bound is loose.  Measured default gaps: 1.44e-3 over the default 4 chunks (4.8x TIGHT_TOL) and 9.5e-4 over
+    32 chunks (3.2x TIGHT_TOL).
     """
     _, ref_nll, _ = reference
     _, eng_ppl, _ = engine_default

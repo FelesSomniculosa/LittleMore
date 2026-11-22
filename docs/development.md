@@ -152,8 +152,8 @@ for Q6_K; measured 5.35e-3 / 1.77e-2 on Qwen3-0.6B), so a wrong or corrupted hea
 
 Memory: the LittleBit linears are read one module at a time (`reference.LazyCheckpoint`), so the peak is the
 1-bit copies of all signs plus the largest other tensor while llama.cpp's converter writes it. Measured for the community
-Qwen3-8B checkpoint at 0.55 bits per weight (`LittleBitLLM/littlebit-qwen3-8b-0.55bpw`): 4.9 GiB peak working set,
-about 2.5 minutes, of which the read-back validation of the 252 linears takes about 2 minutes. Checkpoints written by
+Qwen3-8B checkpoint at 0.55 bits per weight (`LittleBitLLM/littlebit-qwen3-8b-0.55bpw`): about 5 GiB peak working set
+(4.92 to 4.95 GiB), about 3 minutes (161 to 182 s in two runs), of which the read-back validation of the 252 linears takes about 2 minutes. Checkpoints written by
 the LittleBit training code carry three bookkeeping scalars per linear (`_eff_bit_target`, `_eff_bit_actual`,
 `_split_dim_final`); they are left out after `_split_dim_final` is checked against the rank of the signs, before any
 tensor is converted (a bad checkpoint fails within seconds). The two `_eff_bit_*` values are informational and dropped
