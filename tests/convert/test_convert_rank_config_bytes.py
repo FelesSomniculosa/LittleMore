@@ -222,6 +222,14 @@ def test_memory_preflight(q3, tmp_path, monkeypatch):
 
 
 def test_estimate_scales_with_signs(tmp_path):
-    """The estimate counts a packed sign matrix as 1.125 bytes per sign (int8 copy + B1 copy)."""
+    """The estimate: 1/8 byte per sign (B1 copy) + 1 byte per sign of the LARGEST module only (the int8 copy of the
+    module being converted; modules are read one at a time) + 8 bytes per element of the largest other tensor."""
     save_file({"m.U_packed": torch.zeros(10, 4, dtype=torch.int32)}, str(tmp_path / "model.safetensors"))
     assert lb._estimate_bytes(tmp_path) == int(10 * 4 * 32 * 1.125)
+    two = tmp_path / "two"
+    two.mkdir()
+    save_file({"a.U_packed": torch.zeros(10, 4, dtype=torch.int32), "a.V_packed": torch.zeros(2, 4, dtype=torch.int32),
+               "b.U_packed": torch.zeros(10, 4, dtype=torch.int32),
+               "embed.weight": torch.zeros(100), "norm.weight": torch.zeros(50)}, str(two / "model.safetensors"))
+    signs_a, signs_b = (10 + 2) * 4 * 32, 10 * 4 * 32
+    assert lb._estimate_bytes(two) == int((signs_a + signs_b) / 8 + signs_a + 100 * 8)

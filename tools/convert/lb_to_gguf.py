@@ -62,6 +62,17 @@ reads whole blocks; the converter rejects anything else with a ConversionError r
 padding (padding the input would change the activation the engine feeds in).  The RANK has
 no such restriction: any logical rank >= 1 is padded up (see `_build_path`).
 
+Checkpoints from the LittleBit training code
+    Trained checkpoints (e.g. the community release LittleBitLLM/littlebit-qwen3-8b-0.55bpw) carry three bookkeeping
+    scalars per linear (`_eff_bit_target`, `_eff_bit_actual`, `_split_dim_final`); they are not weights and are left
+    out after `_split_dim_final` is checked against the rank of the signs (see `_drop_bookkeeping`).
+
+Memory
+    The LittleBit linears are read one module at a time (`reference.LazyCheckpoint`); the peak is the B1 copies of all
+    signs (1 bit each) plus the largest non-LittleBit tensor while llama.cpp's converter writes it (see
+    `_estimate_bytes`).  Measured for Qwen3-8B at 0.55 bits per weight: 4.9 GiB peak, 2.5 minutes including the
+    read-back validation (about 2 minutes of it).
+
 Running the result and checking it
     The engine runs these B1 GGUFs through its fused LittleBit op.  Validation here does
     not depend on the engine: every linear is read back from the written file and compared
@@ -112,6 +123,7 @@ import sys
 import tempfile
 from dataclasses import dataclass, field
 from pathlib import Path
+from collections.abc import Mapping
 from typing import Any
 
 import numpy as np
@@ -156,6 +168,13 @@ HEAD_REL_RMS_MAX = {"q8_0": 1.1e-2, "q6_k": 3.8e-2}
 # which checkpoint keys belong to LittleBit linears (everything else is a plain tensor).
 _LB_KEY = ref._KEY
 _LB_KEY_R = ref._KEY_R
+# Bookkeeping scalars that the LittleBit training code stores next to each linear's signs and scales (seen in the
+# community checkpoint LittleBitLLM/littlebit-qwen3-8b-0.55bpw): `_eff_bit_target` / `_eff_bit_actual` (bits per weight
+# the layer aimed for / reached, bf16) and `_split_dim_final` (the rank the layer ended with, int64).  They are not
+# weights and the engine has no use for them; llama.cpp's converter does not know them ("Can not map tensor").  They
+# are dropped ONLY on LittleBit linears, after `_split_dim_final` is checked against the rank of the sign matrices
+# (see `_drop_bookkeeping`); on any other module they are left to the converter, which then refuses them.
+_LB_BOOKKEEPING = re.compile(r"^(?P<mod>.+)\.(?P<name>_eff_bit_target|_eff_bit_actual|_split_dim_final)$")
 
 
 class ConversionError(Exception):
@@ -185,6 +204,7 @@ class ConversionReport:
     written_names: list[str] = field(default_factory=list)        # every tensor name in the GGUF
     biases: list[str] = field(default_factory=list)               # checkpoint bias tensors carried over
     dropped: list[str] = field(default_factory=list)              # source tensors the HF converter dropped
+    bookkeeping: list[str] = field(default_factory=list)          # LittleBit bookkeeping scalars left out (checked)
     arch: str = ""
     config_check_skipped: bool = False      # littlebit_config.json cross-check skipped (override flag)
     lb_bytes: int = 0                       # bytes of the B1 sign matrices written
@@ -420,25 +440,34 @@ def _available_memory() -> int | None:
 def _estimate_bytes(ckpt: Path) -> int:
     """Peak RAM the conversion needs, computed from the tensor shapes in the checkpoint headers.
 
-    Per packed sign matrix of n bits: n bytes (reference.load_checkpoint holds int8 signs) plus
-    n/8 bytes (the B1 copy waiting in the GGUF writer); per scale vector 8 bytes/element (the
-    checkpoint copy + the float32 copy); per other tensor 4 bytes/element (source + F16/F32 output).
-    That is roughly 0.55 GB per billion model parameters at a 0.55 bits-per-weight budget.
+    The conversion reads the LittleBit linears one module at a time (`reference.LazyCheckpoint`), so it holds:
+      * the B1 copies of ALL sign matrices, waiting in the GGUF writer: 1 bit per sign;
+      * the scale vectors: 8 bytes per element (the checkpoint copy + the float32 copy);
+      * the signs of ONE module unpacked to int8 (1 byte per sign): the largest module counts;
+      * llama.cpp's converter writes the other tensors (embedding, output head, norms) one at a time: the largest of
+        them counts, at 8 bytes per element (its source, a float32 copy and the F16 result).
+    Measured on LittleBitLLM/littlebit-qwen3-8b-0.55bpw (Qwen3-8B, 0.55 bits per weight, 151936 x 4096 embedding
+    and head): estimate 5.14 GiB, peak working set of the whole Python process 4.92 GiB.  (Before the module-at-a-
+    time reading the estimate was 8.6 GiB, which refused that conversion on a 16 GB machine with 6.8 GiB free.)
     """
-    total = 0.0
+    b1 = scales = 0.0
+    module_signs: dict[str, float] = {}
+    largest_other = 0
     for shard in _shard_files(ckpt):
         with safe_open(str(shard), framework="pt") as f:
             for key in f.keys():
                 n = 1
                 for d in f.get_slice(key).get_shape():
                     n *= int(d)
+                mod = _lb_module_of(key)
                 if key.endswith("_packed"):
-                    total += n * 32 * (1 + 1 / 8)
-                elif _lb_module_of(key) is not None:
-                    total += n * 8
+                    b1 += n * 32 / 8
+                    module_signs[mod or key] = module_signs.get(mod or key, 0) + n * 32
+                elif mod is not None:
+                    scales += n * 8
                 else:
-                    total += n * 4
-    return int(total)
+                    largest_other = max(largest_other, n)
+    return int(b1 + scales + max(module_signs.values(), default=0) + largest_other * 8)
 
 
 def _memory_preflight(ckpt: Path) -> None:
@@ -508,30 +537,42 @@ def convert_checkpoint(ckpt_dir: Path, out: Path, head_type: str = "f16", valida
                        assume_no_littlebit_config: bool = False) -> ConversionReport:
     """Convert and (by default) validate; same as `convert` but returns a `ConversionReport`.
 
-    Steps: (1) check the inputs; (2) load and cross-check the LittleBit params with
-    `reference.load_checkpoint` (duplicate keys, shape mismatches -> ConversionError naming
+    Steps: (1) check the inputs; (2) index the LittleBit params with `reference.LazyCheckpoint` and
+    cross-check every module once (duplicate keys, shape mismatches -> ConversionError naming
     the layer); (3) run llama.cpp's converter over the NON-LittleBit tensors (this also writes
     the metadata and vocabulary); (4) probe every LittleBit linear and add its B1/F32 tensors;
     (5) write to a temp file next to `out`; (6) read it back and validate every linear against
     the reference; (7) rename onto `out` only if everything passed.  On any failure no
     output and no temp file remain.
+
+    Memory: the LittleBit params are read module by module (`reference.LazyCheckpoint`) in steps (2), (4) and (6),
+    so only one layer's unpacked signs are in memory at a time, plus the B1 copies waiting in the GGUF writer (1 bit
+    per sign) and whatever llama.cpp's converter holds while it writes the non-LittleBit tensors (one at a time).
+    Each of the three passes re-reads and re-unpacks the signs (a few seconds per pass for an 8B model).
     """
     ckpt_dir, out = Path(ckpt_dir), Path(out)
     lbcfg = _check_inputs(ckpt_dir, head_type, assume_no_littlebit_config)
     _memory_preflight(ckpt_dir)
     try:
-        params = ref.load_checkpoint(ckpt_dir)
+        params = ref.LazyCheckpoint(ckpt_dir)
     except ValueError as e:
         raise ConversionError(str(e)) from e
     if not params:
         raise ConversionError(f"{ckpt_dir}: no LittleBit linear found (no <module>.U_packed tensors)")
-    has_res = [m for m, p in params.items() if p.residual is not None]
+    has_res = [m for m in params if params.has_residual(m)]
     if not assume_no_littlebit_config and "residual" in lbcfg and bool(lbcfg["residual"]) != bool(has_res):
         raise ConversionError(f"littlebit_config.json says residual={lbcfg['residual']} but "
                               f"{len(has_res)} of {len(params)} linears have a residual path")
-    for mod, p in params.items():
+    # One pass over every module (one at a time): shapes are checked when a module is unpacked, so a bad layer is
+    # refused here, before anything is built.
+    for mod in params:
+        try:
+            p = params[mod]
+        except ValueError as e:
+            raise ConversionError(str(e)) from e
         if p.residual is not None and (p.residual.U.shape[0], p.residual.V.shape[1]) != (p.primary.U.shape[0], p.primary.V.shape[1]):
             raise ConversionError(f"{mod}: residual path shape differs from the primary path")
+        del p
 
     out.parent.mkdir(parents=True, exist_ok=True)
     fd, tmp_name = tempfile.mkstemp(prefix=out.name + ".", suffix=".partial", dir=out.parent)
@@ -553,7 +594,7 @@ def convert_checkpoint(ckpt_dir: Path, out: Path, head_type: str = "f16", valida
             logger.warning("could not remove temporary file %s (%s)", tmp, e)
 
 
-def _build(ckpt: Path, params: dict[str, ref.LBLinearParams], tmp: Path, validate: bool,
+def _build(ckpt: Path, params: Mapping[str, ref.LBLinearParams], tmp: Path, validate: bool,
            head_type: str = "f16") -> ConversionReport:
     """Everything between 'inputs checked' and 'rename': build the GGUF in `tmp` and validate it."""
     report = ConversionReport(n_linears=len(params), head_type=head_type, ckpt=ckpt)
@@ -568,6 +609,7 @@ def _build(ckpt: Path, params: dict[str, ref.LBLinearParams], tmp: Path, validat
             lb_filtered.add(filt)
     for filt in lb_filtered:
         conv.model_tensors.pop(filt, None)
+    recorded_rank = _drop_bookkeeping(conv, ckpt, params, report)
     report.dropped = sorted(src for src, filt in conv._source_tensor_names.items()
                             if filt is None and _lb_module_of(src) not in params)
     keys = set(_checkpoint_keys(ckpt))
@@ -593,9 +635,12 @@ def _build(ckpt: Path, params: dict[str, ref.LBLinearParams], tmp: Path, validat
     probe_cache: dict[tuple, list[tuple[str, np.ndarray, np.ndarray]]] = {}
     layer_types = conv.hparams.get("layer_types") or (conv.hparams.get("text_config") or {}).get("layer_types")
     for mod in sorted(params):
-        p = params[mod]
+        p = params[mod]   # read and unpacked now; replaced by the next module's on the next iteration
         bid, sub = _split_layer_name(mod)
         out_f, in_f = p.primary.U.shape[0], p.primary.V.shape[1]
+        if mod in recorded_rank and recorded_rank[mod] != p.primary.U.shape[1]:
+            raise ConversionError(f"{mod}._split_dim_final is {recorded_rank[mod]} but the sign matrices of {mod} "
+                                  f"have rank {p.primary.U.shape[1]}: the checkpoint does not match its own bookkeeping")
         ltype = layer_types[bid] if (layer_types and bid is not None and bid < len(layer_types)) else None
         key = (ltype, sub, out_f, in_f)
         if key not in probe_cache:
@@ -652,6 +697,51 @@ def _build(ckpt: Path, params: dict[str, ref.LBLinearParams], tmp: Path, validat
     return report
 
 
+def _drop_bookkeeping(conv: ModelBase, ckpt: Path, params: Mapping[str, ref.LBLinearParams],
+                      report: ConversionReport) -> dict[str, int]:
+    """Take the LittleBit bookkeeping scalars (`_LB_BOOKKEEPING`) of LittleBit linears out of the converter's index.
+
+    Returns module -> the rank its `_split_dim_final` records.  `_build` compares it with the rank of the module's
+    sign matrices (the number of columns of U, which `reference.LazyCheckpoint` checks against V and the scales;
+    the residual path has the same shape, checked in `convert_checkpoint`) when it unpacks the module: a different
+    value means the tensors are not what the training code recorded, so the checkpoint is refused rather than
+    converted.  The `_eff_bit_*` values are informational (the bits per weight the training code aimed for and
+    reached); their range over the model is logged.  The names of everything dropped are kept in `report.bookkeeping`.
+    """
+    found: dict[str, str] = {}   # source key -> the name the converter indexed it under
+    for src, filt in conv._source_tensor_names.items():
+        m = _LB_BOOKKEEPING.match(src)
+        if m and m["mod"] in params and filt is not None:
+            found[src] = filt
+    if not found:
+        return {}
+    recorded: dict[str, int] = {}
+    eff: dict[str, list[float]] = {"_eff_bit_target": [], "_eff_bit_actual": []}
+    for shard in _shard_files(ckpt):
+        with safe_open(str(shard), framework="pt") as f:
+            for key in f.keys():
+                if key not in found:
+                    continue
+                m = _LB_BOOKKEEPING.match(key)
+                value = f.get_tensor(key)
+                if value.numel() != 1:
+                    raise ConversionError(f"{key}: expected a single number (LittleBit bookkeeping), "
+                                          f"found shape {tuple(value.shape)}")
+                if m["name"] == "_split_dim_final":
+                    if value.is_floating_point() or value.is_complex():
+                        raise ConversionError(f"{key}: expected an integer rank (LittleBit bookkeeping), found {value.dtype}")
+                    recorded[m["mod"]] = int(value.item())
+                else:
+                    eff[m["name"]].append(float(value.float().item()))
+    for filt in found.values():
+        conv.model_tensors.pop(filt, None)
+    report.bookkeeping = sorted(found)
+    ranges = ", ".join(f"{k} {min(v):.4f}..{max(v):.4f}" for k, v in eff.items() if v)
+    logger.info("left out %d LittleBit bookkeeping scalars (%d recorded ranks, checked against the signs; %s)",
+                len(found), len(recorded), ranges or "no bit-budget values")
+    return recorded
+
+
 def _write_gemma3_swa_pattern(conv: ModelBase) -> None:
     """Gemma 3: tell the engine which layers use sliding-window attention, from the config's `layer_types`.
 
@@ -681,7 +771,7 @@ def _write_gemma3_swa_pattern(conv: ModelBase) -> None:
         conv.gguf_writer.add_sliding_window_pattern(pattern)
 
 
-def _check_written(path: Path, params: dict[str, ref.LBLinearParams], report: ConversionReport, validate: bool) -> None:
+def _check_written(path: Path, params: Mapping[str, ref.LBLinearParams], report: ConversionReport, validate: bool) -> None:
     """Read the written GGUF back and verify counts and (if `validate`) every linear numerically.
 
     Why read back: the arrays the converter held in memory are not what the engine sees; the
@@ -699,7 +789,7 @@ def _check_written(path: Path, params: dict[str, ref.LBLinearParams], report: Co
         raise ConversionError(msg)
 
 
-def _verify(path: Path, params: dict[str, ref.LBLinearParams], report: ConversionReport, validate: bool) -> str | None:
+def _verify(path: Path, params: Mapping[str, ref.LBLinearParams], report: ConversionReport, validate: bool) -> str | None:
     """The checks of `_check_written`; returns None when fine, else the error message."""
     reader = gguf.GGUFReader(str(path))
     by_name = {t.name: t for t in reader.tensors}

@@ -32,6 +32,7 @@ from __future__ import annotations
 import re
 import contextlib
 import warnings
+from collections.abc import Mapping
 from dataclasses import dataclass
 from pathlib import Path
 
@@ -116,24 +117,41 @@ class LBLinear(nn.Module):
     """
 
     def __init__(self, U: Tensor, V: Tensor, u1: Tensor, u2: Tensor, v1: Tensor,
-                 v2: Tensor, residual: tuple[Tensor, ...] | None = None) -> None:
+                 v2: Tensor, residual: tuple[Tensor, ...] | None = None, packed: bool = False) -> None:
         """Takes the primary path's (U, V, u1, u2, v1, v2) and optionally the
-        residual path's six tensors as a tuple.  Signs are stored as int8."""
+        residual path's six tensors as a tuple.  Signs are stored as int8 (1 byte per sign), or with
+        `packed=True` bit-packed as int32 words (1 bit per sign, the checkpoint's own layout, see
+        `pack_signs`) and unpacked again in every forward call: 8x less memory for the signs, the same
+        +/-1 values, a slower forward.  `packed` is for running large models (8B) on a 16 GB machine."""
         super().__init__()
         paths = [(U, V, u1, u2, v1, v2)] + ([tuple(residual)] if residual else [])
         self.n_paths = len(paths)
+        self.packed = bool(packed)
+        self._sign_shapes: dict[str, tuple[int, int]] = {}
         for i, path in enumerate(paths):
             for name, t in zip(_NAMES, path):
-                # Signs are exact in int8; scales keep their stored dtype.
-                self.register_buffer(f"{name}_{i}", t.to(torch.int8) if name in ("U", "V") else t)
+                if name not in ("U", "V"):
+                    self.register_buffer(f"{name}_{i}", t)  # scales keep their stored dtype
+                elif self.packed:
+                    self.register_buffer(f"{name}_{i}", pack_signs(t))
+                    self._sign_shapes[f"{name}_{i}"] = (int(t.shape[0]), int(t.shape[1]))
+                else:
+                    self.register_buffer(f"{name}_{i}", t.to(torch.int8))  # signs are exact in int8
         self.out_features, self.in_features = U.shape[0], V.shape[1]
 
     @classmethod
-    def from_params(cls, p: LBLinearParams) -> "LBLinear":
-        """Build from loaded checkpoint params."""
+    def from_params(cls, p: LBLinearParams, packed: bool = False) -> "LBLinear":
+        """Build from loaded checkpoint params (`packed`: see `__init__`)."""
         def tup(q: LBPathParams) -> tuple[Tensor, ...]:
             return (q.U, q.V, q.u1, q.u2, q.v1, q.v2)
-        return cls(*tup(p.primary), residual=tup(p.residual) if p.residual else None)
+        return cls(*tup(p.primary), residual=tup(p.residual) if p.residual else None, packed=packed)
+
+    def _f32(self, name: str) -> Tensor:
+        """Buffer `name` (e.g. "U_0", "u1_1") as float32; packed sign matrices are unpacked to +/-1 first."""
+        t = getattr(self, name)
+        if name in self._sign_shapes:
+            return unpack_signs(t, self._sign_shapes[name], dtype=torch.float32)
+        return t.float()
 
     def forward(self, x: Tensor) -> Tensor:
         """Sum over paths of ((((x*v2) @ Vq.T) * (v1*u2)) @ Uq.T) * u1, computed in fp32.
@@ -148,8 +166,8 @@ class LBLinear(nn.Module):
         xf = x.to(torch.float32)
         y = 0
         for i in range(self.n_paths):
-            # .float() makes a per-layer fp32 transient on purpose (see module header).
-            U, V, u1, u2, v1, v2 = (getattr(self, f"{n}_{i}").float() for n in _NAMES)
+            # A per-layer fp32 transient on purpose (see module header); packed signs are unpacked here.
+            U, V, u1, u2, v1, v2 = (self._f32(f"{n}_{i}") for n in _NAMES)
             h = ((xf * v2) @ V.T) * (v1 * u2)
             y = y + (h @ U.T) * u1
         return y.to(x.dtype)
@@ -192,49 +210,105 @@ def _build_path(mod: str, t: dict[str, Tensor], res: str) -> LBPathParams:
     return LBPathParams(signs["U"], signs["V"], *scales.values())
 
 
+class LazyCheckpoint(Mapping):
+    """Module name -> `LBLinearParams`, read from the checkpoint files on each access, one module at a time.
+
+    What: the same keys, checks and values as `load_checkpoint` (which is simply `dict(LazyCheckpoint(d))`), but only
+    the tensor NAMES are read when it is created; a module's sign matrices are read and unpacked when it is looked up.
+    Why: a tool that walks the model module by module (the GGUF converter) then holds one layer's int8 signs at a
+    time instead of all of them; for an 8B model at 0.55 bits per weight that is 3.5 GiB less RAM, which decides
+    whether the conversion fits next to other programs on a 16 GB machine.
+    Cost: values are NOT cached, so every lookup reads and unpacks that module again (a full pass over an 8B model
+    takes about 3.5 s); keep the value while you need it, drop it when done.
+
+    Raises ValueError (as `load_checkpoint`) on a key present in more than one shard or a module with missing
+    tensors when created, and on shape mismatches when the module is looked up.
+    """
+
+    def __init__(self, ckpt_dir: Path) -> None:
+        """Index the tensor names of every `*.safetensors` shard in `ckpt_dir` (no tensor data is read)."""
+        from safetensors import safe_open
+
+        seen: dict[str, Path] = {}
+        # module -> internal name -> (shard, checkpoint key); internal names as in `_build_path` ("U_packed", "u1_R", ...)
+        self._index: dict[str, dict[str, tuple[Path, str]]] = {}
+        for shard in sorted(Path(ckpt_dir).glob("*.safetensors")):
+            with safe_open(str(shard), framework="pt") as f:
+                for key in f.keys():
+                    if key in seen:
+                        raise ValueError(f"duplicate key {key!r} in {shard.name} and {seen[key].name}")
+                    seen[key] = shard
+                    # Normalise to "<name>[_R]" where the residual suffix is `_R` on
+                    # the sign key stem (U_R_packed) or on the scale name (u1_R).
+                    mr = _KEY_R.match(key)
+                    if mr:
+                        mod, name = mr["mod"], f"{mr['name']}_R_{mr['kind']}"
+                    else:
+                        m = _KEY.match(key)
+                        if m is None:
+                            continue  # non-LittleBit tensor (e.g. norms); not ours
+                        mod, name = m["mod"], m["name"]
+                        if m["res"]:  # tolerate `U_packed_R` as an alias of `U_R_packed`
+                            name = name[0] + "_R_" + name[2:] if name[0] in "UV" else name + "_R"
+                    self._index.setdefault(mod, {})[name] = (shard, key)
+        self._residual: dict[str, bool] = {}
+        for mod, t in self._index.items():
+            need = ["U_packed", "U_shape", "V_packed", "V_shape", "u1", "u2", "v1", "v2"]
+            missing = [k for k in need if k not in t]
+            if missing:
+                raise ValueError(f"{mod}: missing tensors {missing}")
+            res_need = ["U_R_packed", "U_R_shape", "V_R_packed", "V_R_shape", "u1_R", "u2_R", "v1_R", "v2_R"]
+            has_res = any(k in t for k in res_need)
+            if has_res:
+                missing = [k for k in res_need if k not in t]
+                if missing:
+                    raise ValueError(f"{mod}: missing residual tensors {missing}")
+            self._residual[mod] = has_res
+
+    def has_residual(self, mod: str) -> bool:
+        """True when module `mod` has a residual path (known from the tensor names alone, no data read)."""
+        return self._residual[mod]
+
+    def __getitem__(self, mod: str) -> LBLinearParams:
+        """Read, unpack and check module `mod`'s tensors (KeyError for a module that is not in the checkpoint)."""
+        from safetensors import safe_open
+
+        names = self._index[mod]
+        t: dict[str, Tensor] = {}
+        by_shard: dict[Path, list[tuple[str, str]]] = {}
+        for name, (shard, key) in names.items():
+            by_shard.setdefault(shard, []).append((name, key))
+        for shard, items in by_shard.items():
+            with safe_open(str(shard), framework="pt") as f:
+                for name, key in items:
+                    # .clone(): a tensor from get_tensor is a view into a private (copy-on-write) mapping of the WHOLE
+                    # file, and keeping it keeps that mapping alive.  On Windows each such mapping is charged in full
+                    # against the commit limit (measured: +2.77 GiB per kept tensor of the 2.97 GB 8B checkpoint, each
+                    # lookup opening its own), so an 8B model built module by module crashed with an access violation
+                    # once the commit limit was reached.  The copies are small (one module's packed signs and scales).
+                    t[name] = f.get_tensor(key).clone()
+        return LBLinearParams(_build_path(mod, t, ""), _build_path(mod, t, "_R") if self._residual[mod] else None)
+
+    def __contains__(self, mod: object) -> bool:
+        """Membership from the index alone (the inherited Mapping version would read and unpack the module)."""
+        return mod in self._index
+
+    def __iter__(self):
+        """Module names, in the order they first appear in the checkpoint files."""
+        return iter(self._index)
+
+    def __len__(self) -> int:
+        return len(self._index)
+
+
 def load_checkpoint(ckpt_dir: Path) -> dict[str, LBLinearParams]:
-    """Read every `*.safetensors` shard in `ckpt_dir` and group tensors by module prefix.
+    """Read every `*.safetensors` shard in `ckpt_dir` and group tensors by module prefix (all modules in memory).
 
     Raises ValueError on a key present in more than one shard, on a module with
     missing tensors, or when `*_shape` disagrees with the packed word count.
+    For a module-at-a-time view with the same checks and values, use `LazyCheckpoint`.
     """
-    from safetensors import safe_open
-
-    seen: dict[str, Path] = {}
-    mods: dict[str, dict[str, Tensor]] = {}
-    for shard in sorted(Path(ckpt_dir).glob("*.safetensors")):
-        with safe_open(str(shard), framework="pt") as f:
-            for key in f.keys():
-                if key in seen:
-                    raise ValueError(f"duplicate key {key!r} in {shard.name} and {seen[key].name}")
-                seen[key] = shard
-                # Normalise to "<name>[_R]" where the residual suffix is `_R` on
-                # the sign key stem (U_R_packed) or on the scale name (u1_R).
-                mr = _KEY_R.match(key)
-                if mr:
-                    mod, name = mr["mod"], f"{mr['name']}_R_{mr['kind']}"
-                else:
-                    m = _KEY.match(key)
-                    if m is None:
-                        continue  # non-LittleBit tensor (e.g. norms); not ours
-                    mod, name = m["mod"], m["name"]
-                    if m["res"]:  # tolerate `U_packed_R` as an alias of `U_R_packed`
-                        name = name[0] + "_R_" + name[2:] if name[0] in "UV" else name + "_R"
-                mods.setdefault(mod, {})[name] = f.get_tensor(key)
-    out: dict[str, LBLinearParams] = {}
-    for mod, t in mods.items():
-        need = ["U_packed", "U_shape", "V_packed", "V_shape", "u1", "u2", "v1", "v2"]
-        missing = [k for k in need if k not in t]
-        if missing:
-            raise ValueError(f"{mod}: missing tensors {missing}")
-        res_need = ["U_R_packed", "U_R_shape", "V_R_packed", "V_R_shape", "u1_R", "u2_R", "v1_R", "v2_R"]
-        has_res = any(k in t for k in res_need)
-        if has_res:
-            missing = [k for k in res_need if k not in t]
-            if missing:
-                raise ValueError(f"{mod}: missing residual tensors {missing}")
-        out[mod] = LBLinearParams(_build_path(mod, t, ""), _build_path(mod, t, "_R") if has_res else None)
-    return out
+    return dict(LazyCheckpoint(ckpt_dir))
 
 
 @contextlib.contextmanager
@@ -260,7 +334,7 @@ def _meta_parameters():
         nn.Module.register_parameter = orig
 
 
-def build_model(base_hf_id: str, ckpt_dir: Path) -> nn.Module:
+def build_model(base_hf_id: str, ckpt_dir: Path, packed_signs: bool = False) -> nn.Module:
     """Build the base HF model and swap checkpoint-listed Linears for LBLinear.
 
     Modules are matched by name against the checkpoint; embeddings, norms and
@@ -269,11 +343,15 @@ def build_model(base_hf_id: str, ckpt_dir: Path) -> nn.Module:
     read, so the dense weights of replaced Linears are never held in memory.
     A checkpoint module with no matching nn.Linear raises ValueError.  A replaced
     Linear that had a bias loses it (LBLinear has none): a warning is emitted.
+
+    `packed_signs=True` keeps the signs bit-packed (`LBLinear(packed=True)`) and reads the checkpoint one module at
+    a time (`LazyCheckpoint`), so the unpacked signs of the whole model are never in memory at once (8B at 0.55
+    bits per weight: 0.43 GiB of packed signs instead of 3.5 GiB of int8).  The values computed are the same.
     """
     from safetensors import safe_open
     from transformers import AutoConfig, AutoModelForCausalLM
 
-    params = load_checkpoint(Path(ckpt_dir))
+    params = LazyCheckpoint(Path(ckpt_dir)) if packed_signs else load_checkpoint(Path(ckpt_dir))
     base = Path(base_hf_id)
     if not base.is_dir():
         from huggingface_hub import snapshot_download
@@ -282,7 +360,8 @@ def build_model(base_hf_id: str, ckpt_dir: Path) -> nn.Module:
     with _meta_parameters():
         model = AutoModelForCausalLM.from_config(config, dtype=torch.bfloat16)
     replaced = []
-    for name, p in params.items():
+    for name in list(params):
+        p = params[name]   # with LazyCheckpoint: read now, freed once packed into its LBLinear
         parent_name, _, child = name.rpartition(".")
         parent = model.get_submodule(parent_name) if parent_name else model
         old = getattr(parent, child, None)
@@ -290,7 +369,7 @@ def build_model(base_hf_id: str, ckpt_dir: Path) -> nn.Module:
             raise ValueError(f"checkpoint module {name!r} is not an nn.Linear in the base model")
         if old.bias is not None:
             warnings.warn(f"{name}: base Linear has a bias; LBLinear drops it", stacklevel=2)
-        setattr(parent, child, LBLinear.from_params(p))
+        setattr(parent, child, LBLinear.from_params(p, packed=packed_signs))
         replaced.append(name + ".")
     state = {}
     for shard in sorted(base.glob("*.safetensors")):
@@ -304,3 +383,56 @@ def build_model(base_hf_id: str, ckpt_dir: Path) -> nn.Module:
     if meta:
         raise ValueError(f"base model tensors missing from {base}: {meta[:5]}")
     return model.eval()
+
+
+class Bf16StoredLinear(nn.Module):
+    """A bias-free linear whose weight is STORED in bf16 but applied in float32, a block of output rows at a time.
+
+    What: `y = x.float() @ W.float().T`, with W upcast `rows` output rows at a time.
+    Why: the output head of a large-vocabulary model (Qwen3-8B: 151936 x 4096) is 1.16 GiB in bf16 and 2.3 GiB in
+    float32.  The checkpoint stores it in bf16, so float32 STORAGE adds no information; float32 COMPUTE is what the
+    reference needs.  This gives float32 compute (the same products as `nn.Linear` with the weight cast to float32,
+    up to the summation order inside the matrix product) at bf16 storage.
+    """
+
+    def __init__(self, weight: Tensor, rows: int = 16384) -> None:
+        """`weight`: (out, in), kept in bf16; `rows`: output rows upcast per block (transient rows x in x 4 bytes)."""
+        super().__init__()
+        self.register_buffer("weight", weight.detach().to(torch.bfloat16))
+        self.rows = int(rows)
+        self.out_features, self.in_features = int(weight.shape[0]), int(weight.shape[1])
+
+    def forward(self, x: Tensor) -> Tensor:
+        """float32 result of x @ W.T (x is cast to float32 first)."""
+        xf = x.to(torch.float32)
+        parts = [xf @ self.weight[r0:r0 + self.rows].float().T for r0 in range(0, self.out_features, self.rows)]
+        return torch.cat(parts, dim=-1)
+
+
+def lean_float32(model: nn.Module) -> nn.Module:
+    """Make a `build_model` result compute in float32 while its embedding and output head stay stored in bf16.
+
+    Same numbers as `model.float()` for every op that matters here (the embedding lookup returns bf16 values
+    widened to float32, exactly as a float32 copy of the table would; the head is a `Bf16StoredLinear`), with about
+    half the memory of the two largest tensors.  Every other parameter and floating buffer becomes float32, as
+    `.float()` does.  Used to run the 8B reference on a 16 GB machine.  Returns the model (changed in place).
+    """
+    emb = model.get_input_embeddings()
+    head = model.get_output_embeddings()
+    tied = head is not None and head.weight is emb.weight
+    keep = {id(emb.weight)} | ({id(head.weight)} if head is not None else set())
+    for module in model.modules():
+        for name, prm in list(module._parameters.items()):
+            if prm is not None and id(prm) not in keep and prm.is_floating_point():
+                module._parameters[name] = nn.Parameter(prm.data.float(), requires_grad=prm.requires_grad)
+        for name, buf in list(module._buffers.items()):
+            if buf is not None and buf.is_floating_point():
+                module._buffers[name] = buf.float()
+    if head is not None:
+        model.set_output_embeddings(Bf16StoredLinear(head.weight.data))
+        if tied:
+            model.config.tie_word_embeddings = False  # the head now owns a (shared-storage) bf16 copy
+    # the decoder layers see float32 hidden states: widen the embedding's output (bf16 values, exact in float32)
+    emb.register_forward_hook(lambda _m, _inp, out: out.float())
+    return model
+

@@ -3,6 +3,7 @@
 Run with `pytest tests/dev`.  Terms are defined in docs/development.md.
 """
 import json
+import os
 from pathlib import Path
 
 import pytest
@@ -291,3 +292,130 @@ def test_load_checkpoint_scale_length_raises(tmp_path):
     _write(tmp_path, [t])
     with pytest.raises(ValueError, match="u1"):
         ref.load_checkpoint(tmp_path)
+
+
+# ------------------------------------------------------------------ memory-lean variants (for 8B models)
+
+def test_lazy_checkpoint_matches_load_checkpoint(tmp_path):
+    """LazyCheckpoint gives the same modules, residual flags and tensors as load_checkpoint, one module per lookup."""
+    g = torch.Generator().manual_seed(11)
+    t = {**_tensors("a.proj", 6, 10, 4, g), **_tensors("a.proj", 6, 10, 4, g, "_R")}
+    _write(tmp_path, [t, _tensors("b.proj", 6, 10, 4, g)])
+    eager, lazy = ref.load_checkpoint(tmp_path), ref.LazyCheckpoint(tmp_path)
+    assert list(lazy) == list(eager) and len(lazy) == 2
+    assert lazy.has_residual("a.proj") and not lazy.has_residual("b.proj")
+    for mod, p in eager.items():
+        q = lazy[mod]
+        for path_e, path_l in ((p.primary, q.primary), (p.residual, q.residual)):
+            if path_e is None:
+                assert path_l is None
+                continue
+            for f in ("U", "V", "u1", "u2", "v1", "v2"):
+                assert torch.equal(getattr(path_e, f), getattr(path_l, f))
+
+
+def test_lazy_checkpoint_membership_reads_nothing(tmp_path, monkeypatch):
+    """`mod in lazy` answers from the index: no module is read (the converter asks it for every checkpoint key;
+    reading the module each time made an 8B conversion 90 s slower)."""
+    g = torch.Generator().manual_seed(14)
+    _write(tmp_path, [_tensors("a.proj", 6, 10, 4, g)])
+    lazy = ref.LazyCheckpoint(tmp_path)
+    calls = []
+    monkeypatch.setattr(ref, "_build_path", lambda *a: calls.append(a))
+    assert "a.proj" in lazy and "b.proj" not in lazy and None not in lazy
+    assert calls == []
+
+
+def _private_commit_bytes() -> int:
+    """This process's private commit charge (Win32 GetProcessMemoryInfo, PagefileUsage)."""
+    import ctypes
+    import ctypes.wintypes as W
+
+    class _Counters(ctypes.Structure):
+        """ctypes mirror of the Win32 PROCESS_MEMORY_COUNTERS struct."""
+        _fields_ = [("cb", W.DWORD), ("PageFaultCount", W.DWORD)] + [
+            (n, ctypes.c_size_t) for n in ("PeakWorkingSetSize", "WorkingSetSize", "QuotaPeakPagedPoolUsage",
+                                           "QuotaPagedPoolUsage", "QuotaPeakNonPagedPoolUsage",
+                                           "QuotaNonPagedPoolUsage", "PagefileUsage", "PeakPagefileUsage")]
+    c = _Counters()
+    c.cb = ctypes.sizeof(c)
+    k32 = ctypes.WinDLL("kernel32")
+    k32.GetCurrentProcess.restype = W.HANDLE
+    ctypes.WinDLL("psapi").GetProcessMemoryInfo(W.HANDLE(k32.GetCurrentProcess()), ctypes.byref(c), c.cb)
+    return int(c.PagefileUsage)
+
+
+@pytest.mark.skipif(os.name != "nt", reason="measures the Windows commit charge")
+def test_lazy_checkpoint_values_do_not_pin_the_file(tmp_path):
+    """Kept module values must not pin a private mapping of the whole checkpoint file.
+
+    safetensors returns views into a private mapping of the whole file, one per `safe_open`; on Windows each one is
+    charged in full against the commit limit while any view lives (measured: +2.77 GiB per kept tensor of the 2.97 GB
+    8B checkpoint, which crashed an 8B reference build).  Here: a 64 MiB file, 8 modules kept; without the copies the
+    charge grows by about 8 x 64 MiB, with them by almost nothing.
+    """
+    g = torch.Generator().manual_seed(15)
+    t = {}
+    for i in range(8):
+        t.update(_tensors(f"m{i}.proj", 6, 10, 4, g))
+    t["filler.weight"] = torch.zeros(16 * 2**20)            # 64 MiB of plain tensor: makes the mapping big
+    _write(tmp_path, [t])
+    lazy = ref.LazyCheckpoint(tmp_path)
+    before = _private_commit_bytes()
+    kept = [lazy[f"m{i}.proj"] for i in range(8)]
+    grown = _private_commit_bytes() - before
+    assert len(kept) == 8 and grown < 64 * 2**20, f"commit grew by {grown / 2**20:.0f} MiB for 8 small modules"
+
+
+def test_lazy_checkpoint_errors(tmp_path):
+    """Missing tensors fail when indexing (names only); a shape mismatch fails when the module is looked up."""
+    g = torch.Generator().manual_seed(12)
+    t = _tensors("a.proj", 6, 10, 4, g)
+    del t["a.proj.v2"]
+    _write(tmp_path / "missing", [t])
+    with pytest.raises(ValueError, match="missing tensors"):
+        ref.LazyCheckpoint(tmp_path / "missing")
+    t = _tensors("a.proj", 6, 10, 4, g)
+    t["a.proj.V_shape"] = torch.tensor([4, 100], dtype=torch.int32)
+    _write(tmp_path / "shape", [t])
+    lazy = ref.LazyCheckpoint(tmp_path / "shape")   # names are fine
+    with pytest.raises(ValueError, match="shape"):
+        lazy["a.proj"]
+
+
+@pytest.mark.parametrize("residual", [False, True])
+def test_packed_lblinear_is_bit_identical(residual):
+    """packed=True stores 1 bit per sign (int32 words) and computes exactly the same output as the int8 storage."""
+    g = torch.Generator().manual_seed(13)
+    p, res = _params(24, 40, 9, g, residual=residual)
+    names = ("U", "V", "u1", "u2", "v1", "v2")
+    a = _make(p, res)
+    b = ref.LBLinear(*(p[n] for n in names), residual=None if res is None else tuple(res[n] for n in names),
+                     packed=True)
+    assert b.packed and b.U_0.dtype == torch.int32 and b.U_0.shape == (24, 1)   # 9 signs per row -> one word
+    assert b.V_0.shape == (9, 2) and a.U_0.dtype == torch.int8                 # 40 signs per row -> two words
+    x = torch.randn(5, 40, generator=g)
+    assert torch.equal(a(x), b(x))
+
+
+def test_build_model_packed_and_lean_float32_match_float(tmp_path):
+    """build_model(packed_signs=True) + lean_float32 gives the same logits as build_model(...).float() (fp32).
+
+    The head is applied in blocks (Bf16StoredLinear), so the sum order inside the head matmul may differ: the
+    comparison allows float32 rounding (1e-5 relative), far below any real error (a wrong scale moves logits by %).
+    """
+    base_dir = _tiny_base(tmp_path)
+    ck = _tiny_ckpt(tmp_path)
+    full = ref.build_model(str(base_dir), ck).float().eval()
+    lean = ref.lean_float32(ref.build_model(str(base_dir), ck, packed_signs=True)).eval()
+    assert lean.model.layers[0].mlp.up_proj.packed and lean.lm_head.weight.dtype == torch.bfloat16
+    assert lean.get_input_embeddings().weight.dtype == torch.bfloat16
+    assert lean.model.norm.weight.dtype == torch.float32
+    ids = torch.tensor([[1, 2, 3, 5, 8, 13]])
+    with torch.no_grad():
+        a, b = full(ids).logits, lean(ids).logits
+    assert b.dtype == torch.float32
+    assert torch.allclose(a, b, rtol=1e-5, atol=1e-6), (a - b).abs().max()
+    lean.lm_head.rows = 7   # blocks that do not divide the vocabulary (64) still cover every row
+    with torch.no_grad():
+        assert torch.allclose(lean(ids).logits, b, rtol=1e-5, atol=1e-6)
