@@ -42,13 +42,23 @@ def _sanitize(tool: str, cmd: list[str], env: dict | None = None, timeout: float
     # --report-api-errors no: CUDA API calls that return an error on purpose are not kernel faults. ggml-cuda tries to
     # update an instantiated CUDA graph in place and, when the update is refused (cudaErrorGraphExecUpdateFailure),
     # instantiates it again; memcheck counted each such refusal (144 in the op test, every printed one of this kind).
-    p = subprocess.run([str(SANITIZER), "--tool", tool, "--print-limit", "50", "--report-api-errors", "no", *cmd],
+    # initcheck: --check-api-memory-access no. test-backend-ops copies whole graphs between backends
+    # (ggml_backend_graph_copy -> ggml_backend_tensor_get) BEFORE computing them, i.e. it reads destination tensors that
+    # are not written yet; initcheck reported each such cudaMemcpy (2.37 million, every printed one with that
+    # backtrace). Without the API checks it reports what kernels read uninitialised.
+    extra = ["--check-api-memory-access", "no"] if tool == "initcheck" else []
+    p = subprocess.run([str(SANITIZER), "--tool", tool, "--print-limit", "50", "--report-api-errors", "no", *extra, *cmd],
                        capture_output=True, text=True,
                        encoding="utf-8", errors="replace", timeout=timeout, env=_rb.child_env(env), stdin=subprocess.DEVNULL)
     return p.returncode, p.stdout + p.stderr
 
 
 def _summary(out: str) -> str:
+    """Error count of the sanitizer's summary line (racecheck prints "RACECHECK SUMMARY: N hazards displayed (E errors,
+    W warnings)"; the others "ERROR SUMMARY: N errors"); "?" when there is none."""
+    m = re.findall(r"RACECHECK SUMMARY: \d+ hazards displayed \((\d+) errors, (\d+) warnings\)", out)
+    if m:
+        return str(int(m[-1][0]) + int(m[-1][1]))
     m = re.findall(r"ERROR SUMMARY: (\d+) error", out)
     return m[-1] if m else "?"
 
@@ -79,7 +89,7 @@ def test_compute_sanitizer_whole_graph(tiny: Path, has_cuda: bool, tool: str) ->
         for env in (None, {"GGML_CUDA_LITTLEBIT_F32_PREFILL": "1"}):
             prompt = " ".join(words[:n])
             rc, out = _sanitize(tool, [str(ENGINE_BIN / ("llama-debug" + EXE)), "-m", str(tiny), "-p", prompt, "-ngl", "99",
-                                       "-c", "256", "--save-logits", "--logits-output-dir", str(_rb.SCRATCH / "san_logits")], env)
+                                       "-c", "1024", "-b", "1024", "--save-logits", "--logits-output-dir", str(_rb.SCRATCH / "san_logits")], env)
             s = _summary(out)
             print(f"{tool} n~{n} {'f32' if env else 'bp'}: exit {rc}, errors {s}")
             if s != "0" or rc != 0:
