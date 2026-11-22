@@ -228,6 +228,19 @@ if (LITTLEMORE_BUILD_TESTS)
     set_source_files_properties(tests/c/test_utf8.c PROPERTIES LANGUAGE C)
     add_test(NAME test-utf8 COMMAND test_utf8)
 
+    # NULL in every pointer parameter of every exported function (generated from the header by
+    # tests/robustness/gen_null_harness.py): a clean error status, never a crash.
+    add_executable(null_harness tests/robustness/c/null_harness.c)
+    set_source_files_properties(tests/robustness/c/null_harness.c PROPERTIES LANGUAGE C)
+    target_link_libraries(null_harness PRIVATE littlemore)
+    if (MSVC)
+        target_compile_options(null_harness PRIVATE /W4 /utf-8)
+    else()
+        target_compile_options(null_harness PRIVATE -Wall -Wextra)
+    endif()
+    add_test(NAME test-api-null COMMAND null_harness "${LITTLEMORE_TEST_MODEL}")
+    set_tests_properties(test-api-null PROPERTIES SKIP_RETURN_CODE 77 TIMEOUT 120)
+
     # The same API test, but run from a copy of test_api in another directory with that directory as the
     # working directory: there are no plugins next to the executable or in the current directory (ggml's own
     # default search places), so it passes only if littlemore loads the plugins from ITS OWN directory.
@@ -254,7 +267,7 @@ if (LITTLEMORE_BUILD_TESTS)
                  COMMAND "${LITTLEMORE_PYTHON}" "${CMAKE_CURRENT_SOURCE_DIR}/tests/c/make_tiny_gguf.py" "${LITTLEMORE_TEST_MODEL}"
                  WORKING_DIRECTORY "${CMAKE_CURRENT_SOURCE_DIR}")
         set_tests_properties(littlemore-tiny-gguf PROPERTIES FIXTURES_SETUP lm_tiny_gguf TIMEOUT 900)
-        set_tests_properties(${_lm_api_tests} PROPERTIES FIXTURES_REQUIRED lm_tiny_gguf)
+        set_tests_properties(${_lm_api_tests} test-api-null PROPERTIES FIXTURES_REQUIRED lm_tiny_gguf)
     endif()
 
     # The CUDA plugin links the CUDA runtime DLLs of the toolkit it was built with; put that toolkit's bin
