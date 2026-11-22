@@ -49,8 +49,9 @@ def _add_path(p: Path) -> None:
 PROMPT = "The capital of France is"
 PROMPT_LONG = "In 1969, the first humans landed on the Moon and said"
 PROMPT_ONE = "Hello"           # single token (9707): position 0, RoPE/attention trivial
-# 40+ tokens: one prompt batch above the 32-token chunk limit of the CUDA LittleBit op for every Qwen3-0.6B linear
-# (all below 8 Mi signs), i.e. the prefill (dequantize + cuBLAS GEMM) path of ggml-cuda/littlebit.cu
+# 44 tokens: one prompt batch above the chunk limit of the CUDA LittleBit op for every Qwen3-0.6B linear (16 tokens
+# for k / v, 24 for the others: all below 6 Mi signs, engine/ggml/src/ggml-cuda/littlebit-dispatch.h), i.e. the prefill
+# (dequantize + cuBLAS GEMM) path of ggml-cuda/littlebit.cu
 PROMPT_PREFILL = ("In 1969, the first humans landed on the Moon. Neil Armstrong stepped onto the surface and said that "
                   "it was one small step for a man and one giant leap for mankind, while millions watched on television")
 # Token ids of PROMPT for Qwen3 (no BOS); asserted against the engine's tokenizer.

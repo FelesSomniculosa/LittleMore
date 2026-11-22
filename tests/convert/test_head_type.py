@@ -105,7 +105,7 @@ def _deq(t) -> np.ndarray:
 # max|x| is about 2.4 sigma over a Q8_0 block of 32 and 2.1 sigma over a Q6_K sub-block of 16, giving
 # 2.4 / 127 / 3.46 = 5.5e-3 (Q8_0) and 2.1 / 32 / 3.46 = 1.9e-2 (Q6_K).  Measured on these models: 5.35e-3 .. 5.38e-3
 # (Q8_0) and 1.78e-2 .. 1.79e-2 (Q6_K).  The bounds are 2x the expectation.
-_REL_RMS_BOUND = {"q8_0": 1.1e-2, "q6_k": 3.8e-2}
+_REL_RMS_BOUND = lb.HEAD_REL_RMS_MAX   # {"q8_0": 1.1e-2, "q6_k": 3.8e-2}, the converter's own content check
 
 
 @pytest.mark.parametrize("family,untied", [("llama", False), ("llama", True), ("qwen3", False)])
@@ -131,6 +131,32 @@ def test_head_type_converts_only_the_head(tmp_path, family, untied, head_type):
         else:
             assert g.tensor_type == t.tensor_type, name
             assert np.array_equal(np.asarray(g.data).view(np.uint8), np.asarray(t.data).view(np.uint8)), name
+
+
+@pytest.mark.parametrize("head_type", ["q8_0", "q6_k"])
+def test_converter_checks_head_content(tmp_path, monkeypatch, head_type):
+    """The converter dequantizes the written head and compares it with the checkpoint (lb.HEAD_REL_RMS_MAX); a head
+    whose quantized blocks are corrupted (here: one block in 64 of the embedding zeroed by the quantizer) is refused with
+    a ConversionError and no output file, while the intact conversion reports its error."""
+    ck = _tiny.make_tiny_checkpoint("llama", tmp_path)
+    ok = tmp_path / "ok.gguf"
+    report = lb.convert_checkpoint(ck, ok, head_type=head_type)
+    assert 0 < report.head_rel_rms["token_embd.weight"] <= _REL_RMS_BOUND[head_type]
+
+    qtype = {"q8_0": Q8_0, "q6_k": Q6_K}[head_type]
+    cls = gguf.quants._type_traits[qtype]
+    real = cls.quantize_blocks.__func__
+
+    def corrupt(c, blocks):
+        out = real(c, blocks)
+        out[::64] = 0          # every 64th block: scale 0 and quants 0, i.e. those 32 / 256 values become 0
+        return out
+
+    monkeypatch.setattr(cls, "quantize_blocks", classmethod(corrupt))
+    bad = tmp_path / "bad.gguf"
+    with pytest.raises(lb.ConversionError, match="not the checkpoint's head"):
+        lb.convert_checkpoint(ck, bad, head_type=head_type)
+    assert not bad.exists()
 
 
 def test_head_type_row_length_refused(tmp_path):

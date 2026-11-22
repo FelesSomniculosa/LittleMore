@@ -2,7 +2,8 @@
 
 What
     * `run_bench(model_gguf, backend, n_gpu_layers)` runs `llama-bench` of the LittleMore engine (engine/build/bin) on one
-      GGUF file: prompt processing of 512 tokens (`pp512`) and generation of 128 tokens (`tg128`), in tokens per second,
+      GGUF file: generation of 128 tokens (`tg128`) first, then prompt processing of 512 tokens (`pp512`), in tokens per
+      second,
       with every repetition kept (the reported value is the median of the repetitions), plus the GPU memory the run used (`vram_mb`, sampled with nvidia-smi) and the GPU's SM
       clock during the run (to see whether the GPU was at its boost clock, see "Clocks" below).
     * `run_plan(...)` runs a list of files in interleaved rounds (A B C A B C ...) so slow drifts of the machine (clocks,
@@ -17,10 +18,12 @@ Why
     (128-188 GB/s measured with engine/tools/littlebit-bench/read_bandwidth.cu).  So every number here comes with its
     repetitions, the rounds are interleaved, and the clock is recorded.
 Clocks
-    `llama-bench` runs one untimed warm-up pass per test and then the timed repetitions; before the measured invocations
-    this harness keeps the GPU busy for `warmup_s` seconds (default 3 s) with short `llama-bench` generation runs of the
-    same model (`-p 0 -n 64`, repeated until the time is up), so the GPU does not start the measured run from its idle
-    clock; generation is measured before prompt processing (see `run_bench`).  The SM clock sampled during the measured run is stored (`sm_clock_mhz`: min / median / max) so a run at a low
+    `llama-bench` runs one untimed warm-up pass per test and then the timed repetitions.  Before each measured
+    invocation this harness starts a GPU load (bench/gpu_load.py, float16 matrix products) for `warmup_s` seconds
+    (default 3 s), keeps it running while llama-bench loads the model, and stops it when llama-bench starts its own
+    warm-up pass, so the GPU never idles between the warm-up and the measurement; the SM clock at the start of the first
+    timed repetition is recorded and a run below BOOST_MIN_MHZ is flagged and repeated once; generation is measured
+    before prompt processing (see `run_bench`).  The SM clock sampled during the measured run is stored (`sm_clock_mhz`: min / median / max) so a run at a low
     clock is visible in the results instead of silently lowering a number.
 
 Usage
@@ -76,7 +79,8 @@ class _GpuSampler:
 
     def __init__(self, period_ms: int = 100) -> None:
         self.period_ms = period_ms
-        self.samples: list[tuple[float, float]] = []
+        self.samples: list[tuple[float, float]] = []     # (memory used MiB, SM clock MHz)
+        self.times: list[float] = []                     # time.perf_counter() of each sample
         self._proc: subprocess.Popen | None = None
         self._thread: threading.Thread | None = None
 
@@ -106,6 +110,7 @@ class _GpuSampler:
                 try:
                     mem, clk = line.strip().split(",")
                     self.samples.append((float(mem), float(clk)))
+                    self.times.append(time.perf_counter())
                 except ValueError:
                     pass
 
@@ -140,16 +145,59 @@ def _run(cmd: list[str], timeout: float) -> subprocess.CompletedProcess:
                           errors="replace", timeout=timeout, stdin=subprocess.DEVNULL)
 
 
-def _warm_up(model_gguf: Path, backend: str, n_gpu_layers: int, seconds: float) -> float:
-    """Keep the GPU busy with short generation runs of the same model for at least `seconds`; returns the time spent."""
-    if seconds <= 0 or backend == "cpu":
-        return 0.0
-    t0 = time.perf_counter()
-    while time.perf_counter() - t0 < seconds:
-        r = _run(_bench_cmd(model_gguf, backend, n_gpu_layers, ["-p", "0", "-n", "64", "-r", "3", "-o", "json"]), 600)
-        if r.returncode != 0:
-            raise RuntimeError(f"warm-up run failed ({r.returncode}):\n{r.stderr[-2000:]}")
-    return time.perf_counter() - t0
+# a measured run whose SM clock at the first timed repetition is below this is flagged ("clock_low"): the GPU of this
+# project idles at 1605 MHz and boosts to 2040-2340 MHz; memory-bound runs settle around 1.8-2.0 GHz
+BOOST_MIN_MHZ = 1800.0
+# arguments of bench/gpu_load.py (the warm-up load); see its --mode
+GPU_LOAD_ARGS: list[str] = []
+
+
+def _bench_with_load(cmd: list[str], warmup_s: float, use_load: bool) -> tuple[subprocess.CompletedProcess, dict]:
+    """Run one llama-bench command with the GPU kept busy until llama-bench's own warm-up pass starts.
+
+    With `use_load`, bench/gpu_load.py runs first for `warmup_s` seconds, then llama-bench is started while the load
+    keeps running (so the GPU stays at its boost clock while llama-bench loads the model), and the load is stopped the
+    moment llama-bench reports its untimed warm-up pass (`--progress`).  The SM clock is read when llama-bench reports
+    its first timed repetition.  Returns the completed llama-bench process and
+    {"clock_at_start_mhz", "load_s", "load_stop_t"} (load_stop_t: time.perf_counter() when the load was stopped).
+    """
+    info: dict = {"clock_at_start_mhz": None, "load_s": 0.0, "load_stop_t": time.perf_counter()}
+    load = None
+    if use_load:
+        t0 = time.perf_counter()
+        load = subprocess.Popen([sys.executable, "-m", "bench.gpu_load", *GPU_LOAD_ARGS], cwd=ROOT, stdout=subprocess.PIPE,
+                                stderr=subprocess.DEVNULL, text=True)
+        assert load.stdout is not None
+        if load.stdout.readline().strip() != "ready":
+            load.kill()
+            raise RuntimeError("bench/gpu_load.py did not start (is torch with CUDA installed in this environment?)")
+        while time.perf_counter() - t0 < warmup_s:
+            time.sleep(0.05)
+    stop_load = lambda: (load.terminate(), load.wait(timeout=30)) if load is not None and load.poll() is None else None  # noqa: E731
+    proc = subprocess.Popen([*cmd, "--progress"], cwd=BIN, env=_env(), stdout=subprocess.PIPE, stderr=subprocess.PIPE,
+                            stdin=subprocess.DEVNULL, text=True, encoding="utf-8", errors="replace")
+    out_chunks: list[str] = []
+    reader = threading.Thread(target=lambda: out_chunks.append(proc.stdout.read()), daemon=True)
+    reader.start()
+    err_lines: list[str] = []
+    try:
+        assert proc.stderr is not None
+        for line in proc.stderr:
+            err_lines.append(line)
+            if "warmup" in line and load is not None and load.poll() is None:
+                stop_load()
+                info["load_stop_t"] = time.perf_counter()
+                info["load_s"] = info["load_stop_t"] - t0
+            if " run 1/" in line and info["clock_at_start_mhz"] is None:
+                q = _GpuSampler.query()
+                info["clock_at_start_mhz"] = q[1] if q else None
+        proc.wait(timeout=3600)
+    finally:
+        stop_load()
+        if proc.poll() is None:
+            proc.kill()
+    reader.join(timeout=60)
+    return subprocess.CompletedProcess(cmd, proc.returncode, "".join(out_chunks), "".join(err_lines)), info
 
 
 def run_bench(model_gguf: Path, backend: str, n_gpu_layers: int, *, reps: int = 10, n_prompt: int = 512,
@@ -158,32 +206,39 @@ def run_bench(model_gguf: Path, backend: str, n_gpu_layers: int, *, reps: int = 
 
     `backend`: "cuda", "vulkan" or "cpu" (cpu = no GPU device at all, `-dev none -ngl 0`).  `n_gpu_layers`: llama.cpp's
     -ngl (99 = every layer on the GPU).  `reps`: timed repetitions per test (llama-bench additionally runs one untimed
-    warm-up pass per test).  Generation is measured first, right after the warm-up, then prompt processing, in two
-    llama-bench runs (measured on this GPU: when tg128 follows pp512 in the same run, its first repetitions are 10-20 %
-    slower than the rest, 191 vs 237 tokens/s for Qwen3-0.6B LittleBit, while the GPU recovers from the power-capped
-    prompt phase).  Returned (speeds in tokens per second; keys follow n_prompt / n_gen):
-        pp512 / tg128             MEDIAN over the repetitions (robust against the one slow first repetition that remains
-                                  after the warm-up: 226 vs 238-240 tokens/s in a tg-only run of the same file)
+    warm-up pass per test).  Generation is measured first, then prompt processing, in two llama-bench runs (measured on
+    this GPU: when tg128 follows pp512 in the same run, its first repetitions are 10-20 % slower than the rest, 191 vs
+    237 tokens/s for Qwen3-0.6B LittleBit, while the GPU recovers from the power-capped prompt phase).  Before each of
+    the two runs a GPU load (bench/gpu_load.py) runs for `warmup_s` seconds and keeps running until llama-bench starts
+    its own warm-up pass (see `_bench_with_load`); on the CPU backend there is no load.  Returned (speeds in tokens per
+    second; keys follow n_prompt / n_gen):
+        pp512 / tg128             MEDIAN over the repetitions
         pp512_mean / tg128_mean   mean over the repetitions;  pp512_sd / tg128_sd  their standard deviation
         pp512_samples / ...       every repetition
-        vram_mb                   peak GPU memory used during the two runs minus the memory used before them (MiB;
-                                  None without nvidia-smi or on the CPU backend)
+        tg128_clock_at_start_mhz  SM clock when the first timed repetition started (same for pp512)
+        clock_low                 True if either of them was below BOOST_MIN_MHZ (the run is flagged, not dropped)
+        vram_mb                   peak GPU memory used after the load was stopped, minus the memory used before the
+                                  load started (MiB; None without nvidia-smi or on the CPU backend)
         vram_peak_mb, vram_base_mb  the two raw nvidia-smi values (whole GPU)
-        sm_clock_mhz              [min, median, max] SM clock sampled during the measured runs (None without nvidia-smi)
-        cmd, file_mib, warmup_s   the command lines, the file size and the warm-up time actually spent
+        sm_clock_mhz              [min, median, max] SM clock sampled while llama-bench measured (after the load stopped)
+        cmd, file_mib, warmup_s   the command lines, the file size and the load time actually spent before each run
     Raises RuntimeError when llama-bench fails (e.g. the model does not fit) with its error output.
     """
     model_gguf = Path(model_gguf).resolve()   # llama-bench runs in engine/build/bin
     out: dict[str, Any] = {"file_mib": model_gguf.stat().st_size / 2**20, "backend": backend,
-                           "n_gpu_layers": n_gpu_layers, "cmd": []}
-    out["warmup_s"] = _warm_up(model_gguf, backend, n_gpu_layers, warmup_s)
+                           "n_gpu_layers": n_gpu_layers, "cmd": [], "warmup_s": []}
+    use_load = backend != "cpu" and warmup_s > 0
     base = _GpuSampler.query()
+    windows: list[tuple[float, float]] = []
     with _GpuSampler() as smp:
         for key, p, n in ((f"tg{n_gen}", 0, n_gen), (f"pp{n_prompt}", n_prompt, 0)):
             cmd = _bench_cmd(model_gguf, backend, n_gpu_layers,
                              ["-p", str(p), "-n", str(n), "-r", str(reps), "-o", "json", *extra_args])
             out["cmd"].append(cmd)
-            r = _run(cmd, 3600)
+            r, info = _bench_with_load(cmd, warmup_s, use_load)
+            windows.append((info["load_stop_t"], time.perf_counter()))
+            out["warmup_s"].append(info["load_s"])
+            out[key + "_clock_at_start_mhz"] = info["clock_at_start_mhz"]
             if r.returncode != 0:
                 raise RuntimeError(f"llama-bench failed ({r.returncode}) on {model_gguf.name}:\n{r.stderr[-3000:]}")
             rows = json.loads(r.stdout[r.stdout.index("["):])
@@ -196,9 +251,12 @@ def run_bench(model_gguf: Path, backend: str, n_gpu_layers: int, *, reps: int = 
             out[key + "_samples"] = samples
             out.setdefault("build_commit", rows[0].get("build_commit"))
             out.setdefault("gpu_info", rows[0].get("gpu_info"))
-    if smp.samples and base is not None and backend != "cpu":
-        peak = max(m for m, _ in smp.samples)
-        clocks = sorted(c for _, c in smp.samples)
+    clocks_start = [out.get(f"{k}_clock_at_start_mhz") for k in (f"tg{n_gen}", f"pp{n_prompt}")]
+    out["clock_low"] = use_load and any(c is not None and c < BOOST_MIN_MHZ for c in clocks_start)
+    inside = [s for s, t in zip(smp.samples, smp.times) if any(a <= t <= b for a, b in windows)]
+    if inside and base is not None and backend != "cpu":
+        peak = max(m for m, _ in inside)
+        clocks = sorted(c for _, c in inside)
         out.update(vram_mb=peak - base[0], vram_peak_mb=peak, vram_base_mb=base[0],
                    sm_clock_mhz=[clocks[0], statistics.median(clocks), clocks[-1]])
     else:
@@ -280,15 +338,42 @@ def aggregate(runs: list[dict]) -> dict:
     return out
 
 
+def provenance() -> dict:
+    """What was measured: the engine's git commit and whether its working tree had changes, the commit llama-bench reports
+    (its build info, written when CMake last configured the build, so it can lag behind a rebuilt tree), and this
+    repository's commit.  Stored in the results JSON by run_plan."""
+    def git(*args: str, cwd: Path) -> str:
+        try:
+            return subprocess.run(["git", *args], cwd=cwd, capture_output=True, text=True, timeout=30).stdout.strip()
+        except (OSError, subprocess.SubprocessError):
+            return ""
+    eng = ROOT / "engine"
+    try:
+        ver = subprocess.run([str(BIN / ("llama-bench" + EXE)), "--version"], cwd=BIN, env=_env(), capture_output=True,
+                             text=True, timeout=60)
+        version = (ver.stdout + ver.stderr).strip().splitlines()
+        version = next((v for v in version if "commit" in v), "")
+    except (OSError, subprocess.SubprocessError):
+        version = ""
+    return {"engine_commit": git("rev-parse", "HEAD", cwd=eng),
+            "engine_dirty": bool(git("status", "--porcelain", "--untracked-files=no", cwd=eng)),
+            "llama_bench_version": version,
+            "repo_commit": git("rev-parse", "HEAD", cwd=ROOT)}
+
+
 def run_plan(plan: list[dict], rounds: int, out_json: Path, backend: str = "cuda", n_gpu_layers: int = 99,
              reps: int = 10, warmup_s: float = 3.0) -> list[dict]:
     """Run every plan entry ({"model", "variant", "file"}) once per round, rounds interleaved; save raw runs as JSON.
 
     An entry may carry "weights": "proxy" (its model key must then end in "-proxy"); it is copied into the record.
     The JSON is rewritten after every run, so an interrupted plan keeps what was measured.  An entry that fails (e.g.
-    out of GPU memory) is recorded with its error instead of aborting the plan.
+    out of GPU memory) is recorded with its error instead of aborting the plan.  A run flagged `clock_low` (the GPU was
+    below BOOST_MIN_MHZ when a measurement started) is repeated once; the repeat replaces it and carries
+    `"retried_after_clock_low": true` (if the repeat is flagged too, it stays flagged).  The engine provenance
+    (`provenance()`) is stored at the top of the JSON.
     """
     runs: list[dict] = []
+    prov = provenance()
     out_json.parent.mkdir(parents=True, exist_ok=True)
     for rnd in range(rounds):
         for entry in plan:
@@ -300,14 +385,20 @@ def run_plan(plan: list[dict], rounds: int, out_json: Path, backend: str = "cuda
                    "time": time.strftime("%Y-%m-%d %H:%M:%S")}
             try:
                 rec.update(run_bench(ROOT / entry["file"], backend, n_gpu_layers, reps=reps, warmup_s=warmup_s))
+                if rec.get("clock_low"):
+                    rec.update(run_bench(ROOT / entry["file"], backend, n_gpu_layers, reps=reps, warmup_s=warmup_s))
+                    rec["retried_after_clock_low"] = True
                 print(f"round {rnd} {entry['model']:<12} {entry['variant']:<26} tg128 {rec['tg128']:8.1f} "
-                      f"pp512 {rec['pp512']:8.1f}  vram {rec['vram_mb']}  clock {rec['sm_clock_mhz']}", flush=True)
+                      f"pp512 {rec['pp512']:8.1f}  vram {rec['vram_mb']}  clock {rec['sm_clock_mhz']}  at start "
+                      f"{rec.get('tg128_clock_at_start_mhz')}/{rec.get('pp512_clock_at_start_mhz')}"
+                      f"{'  CLOCK LOW' if rec.get('clock_low') else ''}", flush=True)
             except (RuntimeError, FileNotFoundError, subprocess.SubprocessError) as e:
                 rec["error"] = str(e)[-3000:]
                 print(f"round {rnd} {entry['model']} {entry['variant']}: FAILED {str(e)[:300]}", flush=True)
             runs.append(rec)
             out_json.write_text(json.dumps({"backend": backend, "n_gpu_layers": n_gpu_layers, "reps": reps,
-                                            "warmup_s": warmup_s, "runs": runs}, indent=1), encoding="utf-8")
+                                            "warmup_s": warmup_s, "provenance": prov, "runs": runs}, indent=1),
+                                encoding="utf-8")
     return runs
 
 

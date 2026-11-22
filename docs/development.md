@@ -128,7 +128,9 @@ Example, making a checkpoint by hand:
 tensors of a small model; Q8_0 / Q6_K shrink them 1.9x / 2.4x and make generation faster (measured in
 [bench/results/phase1.md](../bench/results/phase1.md), with the perplexity change). Everything else in the file is
 unchanged; correctness is measured with the F16 head. The Q6_K quantizer is a port of ggml's C reference quantizer into
-the engine's gguf-py, bit-identical to it (`tests/convert/test_head_type.py`).
+the engine's gguf-py, bit-identical to it (`tests/convert/test_head_type.py`). With validation on, the converter also
+dequantizes the written head and compares it with the checkpoint's (relative RMS error at most 1.1e-2 for Q8_0, 3.8e-2
+for Q6_K; measured 5.35e-3 / 1.77e-2 on Qwen3-0.6B), so a wrong or corrupted head fails the conversion.
 
 Input widths (hidden size, intermediate size) must be multiples of 128, because
 a `B1` row is whole 128-sign blocks; the converter refuses anything else. The
@@ -158,7 +160,8 @@ Qwen3-0.6B tokenizer (they skip without it), Llama and Gemma 3 need nothing.
 init-only checkpoint at `-ngl 0` and `-ngl 99`. The engine's own tests: from `engine/build`,
 `ctest -R "test-b1|test-gguf|test-alloc|test-littlebit"` (needs the MSVC environment on `PATH`).
 `test-littlebit-ref` also compares the CPU's AVX2 kernel of the fused op with its scalar reference kernel (they must be
-bit-identical), and `test-backend-ops test -o LITTLEBIT -b CPU` does the same through the test harness; see "CPU: AVX2
+bit-identical when neither kernel is FP-contracted, i.e. no a*b + c fused into an FMA by the compiler; asserted for MSVC
+builds), and `test-backend-ops test -o LITTLEBIT -b CPU` does the same through the test harness; see "CPU: AVX2
 kernel" in [engine-changes.md](engine-changes.md#cpu-avx2-kernel-of-ggml_op_littlebit) for the CPU speed measurements and
 `engine/tools/littlebit-bench/cpu_bench.cpp` for the benchmark program.
 

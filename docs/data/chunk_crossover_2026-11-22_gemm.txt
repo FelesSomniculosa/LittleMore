@@ -1,0 +1,512 @@
+ggml_cuda_init: found 1 CUDA devices (Total VRAM: 6140 MiB):
+  Device 0: NVIDIA GeForce RTX 4050 Laptop GPU, compute capability 8.9, VMM: yes, VRAM: 6140 MiB
+load_backend: loaded CUDA backend from C:\Vibe Coding\LittleMore\engine\build\bin\ggml-cuda.dll
+ggml_vulkan: Found 2 Vulkan devices:
+ggml_vulkan: 0 = NVIDIA GeForce RTX 4050 Laptop GPU (NVIDIA) | uma: 0 | rebar: 1 | fp16: 1 | bf16: 1 | fp4: 0 | warp size: 32 | shared memory: 49152 | int dot: 1 | matrix cores: NV_coopmat2
+ggml_vulkan: 1 = Intel(R) UHD Graphics (Intel Corporation) | uma: 1 | rebar: 1 | fp16: 1 | bf16: 0 | fp4: 0 | warp size: 32 | shared memory: 32768 | int dot: 1 | matrix cores: none
+load_backend: loaded Vulkan backend from C:\Vibe Coding\LittleMore\engine\build\bin\ggml-vulkan.dll
+load_backend: loaded CPU backend from C:\Vibe Coding\LittleMore\engine\build\bin\ggml-cpu-alderlake.dll
+LITTLEBIT  d_in= 1024 d_out= 2048 r= 256 r2= 256 n=   9  layers= 64:       73.2 us/op    0.39 TFLOPS (work)    0.52 TFLOPS (dense-equivalent)
+LITTLEBIT  d_in= 1024 d_out= 2048 r= 256 r2= 256 n=  12  layers= 64:       81.5 us/op    0.46 TFLOPS (work)    0.62 TFLOPS (dense-equivalent)
+LITTLEBIT  d_in= 1024 d_out= 2048 r= 256 r2= 256 n=  16  layers= 64:       99.8 us/op    0.50 TFLOPS (work)    0.67 TFLOPS (dense-equivalent)
+LITTLEBIT  d_in= 1024 d_out= 2048 r= 256 r2= 256 n=  20  layers= 64:       63.2 us/op    0.99 TFLOPS (work)    1.33 TFLOPS (dense-equivalent)
+LITTLEBIT  d_in= 1024 d_out= 2048 r= 256 r2= 256 n=  24  layers= 64:       63.6 us/op    1.19 TFLOPS (work)    1.58 TFLOPS (dense-equivalent)
+LITTLEBIT  d_in= 1024 d_out= 2048 r= 256 r2= 256 n=  28  layers= 64:       63.7 us/op    1.38 TFLOPS (work)    1.84 TFLOPS (dense-equivalent)
+LITTLEBIT  d_in= 1024 d_out= 2048 r= 256 r2= 256 n=  32  layers= 64:       63.8 us/op    1.58 TFLOPS (work)    2.10 TFLOPS (dense-equivalent)
+LITTLEBIT  d_in= 1024 d_out= 2048 r= 256 r2= 256 n=  40  layers= 64:       83.4 us/op    1.51 TFLOPS (work)    2.01 TFLOPS (dense-equivalent)
+LITTLEBIT  d_in= 1024 d_out= 2048 r= 256 r2= 256 n=  48  layers= 64:       85.1 us/op    1.77 TFLOPS (work)    2.37 TFLOPS (dense-equivalent)
+LITTLEBIT  d_in= 1024 d_out= 2048 r= 256 r2= 256 n=  56  layers= 64:       88.3 us/op    1.99 TFLOPS (work)    2.66 TFLOPS (dense-equivalent)
+LITTLEBIT  d_in= 1024 d_out= 2048 r= 256 r2= 256 n=  64  layers= 64:       90.5 us/op    2.23 TFLOPS (work)    2.97 TFLOPS (dense-equivalent)
+LITTLEBIT  d_in= 1024 d_out= 2048 r= 256 r2= 256 n=  72  layers= 64:      121.5 us/op    1.86 TFLOPS (work)    2.49 TFLOPS (dense-equivalent)
+LITTLEBIT  d_in= 1024 d_out= 2048 r= 256 r2= 256 n=  80  layers= 64:      123.6 us/op    2.04 TFLOPS (work)    2.71 TFLOPS (dense-equivalent)
+LITTLEBIT  d_in= 1024 d_out= 2048 r= 256 r2= 256 n=  96  layers= 64:      129.4 us/op    2.33 TFLOPS (work)    3.11 TFLOPS (dense-equivalent)
+LITTLEBIT  d_in= 1024 d_out= 2048 r= 256 r2= 256 n= 112  layers= 64:      152.3 us/op    2.31 TFLOPS (work)    3.09 TFLOPS (dense-equivalent)
+LITTLEBIT  d_in= 1024 d_out= 2048 r= 256 r2= 256 n= 128  layers= 64:      157.3 us/op    2.56 TFLOPS (work)    3.41 TFLOPS (dense-equivalent)
+ggml_cuda_init: found 1 CUDA devices (Total VRAM: 6140 MiB):
+  Device 0: NVIDIA GeForce RTX 4050 Laptop GPU, compute capability 8.9, VMM: yes, VRAM: 6140 MiB
+load_backend: loaded CUDA backend from C:\Vibe Coding\LittleMore\engine\build\bin\ggml-cuda.dll
+ggml_vulkan: Found 2 Vulkan devices:
+ggml_vulkan: 0 = NVIDIA GeForce RTX 4050 Laptop GPU (NVIDIA) | uma: 0 | rebar: 1 | fp16: 1 | bf16: 1 | fp4: 0 | warp size: 32 | shared memory: 49152 | int dot: 1 | matrix cores: NV_coopmat2
+ggml_vulkan: 1 = Intel(R) UHD Graphics (Intel Corporation) | uma: 1 | rebar: 1 | fp16: 1 | bf16: 0 | fp4: 0 | warp size: 32 | shared memory: 32768 | int dot: 1 | matrix cores: none
+load_backend: loaded Vulkan backend from C:\Vibe Coding\LittleMore\engine\build\bin\ggml-vulkan.dll
+load_backend: loaded CPU backend from C:\Vibe Coding\LittleMore\engine\build\bin\ggml-cpu-alderlake.dll
+LITTLEBIT  d_in= 1024 d_out= 1024 r= 128 r2= 128 n=   9  layers= 64:       30.0 us/op    0.31 TFLOPS (work)    0.63 TFLOPS (dense-equivalent)
+LITTLEBIT  d_in= 1024 d_out= 1024 r= 128 r2= 128 n=  12  layers= 64:       31.3 us/op    0.40 TFLOPS (work)    0.80 TFLOPS (dense-equivalent)
+LITTLEBIT  d_in= 1024 d_out= 1024 r= 128 r2= 128 n=  16  layers= 64:       34.6 us/op    0.49 TFLOPS (work)    0.97 TFLOPS (dense-equivalent)
+LITTLEBIT  d_in= 1024 d_out= 1024 r= 128 r2= 128 n=  20  layers= 64:       27.1 us/op    0.78 TFLOPS (work)    1.55 TFLOPS (dense-equivalent)
+LITTLEBIT  d_in= 1024 d_out= 1024 r= 128 r2= 128 n=  24  layers= 64:       27.5 us/op    0.92 TFLOPS (work)    1.83 TFLOPS (dense-equivalent)
+LITTLEBIT  d_in= 1024 d_out= 1024 r= 128 r2= 128 n=  28  layers= 64:       29.2 us/op    1.01 TFLOPS (work)    2.01 TFLOPS (dense-equivalent)
+LITTLEBIT  d_in= 1024 d_out= 1024 r= 128 r2= 128 n=  32  layers= 64:       29.7 us/op    1.13 TFLOPS (work)    2.26 TFLOPS (dense-equivalent)
+LITTLEBIT  d_in= 1024 d_out= 1024 r= 128 r2= 128 n=  40  layers= 64:       43.2 us/op    0.97 TFLOPS (work)    1.94 TFLOPS (dense-equivalent)
+LITTLEBIT  d_in= 1024 d_out= 1024 r= 128 r2= 128 n=  48  layers= 64:       46.4 us/op    1.08 TFLOPS (work)    2.17 TFLOPS (dense-equivalent)
+LITTLEBIT  d_in= 1024 d_out= 1024 r= 128 r2= 128 n=  56  layers= 64:       49.2 us/op    1.19 TFLOPS (work)    2.39 TFLOPS (dense-equivalent)
+LITTLEBIT  d_in= 1024 d_out= 1024 r= 128 r2= 128 n=  64  layers= 64:       47.2 us/op    1.42 TFLOPS (work)    2.85 TFLOPS (dense-equivalent)
+LITTLEBIT  d_in= 1024 d_out= 1024 r= 128 r2= 128 n=  72  layers= 64:       52.2 us/op    1.45 TFLOPS (work)    2.89 TFLOPS (dense-equivalent)
+LITTLEBIT  d_in= 1024 d_out= 1024 r= 128 r2= 128 n=  80  layers= 64:       53.1 us/op    1.58 TFLOPS (work)    3.16 TFLOPS (dense-equivalent)
+LITTLEBIT  d_in= 1024 d_out= 1024 r= 128 r2= 128 n=  96  layers= 64:       55.6 us/op    1.81 TFLOPS (work)    3.62 TFLOPS (dense-equivalent)
+LITTLEBIT  d_in= 1024 d_out= 1024 r= 128 r2= 128 n= 112  layers= 64:       60.5 us/op    1.94 TFLOPS (work)    3.88 TFLOPS (dense-equivalent)
+LITTLEBIT  d_in= 1024 d_out= 1024 r= 128 r2= 128 n= 128  layers= 64:       62.5 us/op    2.15 TFLOPS (work)    4.29 TFLOPS (dense-equivalent)
+ggml_cuda_init: found 1 CUDA devices (Total VRAM: 6140 MiB):
+  Device 0: NVIDIA GeForce RTX 4050 Laptop GPU, compute capability 8.9, VMM: yes, VRAM: 6140 MiB
+load_backend: loaded CUDA backend from C:\Vibe Coding\LittleMore\engine\build\bin\ggml-cuda.dll
+ggml_vulkan: Found 2 Vulkan devices:
+ggml_vulkan: 0 = NVIDIA GeForce RTX 4050 Laptop GPU (NVIDIA) | uma: 0 | rebar: 1 | fp16: 1 | bf16: 1 | fp4: 0 | warp size: 32 | shared memory: 49152 | int dot: 1 | matrix cores: NV_coopmat2
+ggml_vulkan: 1 = Intel(R) UHD Graphics (Intel Corporation) | uma: 1 | rebar: 1 | fp16: 1 | bf16: 0 | fp4: 0 | warp size: 32 | shared memory: 32768 | int dot: 1 | matrix cores: none
+load_backend: loaded Vulkan backend from C:\Vibe Coding\LittleMore\engine\build\bin\ggml-vulkan.dll
+load_backend: loaded CPU backend from C:\Vibe Coding\LittleMore\engine\build\bin\ggml-cpu-alderlake.dll
+LITTLEBIT  d_in= 2048 d_out= 1024 r= 256 r2= 256 n=   9  layers= 64:       63.7 us/op    0.44 TFLOPS (work)    0.59 TFLOPS (dense-equivalent)
+LITTLEBIT  d_in= 2048 d_out= 1024 r= 256 r2= 256 n=  12  layers= 64:       71.3 us/op    0.53 TFLOPS (work)    0.71 TFLOPS (dense-equivalent)
+LITTLEBIT  d_in= 2048 d_out= 1024 r= 256 r2= 256 n=  16  layers= 64:       65.8 us/op    0.76 TFLOPS (work)    1.02 TFLOPS (dense-equivalent)
+LITTLEBIT  d_in= 2048 d_out= 1024 r= 256 r2= 256 n=  20  layers= 64:       52.5 us/op    1.20 TFLOPS (work)    1.60 TFLOPS (dense-equivalent)
+LITTLEBIT  d_in= 2048 d_out= 1024 r= 256 r2= 256 n=  24  layers= 64:       55.0 us/op    1.37 TFLOPS (work)    1.83 TFLOPS (dense-equivalent)
+LITTLEBIT  d_in= 2048 d_out= 1024 r= 256 r2= 256 n=  28  layers= 64:       56.3 us/op    1.57 TFLOPS (work)    2.09 TFLOPS (dense-equivalent)
+LITTLEBIT  d_in= 2048 d_out= 1024 r= 256 r2= 256 n=  32  layers= 64:       58.2 us/op    1.73 TFLOPS (work)    2.31 TFLOPS (dense-equivalent)
+LITTLEBIT  d_in= 2048 d_out= 1024 r= 256 r2= 256 n=  40  layers= 64:       77.3 us/op    1.63 TFLOPS (work)    2.17 TFLOPS (dense-equivalent)
+LITTLEBIT  d_in= 2048 d_out= 1024 r= 256 r2= 256 n=  48  layers= 64:       78.9 us/op    1.91 TFLOPS (work)    2.55 TFLOPS (dense-equivalent)
+LITTLEBIT  d_in= 2048 d_out= 1024 r= 256 r2= 256 n=  56  layers= 64:       84.1 us/op    2.09 TFLOPS (work)    2.79 TFLOPS (dense-equivalent)
+LITTLEBIT  d_in= 2048 d_out= 1024 r= 256 r2= 256 n=  64  layers= 64:       83.4 us/op    2.41 TFLOPS (work)    3.22 TFLOPS (dense-equivalent)
+LITTLEBIT  d_in= 2048 d_out= 1024 r= 256 r2= 256 n=  72  layers= 64:      115.8 us/op    1.96 TFLOPS (work)    2.61 TFLOPS (dense-equivalent)
+LITTLEBIT  d_in= 2048 d_out= 1024 r= 256 r2= 256 n=  80  layers= 64:      116.4 us/op    2.16 TFLOPS (work)    2.88 TFLOPS (dense-equivalent)
+LITTLEBIT  d_in= 2048 d_out= 1024 r= 256 r2= 256 n=  96  layers= 64:      119.4 us/op    2.53 TFLOPS (work)    3.37 TFLOPS (dense-equivalent)
+LITTLEBIT  d_in= 2048 d_out= 1024 r= 256 r2= 256 n= 112  layers= 64:      161.9 us/op    2.18 TFLOPS (work)    2.90 TFLOPS (dense-equivalent)
+LITTLEBIT  d_in= 2048 d_out= 1024 r= 256 r2= 256 n= 128  layers= 64:      134.6 us/op    2.99 TFLOPS (work)    3.99 TFLOPS (dense-equivalent)
+ggml_cuda_init: found 1 CUDA devices (Total VRAM: 6140 MiB):
+  Device 0: NVIDIA GeForce RTX 4050 Laptop GPU, compute capability 8.9, VMM: yes, VRAM: 6140 MiB
+load_backend: loaded CUDA backend from C:\Vibe Coding\LittleMore\engine\build\bin\ggml-cuda.dll
+ggml_vulkan: Found 2 Vulkan devices:
+ggml_vulkan: 0 = NVIDIA GeForce RTX 4050 Laptop GPU (NVIDIA) | uma: 0 | rebar: 1 | fp16: 1 | bf16: 1 | fp4: 0 | warp size: 32 | shared memory: 49152 | int dot: 1 | matrix cores: NV_coopmat2
+ggml_vulkan: 1 = Intel(R) UHD Graphics (Intel Corporation) | uma: 1 | rebar: 1 | fp16: 1 | bf16: 0 | fp4: 0 | warp size: 32 | shared memory: 32768 | int dot: 1 | matrix cores: none
+load_backend: loaded Vulkan backend from C:\Vibe Coding\LittleMore\engine\build\bin\ggml-vulkan.dll
+load_backend: loaded CPU backend from C:\Vibe Coding\LittleMore\engine\build\bin\ggml-cpu-alderlake.dll
+LITTLEBIT  d_in= 1024 d_out= 3072 r= 256 r2= 256 n=   9  layers= 64:       90.8 us/op    0.42 TFLOPS (work)    0.62 TFLOPS (dense-equivalent)
+LITTLEBIT  d_in= 1024 d_out= 3072 r= 256 r2= 256 n=  12  layers= 64:      102.5 us/op    0.49 TFLOPS (work)    0.74 TFLOPS (dense-equivalent)
+LITTLEBIT  d_in= 1024 d_out= 3072 r= 256 r2= 256 n=  16  layers= 64:      122.9 us/op    0.55 TFLOPS (work)    0.82 TFLOPS (dense-equivalent)
+LITTLEBIT  d_in= 1024 d_out= 3072 r= 256 r2= 256 n=  20  layers= 64:       80.4 us/op    1.04 TFLOPS (work)    1.57 TFLOPS (dense-equivalent)
+LITTLEBIT  d_in= 1024 d_out= 3072 r= 256 r2= 256 n=  24  layers= 64:       81.9 us/op    1.23 TFLOPS (work)    1.84 TFLOPS (dense-equivalent)
+LITTLEBIT  d_in= 1024 d_out= 3072 r= 256 r2= 256 n=  28  layers= 64:       82.5 us/op    1.42 TFLOPS (work)    2.14 TFLOPS (dense-equivalent)
+LITTLEBIT  d_in= 1024 d_out= 3072 r= 256 r2= 256 n=  32  layers= 64:       86.8 us/op    1.55 TFLOPS (work)    2.32 TFLOPS (dense-equivalent)
+LITTLEBIT  d_in= 1024 d_out= 3072 r= 256 r2= 256 n=  40  layers= 64:      115.1 us/op    1.46 TFLOPS (work)    2.19 TFLOPS (dense-equivalent)
+LITTLEBIT  d_in= 1024 d_out= 3072 r= 256 r2= 256 n=  48  layers= 64:      117.6 us/op    1.71 TFLOPS (work)    2.57 TFLOPS (dense-equivalent)
+LITTLEBIT  d_in= 1024 d_out= 3072 r= 256 r2= 256 n=  56  layers= 64:      126.7 us/op    1.85 TFLOPS (work)    2.78 TFLOPS (dense-equivalent)
+LITTLEBIT  d_in= 1024 d_out= 3072 r= 256 r2= 256 n=  64  layers= 64:      126.6 us/op    2.12 TFLOPS (work)    3.18 TFLOPS (dense-equivalent)
+LITTLEBIT  d_in= 1024 d_out= 3072 r= 256 r2= 256 n=  72  layers= 64:      162.2 us/op    1.86 TFLOPS (work)    2.79 TFLOPS (dense-equivalent)
+LITTLEBIT  d_in= 1024 d_out= 3072 r= 256 r2= 256 n=  80  layers= 64:      164.0 us/op    2.05 TFLOPS (work)    3.07 TFLOPS (dense-equivalent)
+LITTLEBIT  d_in= 1024 d_out= 3072 r= 256 r2= 256 n=  96  layers= 64:      172.2 us/op    2.34 TFLOPS (work)    3.51 TFLOPS (dense-equivalent)
+LITTLEBIT  d_in= 1024 d_out= 3072 r= 256 r2= 256 n= 112  layers= 64:      178.3 us/op    2.64 TFLOPS (work)    3.95 TFLOPS (dense-equivalent)
+LITTLEBIT  d_in= 1024 d_out= 3072 r= 256 r2= 256 n= 128  layers= 64:      183.1 us/op    2.93 TFLOPS (work)    4.40 TFLOPS (dense-equivalent)
+ggml_cuda_init: found 1 CUDA devices (Total VRAM: 6140 MiB):
+  Device 0: NVIDIA GeForce RTX 4050 Laptop GPU, compute capability 8.9, VMM: yes, VRAM: 6140 MiB
+load_backend: loaded CUDA backend from C:\Vibe Coding\LittleMore\engine\build\bin\ggml-cuda.dll
+ggml_vulkan: Found 2 Vulkan devices:
+ggml_vulkan: 0 = NVIDIA GeForce RTX 4050 Laptop GPU (NVIDIA) | uma: 0 | rebar: 1 | fp16: 1 | bf16: 1 | fp4: 0 | warp size: 32 | shared memory: 49152 | int dot: 1 | matrix cores: NV_coopmat2
+ggml_vulkan: 1 = Intel(R) UHD Graphics (Intel Corporation) | uma: 1 | rebar: 1 | fp16: 1 | bf16: 0 | fp4: 0 | warp size: 32 | shared memory: 32768 | int dot: 1 | matrix cores: none
+load_backend: loaded Vulkan backend from C:\Vibe Coding\LittleMore\engine\build\bin\ggml-vulkan.dll
+load_backend: loaded CPU backend from C:\Vibe Coding\LittleMore\engine\build\bin\ggml-cpu-alderlake.dll
+LITTLEBIT  d_in= 3072 d_out= 1024 r= 256 r2= 256 n=   9  layers= 64:       86.6 us/op    0.44 TFLOPS (work)    0.65 TFLOPS (dense-equivalent)
+LITTLEBIT  d_in= 3072 d_out= 1024 r= 256 r2= 256 n=  12  layers= 64:       95.9 us/op    0.53 TFLOPS (work)    0.79 TFLOPS (dense-equivalent)
+LITTLEBIT  d_in= 3072 d_out= 1024 r= 256 r2= 256 n=  16  layers= 64:       78.5 us/op    0.85 TFLOPS (work)    1.28 TFLOPS (dense-equivalent)
+LITTLEBIT  d_in= 3072 d_out= 1024 r= 256 r2= 256 n=  20  layers= 64:       66.8 us/op    1.26 TFLOPS (work)    1.88 TFLOPS (dense-equivalent)
+LITTLEBIT  d_in= 3072 d_out= 1024 r= 256 r2= 256 n=  24  layers= 64:       68.5 us/op    1.47 TFLOPS (work)    2.20 TFLOPS (dense-equivalent)
+LITTLEBIT  d_in= 3072 d_out= 1024 r= 256 r2= 256 n=  28  layers= 64:       70.2 us/op    1.67 TFLOPS (work)    2.51 TFLOPS (dense-equivalent)
+LITTLEBIT  d_in= 3072 d_out= 1024 r= 256 r2= 256 n=  32  layers= 64:       70.0 us/op    1.92 TFLOPS (work)    2.88 TFLOPS (dense-equivalent)
+LITTLEBIT  d_in= 3072 d_out= 1024 r= 256 r2= 256 n=  40  layers= 64:       93.7 us/op    1.79 TFLOPS (work)    2.69 TFLOPS (dense-equivalent)
+LITTLEBIT  d_in= 3072 d_out= 1024 r= 256 r2= 256 n=  48  layers= 64:       97.4 us/op    2.07 TFLOPS (work)    3.10 TFLOPS (dense-equivalent)
+LITTLEBIT  d_in= 3072 d_out= 1024 r= 256 r2= 256 n=  56  layers= 64:       98.5 us/op    2.39 TFLOPS (work)    3.58 TFLOPS (dense-equivalent)
+LITTLEBIT  d_in= 3072 d_out= 1024 r= 256 r2= 256 n=  64  layers= 64:      101.2 us/op    2.65 TFLOPS (work)    3.98 TFLOPS (dense-equivalent)
+LITTLEBIT  d_in= 3072 d_out= 1024 r= 256 r2= 256 n=  72  layers= 64:      144.1 us/op    2.10 TFLOPS (work)    3.14 TFLOPS (dense-equivalent)
+LITTLEBIT  d_in= 3072 d_out= 1024 r= 256 r2= 256 n=  80  layers= 64:      148.1 us/op    2.27 TFLOPS (work)    3.40 TFLOPS (dense-equivalent)
+LITTLEBIT  d_in= 3072 d_out= 1024 r= 256 r2= 256 n=  96  layers= 64:      149.1 us/op    2.70 TFLOPS (work)    4.05 TFLOPS (dense-equivalent)
+LITTLEBIT  d_in= 3072 d_out= 1024 r= 256 r2= 256 n= 112  layers= 64:      161.1 us/op    2.92 TFLOPS (work)    4.37 TFLOPS (dense-equivalent)
+LITTLEBIT  d_in= 3072 d_out= 1024 r= 256 r2= 256 n= 128  layers= 64:      170.0 us/op    3.16 TFLOPS (work)    4.74 TFLOPS (dense-equivalent)
+ggml_cuda_init: found 1 CUDA devices (Total VRAM: 6140 MiB):
+  Device 0: NVIDIA GeForce RTX 4050 Laptop GPU, compute capability 8.9, VMM: yes, VRAM: 6140 MiB
+load_backend: loaded CUDA backend from C:\Vibe Coding\LittleMore\engine\build\bin\ggml-cuda.dll
+ggml_vulkan: Found 2 Vulkan devices:
+ggml_vulkan: 0 = NVIDIA GeForce RTX 4050 Laptop GPU (NVIDIA) | uma: 0 | rebar: 1 | fp16: 1 | bf16: 1 | fp4: 0 | warp size: 32 | shared memory: 49152 | int dot: 1 | matrix cores: NV_coopmat2
+ggml_vulkan: 1 = Intel(R) UHD Graphics (Intel Corporation) | uma: 1 | rebar: 1 | fp16: 1 | bf16: 0 | fp4: 0 | warp size: 32 | shared memory: 32768 | int dot: 1 | matrix cores: none
+load_backend: loaded Vulkan backend from C:\Vibe Coding\LittleMore\engine\build\bin\ggml-vulkan.dll
+load_backend: loaded CPU backend from C:\Vibe Coding\LittleMore\engine\build\bin\ggml-cpu-alderlake.dll
+LITTLEBIT  d_in= 2048 d_out= 2048 r= 384 r2= 384 n=   9  layers= 64:      116.4 us/op    0.49 TFLOPS (work)    0.65 TFLOPS (dense-equivalent)
+LITTLEBIT  d_in= 2048 d_out= 2048 r= 384 r2= 384 n=  12  layers= 64:      139.5 us/op    0.54 TFLOPS (work)    0.72 TFLOPS (dense-equivalent)
+LITTLEBIT  d_in= 2048 d_out= 2048 r= 384 r2= 384 n=  16  layers= 64:      167.0 us/op    0.60 TFLOPS (work)    0.80 TFLOPS (dense-equivalent)
+LITTLEBIT  d_in= 2048 d_out= 2048 r= 384 r2= 384 n=  20  layers= 64:      102.4 us/op    1.23 TFLOPS (work)    1.64 TFLOPS (dense-equivalent)
+LITTLEBIT  d_in= 2048 d_out= 2048 r= 384 r2= 384 n=  24  layers= 64:      104.6 us/op    1.44 TFLOPS (work)    1.93 TFLOPS (dense-equivalent)
+LITTLEBIT  d_in= 2048 d_out= 2048 r= 384 r2= 384 n=  28  layers= 64:      104.9 us/op    1.68 TFLOPS (work)    2.24 TFLOPS (dense-equivalent)
+LITTLEBIT  d_in= 2048 d_out= 2048 r= 384 r2= 384 n=  32  layers= 64:      107.8 us/op    1.87 TFLOPS (work)    2.49 TFLOPS (dense-equivalent)
+LITTLEBIT  d_in= 2048 d_out= 2048 r= 384 r2= 384 n=  40  layers= 64:      135.8 us/op    1.85 TFLOPS (work)    2.47 TFLOPS (dense-equivalent)
+LITTLEBIT  d_in= 2048 d_out= 2048 r= 384 r2= 384 n=  48  layers= 64:      141.9 us/op    2.13 TFLOPS (work)    2.84 TFLOPS (dense-equivalent)
+LITTLEBIT  d_in= 2048 d_out= 2048 r= 384 r2= 384 n=  56  layers= 64:      144.9 us/op    2.43 TFLOPS (work)    3.24 TFLOPS (dense-equivalent)
+LITTLEBIT  d_in= 2048 d_out= 2048 r= 384 r2= 384 n=  64  layers= 64:      146.9 us/op    2.74 TFLOPS (work)    3.66 TFLOPS (dense-equivalent)
+LITTLEBIT  d_in= 2048 d_out= 2048 r= 384 r2= 384 n=  72  layers= 64:      231.7 us/op    1.95 TFLOPS (work)    2.61 TFLOPS (dense-equivalent)
+LITTLEBIT  d_in= 2048 d_out= 2048 r= 384 r2= 384 n=  80  layers= 64:      228.2 us/op    2.21 TFLOPS (work)    2.94 TFLOPS (dense-equivalent)
+LITTLEBIT  d_in= 2048 d_out= 2048 r= 384 r2= 384 n=  96  layers= 64:      236.8 us/op    2.55 TFLOPS (work)    3.40 TFLOPS (dense-equivalent)
+LITTLEBIT  d_in= 2048 d_out= 2048 r= 384 r2= 384 n= 112  layers= 64:      291.1 us/op    2.42 TFLOPS (work)    3.23 TFLOPS (dense-equivalent)
+LITTLEBIT  d_in= 2048 d_out= 2048 r= 384 r2= 384 n= 128  layers= 64:      305.4 us/op    2.64 TFLOPS (work)    3.52 TFLOPS (dense-equivalent)
+ggml_cuda_init: found 1 CUDA devices (Total VRAM: 6140 MiB):
+  Device 0: NVIDIA GeForce RTX 4050 Laptop GPU, compute capability 8.9, VMM: yes, VRAM: 6140 MiB
+load_backend: loaded CUDA backend from C:\Vibe Coding\LittleMore\engine\build\bin\ggml-cuda.dll
+ggml_vulkan: Found 2 Vulkan devices:
+ggml_vulkan: 0 = NVIDIA GeForce RTX 4050 Laptop GPU (NVIDIA) | uma: 0 | rebar: 1 | fp16: 1 | bf16: 1 | fp4: 0 | warp size: 32 | shared memory: 49152 | int dot: 1 | matrix cores: NV_coopmat2
+ggml_vulkan: 1 = Intel(R) UHD Graphics (Intel Corporation) | uma: 1 | rebar: 1 | fp16: 1 | bf16: 0 | fp4: 0 | warp size: 32 | shared memory: 32768 | int dot: 1 | matrix cores: none
+load_backend: loaded Vulkan backend from C:\Vibe Coding\LittleMore\engine\build\bin\ggml-vulkan.dll
+load_backend: loaded CPU backend from C:\Vibe Coding\LittleMore\engine\build\bin\ggml-cpu-alderlake.dll
+LITTLEBIT  d_in= 2048 d_out= 6144 r= 512 r2= 512 n=   9  layers= 61:      316.2 us/op    0.48 TFLOPS (work)    0.72 TFLOPS (dense-equivalent)
+LITTLEBIT  d_in= 2048 d_out= 6144 r= 512 r2= 512 n=  12  layers= 61:      414.2 us/op    0.49 TFLOPS (work)    0.73 TFLOPS (dense-equivalent)
+LITTLEBIT  d_in= 2048 d_out= 6144 r= 512 r2= 512 n=  16  layers= 61:      485.1 us/op    0.55 TFLOPS (work)    0.83 TFLOPS (dense-equivalent)
+LITTLEBIT  d_in= 2048 d_out= 6144 r= 512 r2= 512 n=  20  layers= 61:      283.3 us/op    1.18 TFLOPS (work)    1.78 TFLOPS (dense-equivalent)
+LITTLEBIT  d_in= 2048 d_out= 6144 r= 512 r2= 512 n=  24  layers= 61:      291.4 us/op    1.38 TFLOPS (work)    2.07 TFLOPS (dense-equivalent)
+LITTLEBIT  d_in= 2048 d_out= 6144 r= 512 r2= 512 n=  28  layers= 61:      294.6 us/op    1.59 TFLOPS (work)    2.39 TFLOPS (dense-equivalent)
+LITTLEBIT  d_in= 2048 d_out= 6144 r= 512 r2= 512 n=  32  layers= 61:      295.2 us/op    1.82 TFLOPS (work)    2.73 TFLOPS (dense-equivalent)
+LITTLEBIT  d_in= 2048 d_out= 6144 r= 512 r2= 512 n=  40  layers= 61:      433.2 us/op    1.55 TFLOPS (work)    2.32 TFLOPS (dense-equivalent)
+LITTLEBIT  d_in= 2048 d_out= 6144 r= 512 r2= 512 n=  48  layers= 61:      425.5 us/op    1.89 TFLOPS (work)    2.84 TFLOPS (dense-equivalent)
+LITTLEBIT  d_in= 2048 d_out= 6144 r= 512 r2= 512 n=  56  layers= 61:      441.6 us/op    2.13 TFLOPS (work)    3.19 TFLOPS (dense-equivalent)
+LITTLEBIT  d_in= 2048 d_out= 6144 r= 512 r2= 512 n=  64  layers= 61:      441.0 us/op    2.43 TFLOPS (work)    3.65 TFLOPS (dense-equivalent)
+LITTLEBIT  d_in= 2048 d_out= 6144 r= 512 r2= 512 n=  72  layers= 61:      611.2 us/op    1.98 TFLOPS (work)    2.96 TFLOPS (dense-equivalent)
+LITTLEBIT  d_in= 2048 d_out= 6144 r= 512 r2= 512 n=  80  layers= 61:      617.8 us/op    2.17 TFLOPS (work)    3.26 TFLOPS (dense-equivalent)
+LITTLEBIT  d_in= 2048 d_out= 6144 r= 512 r2= 512 n=  96  layers= 61:      627.4 us/op    2.57 TFLOPS (work)    3.85 TFLOPS (dense-equivalent)
+LITTLEBIT  d_in= 2048 d_out= 6144 r= 512 r2= 512 n= 112  layers= 61:      764.3 us/op    2.46 TFLOPS (work)    3.69 TFLOPS (dense-equivalent)
+LITTLEBIT  d_in= 2048 d_out= 6144 r= 512 r2= 512 n= 128  layers= 61:      803.3 us/op    2.67 TFLOPS (work)    4.01 TFLOPS (dense-equivalent)
+ggml_cuda_init: found 1 CUDA devices (Total VRAM: 6140 MiB):
+  Device 0: NVIDIA GeForce RTX 4050 Laptop GPU, compute capability 8.9, VMM: yes, VRAM: 6140 MiB
+load_backend: loaded CUDA backend from C:\Vibe Coding\LittleMore\engine\build\bin\ggml-cuda.dll
+ggml_vulkan: Found 2 Vulkan devices:
+ggml_vulkan: 0 = NVIDIA GeForce RTX 4050 Laptop GPU (NVIDIA) | uma: 0 | rebar: 1 | fp16: 1 | bf16: 1 | fp4: 0 | warp size: 32 | shared memory: 49152 | int dot: 1 | matrix cores: NV_coopmat2
+ggml_vulkan: 1 = Intel(R) UHD Graphics (Intel Corporation) | uma: 1 | rebar: 1 | fp16: 1 | bf16: 0 | fp4: 0 | warp size: 32 | shared memory: 32768 | int dot: 1 | matrix cores: none
+load_backend: loaded Vulkan backend from C:\Vibe Coding\LittleMore\engine\build\bin\ggml-vulkan.dll
+load_backend: loaded CPU backend from C:\Vibe Coding\LittleMore\engine\build\bin\ggml-cpu-alderlake.dll
+LITTLEBIT  d_in= 6144 d_out= 2048 r= 512 r2= 512 n=   9  layers= 61:      308.0 us/op    0.49 TFLOPS (work)    0.74 TFLOPS (dense-equivalent)
+LITTLEBIT  d_in= 6144 d_out= 2048 r= 512 r2= 512 n=  12  layers= 61:      362.5 us/op    0.56 TFLOPS (work)    0.83 TFLOPS (dense-equivalent)
+LITTLEBIT  d_in= 6144 d_out= 2048 r= 512 r2= 512 n=  16  layers= 61:      420.6 us/op    0.64 TFLOPS (work)    0.96 TFLOPS (dense-equivalent)
+LITTLEBIT  d_in= 6144 d_out= 2048 r= 512 r2= 512 n=  20  layers= 61:      259.7 us/op    1.29 TFLOPS (work)    1.94 TFLOPS (dense-equivalent)
+LITTLEBIT  d_in= 6144 d_out= 2048 r= 512 r2= 512 n=  24  layers= 61:      265.1 us/op    1.52 TFLOPS (work)    2.28 TFLOPS (dense-equivalent)
+LITTLEBIT  d_in= 6144 d_out= 2048 r= 512 r2= 512 n=  28  layers= 61:      270.6 us/op    1.74 TFLOPS (work)    2.60 TFLOPS (dense-equivalent)
+LITTLEBIT  d_in= 6144 d_out= 2048 r= 512 r2= 512 n=  32  layers= 61:      271.3 us/op    1.98 TFLOPS (work)    2.97 TFLOPS (dense-equivalent)
+LITTLEBIT  d_in= 6144 d_out= 2048 r= 512 r2= 512 n=  40  layers= 61:      351.3 us/op    1.91 TFLOPS (work)    2.87 TFLOPS (dense-equivalent)
+LITTLEBIT  d_in= 6144 d_out= 2048 r= 512 r2= 512 n=  48  layers= 61:      352.9 us/op    2.28 TFLOPS (work)    3.42 TFLOPS (dense-equivalent)
+LITTLEBIT  d_in= 6144 d_out= 2048 r= 512 r2= 512 n=  56  layers= 61:      361.7 us/op    2.60 TFLOPS (work)    3.90 TFLOPS (dense-equivalent)
+LITTLEBIT  d_in= 6144 d_out= 2048 r= 512 r2= 512 n=  64  layers= 61:      361.0 us/op    2.97 TFLOPS (work)    4.46 TFLOPS (dense-equivalent)
+LITTLEBIT  d_in= 6144 d_out= 2048 r= 512 r2= 512 n=  72  layers= 61:      617.3 us/op    1.96 TFLOPS (work)    2.94 TFLOPS (dense-equivalent)
+LITTLEBIT  d_in= 6144 d_out= 2048 r= 512 r2= 512 n=  80  layers= 61:      610.0 us/op    2.20 TFLOPS (work)    3.30 TFLOPS (dense-equivalent)
+LITTLEBIT  d_in= 6144 d_out= 2048 r= 512 r2= 512 n=  96  layers= 61:      637.8 us/op    2.53 TFLOPS (work)    3.79 TFLOPS (dense-equivalent)
+LITTLEBIT  d_in= 6144 d_out= 2048 r= 512 r2= 512 n= 112  layers= 61:      688.1 us/op    2.73 TFLOPS (work)    4.10 TFLOPS (dense-equivalent)
+LITTLEBIT  d_in= 6144 d_out= 2048 r= 512 r2= 512 n= 128  layers= 61:      684.6 us/op    3.14 TFLOPS (work)    4.71 TFLOPS (dense-equivalent)
+ggml_cuda_init: found 1 CUDA devices (Total VRAM: 6140 MiB):
+  Device 0: NVIDIA GeForce RTX 4050 Laptop GPU, compute capability 8.9, VMM: yes, VRAM: 6140 MiB
+load_backend: loaded CUDA backend from C:\Vibe Coding\LittleMore\engine\build\bin\ggml-cuda.dll
+ggml_vulkan: Found 2 Vulkan devices:
+ggml_vulkan: 0 = NVIDIA GeForce RTX 4050 Laptop GPU (NVIDIA) | uma: 0 | rebar: 1 | fp16: 1 | bf16: 1 | fp4: 0 | warp size: 32 | shared memory: 49152 | int dot: 1 | matrix cores: NV_coopmat2
+ggml_vulkan: 1 = Intel(R) UHD Graphics (Intel Corporation) | uma: 1 | rebar: 1 | fp16: 1 | bf16: 0 | fp4: 0 | warp size: 32 | shared memory: 32768 | int dot: 1 | matrix cores: none
+load_backend: loaded Vulkan backend from C:\Vibe Coding\LittleMore\engine\build\bin\ggml-vulkan.dll
+load_backend: loaded CPU backend from C:\Vibe Coding\LittleMore\engine\build\bin\ggml-cpu-alderlake.dll
+LITTLEBIT  d_in= 2560 d_out= 4096 r= 512 r2= 512 n=   9  layers= 64:      268.8 us/op    0.46 TFLOPS (work)    0.70 TFLOPS (dense-equivalent)
+LITTLEBIT  d_in= 2560 d_out= 4096 r= 512 r2= 512 n=  12  layers= 64:      330.0 us/op    0.50 TFLOPS (work)    0.76 TFLOPS (dense-equivalent)
+LITTLEBIT  d_in= 2560 d_out= 4096 r= 512 r2= 512 n=  16  layers= 64:      384.9 us/op    0.57 TFLOPS (work)    0.87 TFLOPS (dense-equivalent)
+LITTLEBIT  d_in= 2560 d_out= 4096 r= 512 r2= 512 n=  20  layers= 64:      222.8 us/op    1.22 TFLOPS (work)    1.88 TFLOPS (dense-equivalent)
+LITTLEBIT  d_in= 2560 d_out= 4096 r= 512 r2= 512 n=  24  layers= 64:      222.6 us/op    1.47 TFLOPS (work)    2.26 TFLOPS (dense-equivalent)
+LITTLEBIT  d_in= 2560 d_out= 4096 r= 512 r2= 512 n=  28  layers= 64:      226.2 us/op    1.69 TFLOPS (work)    2.60 TFLOPS (dense-equivalent)
+LITTLEBIT  d_in= 2560 d_out= 4096 r= 512 r2= 512 n=  32  layers= 64:      228.0 us/op    1.91 TFLOPS (work)    2.94 TFLOPS (dense-equivalent)
+LITTLEBIT  d_in= 2560 d_out= 4096 r= 512 r2= 512 n=  40  layers= 64:      330.3 us/op    1.65 TFLOPS (work)    2.54 TFLOPS (dense-equivalent)
+LITTLEBIT  d_in= 2560 d_out= 4096 r= 512 r2= 512 n=  48  layers= 64:      339.2 us/op    1.93 TFLOPS (work)    2.97 TFLOPS (dense-equivalent)
+LITTLEBIT  d_in= 2560 d_out= 4096 r= 512 r2= 512 n=  56  layers= 64:      346.4 us/op    2.20 TFLOPS (work)    3.39 TFLOPS (dense-equivalent)
+LITTLEBIT  d_in= 2560 d_out= 4096 r= 512 r2= 512 n=  64  layers= 64:      352.9 us/op    2.47 TFLOPS (work)    3.80 TFLOPS (dense-equivalent)
+LITTLEBIT  d_in= 2560 d_out= 4096 r= 512 r2= 512 n=  72  layers= 64:      473.9 us/op    2.07 TFLOPS (work)    3.19 TFLOPS (dense-equivalent)
+LITTLEBIT  d_in= 2560 d_out= 4096 r= 512 r2= 512 n=  80  layers= 64:      486.0 us/op    2.24 TFLOPS (work)    3.45 TFLOPS (dense-equivalent)
+LITTLEBIT  d_in= 2560 d_out= 4096 r= 512 r2= 512 n=  96  layers= 64:      486.7 us/op    2.69 TFLOPS (work)    4.14 TFLOPS (dense-equivalent)
+LITTLEBIT  d_in= 2560 d_out= 4096 r= 512 r2= 512 n= 112  layers= 64:      599.6 us/op    2.55 TFLOPS (work)    3.92 TFLOPS (dense-equivalent)
+LITTLEBIT  d_in= 2560 d_out= 4096 r= 512 r2= 512 n= 128  layers= 64:      636.4 us/op    2.74 TFLOPS (work)    4.22 TFLOPS (dense-equivalent)
+ggml_cuda_init: found 1 CUDA devices (Total VRAM: 6140 MiB):
+  Device 0: NVIDIA GeForce RTX 4050 Laptop GPU, compute capability 8.9, VMM: yes, VRAM: 6140 MiB
+load_backend: loaded CUDA backend from C:\Vibe Coding\LittleMore\engine\build\bin\ggml-cuda.dll
+ggml_vulkan: Found 2 Vulkan devices:
+ggml_vulkan: 0 = NVIDIA GeForce RTX 4050 Laptop GPU (NVIDIA) | uma: 0 | rebar: 1 | fp16: 1 | bf16: 1 | fp4: 0 | warp size: 32 | shared memory: 49152 | int dot: 1 | matrix cores: NV_coopmat2
+ggml_vulkan: 1 = Intel(R) UHD Graphics (Intel Corporation) | uma: 1 | rebar: 1 | fp16: 1 | bf16: 0 | fp4: 0 | warp size: 32 | shared memory: 32768 | int dot: 1 | matrix cores: none
+load_backend: loaded Vulkan backend from C:\Vibe Coding\LittleMore\engine\build\bin\ggml-vulkan.dll
+load_backend: loaded CPU backend from C:\Vibe Coding\LittleMore\engine\build\bin\ggml-cpu-alderlake.dll
+LITTLEBIT  d_in= 2560 d_out= 1024 r= 256 r2= 256 n=   9  layers= 64:       78.1 us/op    0.42 TFLOPS (work)    0.60 TFLOPS (dense-equivalent)
+LITTLEBIT  d_in= 2560 d_out= 1024 r= 256 r2= 256 n=  12  layers= 64:       83.9 us/op    0.53 TFLOPS (work)    0.75 TFLOPS (dense-equivalent)
+LITTLEBIT  d_in= 2560 d_out= 1024 r= 256 r2= 256 n=  16  layers= 64:       74.1 us/op    0.79 TFLOPS (work)    1.13 TFLOPS (dense-equivalent)
+LITTLEBIT  d_in= 2560 d_out= 1024 r= 256 r2= 256 n=  20  layers= 64:       60.1 us/op    1.22 TFLOPS (work)    1.74 TFLOPS (dense-equivalent)
+LITTLEBIT  d_in= 2560 d_out= 1024 r= 256 r2= 256 n=  24  layers= 64:       61.4 us/op    1.43 TFLOPS (work)    2.05 TFLOPS (dense-equivalent)
+LITTLEBIT  d_in= 2560 d_out= 1024 r= 256 r2= 256 n=  28  layers= 64:       63.4 us/op    1.62 TFLOPS (work)    2.32 TFLOPS (dense-equivalent)
+LITTLEBIT  d_in= 2560 d_out= 1024 r= 256 r2= 256 n=  32  layers= 64:       62.7 us/op    1.87 TFLOPS (work)    2.68 TFLOPS (dense-equivalent)
+LITTLEBIT  d_in= 2560 d_out= 1024 r= 256 r2= 256 n=  40  layers= 64:       86.5 us/op    1.70 TFLOPS (work)    2.42 TFLOPS (dense-equivalent)
+LITTLEBIT  d_in= 2560 d_out= 1024 r= 256 r2= 256 n=  48  layers= 64:       86.0 us/op    2.05 TFLOPS (work)    2.93 TFLOPS (dense-equivalent)
+LITTLEBIT  d_in= 2560 d_out= 1024 r= 256 r2= 256 n=  56  layers= 64:       88.6 us/op    2.32 TFLOPS (work)    3.31 TFLOPS (dense-equivalent)
+LITTLEBIT  d_in= 2560 d_out= 1024 r= 256 r2= 256 n=  64  layers= 64:       89.6 us/op    2.62 TFLOPS (work)    3.74 TFLOPS (dense-equivalent)
+LITTLEBIT  d_in= 2560 d_out= 1024 r= 256 r2= 256 n=  72  layers= 64:      128.5 us/op    2.06 TFLOPS (work)    2.94 TFLOPS (dense-equivalent)
+LITTLEBIT  d_in= 2560 d_out= 1024 r= 256 r2= 256 n=  80  layers= 64:      128.9 us/op    2.28 TFLOPS (work)    3.25 TFLOPS (dense-equivalent)
+LITTLEBIT  d_in= 2560 d_out= 1024 r= 256 r2= 256 n=  96  layers= 64:      132.5 us/op    2.66 TFLOPS (work)    3.80 TFLOPS (dense-equivalent)
+LITTLEBIT  d_in= 2560 d_out= 1024 r= 256 r2= 256 n= 112  layers= 64:      144.0 us/op    2.85 TFLOPS (work)    4.08 TFLOPS (dense-equivalent)
+LITTLEBIT  d_in= 2560 d_out= 1024 r= 256 r2= 256 n= 128  layers= 64:      147.9 us/op    3.18 TFLOPS (work)    4.54 TFLOPS (dense-equivalent)
+ggml_cuda_init: found 1 CUDA devices (Total VRAM: 6140 MiB):
+  Device 0: NVIDIA GeForce RTX 4050 Laptop GPU, compute capability 8.9, VMM: yes, VRAM: 6140 MiB
+load_backend: loaded CUDA backend from C:\Vibe Coding\LittleMore\engine\build\bin\ggml-cuda.dll
+ggml_vulkan: Found 2 Vulkan devices:
+ggml_vulkan: 0 = NVIDIA GeForce RTX 4050 Laptop GPU (NVIDIA) | uma: 0 | rebar: 1 | fp16: 1 | bf16: 1 | fp4: 0 | warp size: 32 | shared memory: 49152 | int dot: 1 | matrix cores: NV_coopmat2
+ggml_vulkan: 1 = Intel(R) UHD Graphics (Intel Corporation) | uma: 1 | rebar: 1 | fp16: 1 | bf16: 0 | fp4: 0 | warp size: 32 | shared memory: 32768 | int dot: 1 | matrix cores: none
+load_backend: loaded Vulkan backend from C:\Vibe Coding\LittleMore\engine\build\bin\ggml-vulkan.dll
+load_backend: loaded CPU backend from C:\Vibe Coding\LittleMore\engine\build\bin\ggml-cpu-alderlake.dll
+LITTLEBIT  d_in= 4096 d_out= 2560 r= 512 r2= 512 n=   9  layers= 64:      253.8 us/op    0.48 TFLOPS (work)    0.74 TFLOPS (dense-equivalent)
+LITTLEBIT  d_in= 4096 d_out= 2560 r= 512 r2= 512 n=  12  layers= 64:      311.2 us/op    0.53 TFLOPS (work)    0.81 TFLOPS (dense-equivalent)
+LITTLEBIT  d_in= 4096 d_out= 2560 r= 512 r2= 512 n=  16  layers= 64:      369.5 us/op    0.59 TFLOPS (work)    0.91 TFLOPS (dense-equivalent)
+LITTLEBIT  d_in= 4096 d_out= 2560 r= 512 r2= 512 n=  20  layers= 64:      218.4 us/op    1.25 TFLOPS (work)    1.92 TFLOPS (dense-equivalent)
+LITTLEBIT  d_in= 4096 d_out= 2560 r= 512 r2= 512 n=  24  layers= 64:      227.2 us/op    1.44 TFLOPS (work)    2.22 TFLOPS (dense-equivalent)
+LITTLEBIT  d_in= 4096 d_out= 2560 r= 512 r2= 512 n=  28  layers= 64:      222.6 us/op    1.71 TFLOPS (work)    2.64 TFLOPS (dense-equivalent)
+LITTLEBIT  d_in= 4096 d_out= 2560 r= 512 r2= 512 n=  32  layers= 64:      226.5 us/op    1.93 TFLOPS (work)    2.96 TFLOPS (dense-equivalent)
+LITTLEBIT  d_in= 4096 d_out= 2560 r= 512 r2= 512 n=  40  layers= 64:      353.6 us/op    1.54 TFLOPS (work)    2.37 TFLOPS (dense-equivalent)
+LITTLEBIT  d_in= 4096 d_out= 2560 r= 512 r2= 512 n=  48  layers= 64:      361.3 us/op    1.81 TFLOPS (work)    2.79 TFLOPS (dense-equivalent)
+LITTLEBIT  d_in= 4096 d_out= 2560 r= 512 r2= 512 n=  56  layers= 64:      361.9 us/op    2.11 TFLOPS (work)    3.24 TFLOPS (dense-equivalent)
+LITTLEBIT  d_in= 4096 d_out= 2560 r= 512 r2= 512 n=  64  layers= 64:      364.0 us/op    2.40 TFLOPS (work)    3.69 TFLOPS (dense-equivalent)
+LITTLEBIT  d_in= 4096 d_out= 2560 r= 512 r2= 512 n=  72  layers= 64:      478.1 us/op    2.05 TFLOPS (work)    3.16 TFLOPS (dense-equivalent)
+LITTLEBIT  d_in= 4096 d_out= 2560 r= 512 r2= 512 n=  80  layers= 64:      485.6 us/op    2.25 TFLOPS (work)    3.46 TFLOPS (dense-equivalent)
+LITTLEBIT  d_in= 4096 d_out= 2560 r= 512 r2= 512 n=  96  layers= 64:      503.2 us/op    2.60 TFLOPS (work)    4.00 TFLOPS (dense-equivalent)
+LITTLEBIT  d_in= 4096 d_out= 2560 r= 512 r2= 512 n= 112  layers= 64:      501.2 us/op    3.05 TFLOPS (work)    4.69 TFLOPS (dense-equivalent)
+LITTLEBIT  d_in= 4096 d_out= 2560 r= 512 r2= 512 n= 128  layers= 64:      503.2 us/op    3.47 TFLOPS (work)    5.33 TFLOPS (dense-equivalent)
+ggml_cuda_init: found 1 CUDA devices (Total VRAM: 6140 MiB):
+  Device 0: NVIDIA GeForce RTX 4050 Laptop GPU, compute capability 8.9, VMM: yes, VRAM: 6140 MiB
+load_backend: loaded CUDA backend from C:\Vibe Coding\LittleMore\engine\build\bin\ggml-cuda.dll
+ggml_vulkan: Found 2 Vulkan devices:
+ggml_vulkan: 0 = NVIDIA GeForce RTX 4050 Laptop GPU (NVIDIA) | uma: 0 | rebar: 1 | fp16: 1 | bf16: 1 | fp4: 0 | warp size: 32 | shared memory: 49152 | int dot: 1 | matrix cores: NV_coopmat2
+ggml_vulkan: 1 = Intel(R) UHD Graphics (Intel Corporation) | uma: 1 | rebar: 1 | fp16: 1 | bf16: 0 | fp4: 0 | warp size: 32 | shared memory: 32768 | int dot: 1 | matrix cores: none
+load_backend: loaded Vulkan backend from C:\Vibe Coding\LittleMore\engine\build\bin\ggml-vulkan.dll
+load_backend: loaded CPU backend from C:\Vibe Coding\LittleMore\engine\build\bin\ggml-cpu-alderlake.dll
+LITTLEBIT  d_in= 2560 d_out= 9728 r= 640 r2= 640 n=   9  layers= 33:      633.3 us/op    0.45 TFLOPS (work)    0.71 TFLOPS (dense-equivalent)
+LITTLEBIT  d_in= 2560 d_out= 9728 r= 640 r2= 640 n=  12  layers= 33:      807.1 us/op    0.47 TFLOPS (work)    0.74 TFLOPS (dense-equivalent)
+LITTLEBIT  d_in= 2560 d_out= 9728 r= 640 r2= 640 n=  16  layers= 33:      935.9 us/op    0.54 TFLOPS (work)    0.85 TFLOPS (dense-equivalent)
+LITTLEBIT  d_in= 2560 d_out= 9728 r= 640 r2= 640 n=  20  layers= 33:      598.4 us/op    1.05 TFLOPS (work)    1.66 TFLOPS (dense-equivalent)
+LITTLEBIT  d_in= 2560 d_out= 9728 r= 640 r2= 640 n=  24  layers= 33:      601.2 us/op    1.26 TFLOPS (work)    1.99 TFLOPS (dense-equivalent)
+LITTLEBIT  d_in= 2560 d_out= 9728 r= 640 r2= 640 n=  28  layers= 33:      616.4 us/op    1.43 TFLOPS (work)    2.26 TFLOPS (dense-equivalent)
+LITTLEBIT  d_in= 2560 d_out= 9728 r= 640 r2= 640 n=  32  layers= 33:      599.7 us/op    1.68 TFLOPS (work)    2.66 TFLOPS (dense-equivalent)
+LITTLEBIT  d_in= 2560 d_out= 9728 r= 640 r2= 640 n=  40  layers= 33:      896.4 us/op    1.40 TFLOPS (work)    2.22 TFLOPS (dense-equivalent)
+LITTLEBIT  d_in= 2560 d_out= 9728 r= 640 r2= 640 n=  48  layers= 33:      901.2 us/op    1.68 TFLOPS (work)    2.65 TFLOPS (dense-equivalent)
+LITTLEBIT  d_in= 2560 d_out= 9728 r= 640 r2= 640 n=  56  layers= 33:      882.8 us/op    2.00 TFLOPS (work)    3.16 TFLOPS (dense-equivalent)
+LITTLEBIT  d_in= 2560 d_out= 9728 r= 640 r2= 640 n=  64  layers= 33:      912.1 us/op    2.21 TFLOPS (work)    3.49 TFLOPS (dense-equivalent)
+LITTLEBIT  d_in= 2560 d_out= 9728 r= 640 r2= 640 n=  72  layers= 33:     1203.9 us/op    1.88 TFLOPS (work)    2.98 TFLOPS (dense-equivalent)
+LITTLEBIT  d_in= 2560 d_out= 9728 r= 640 r2= 640 n=  80  layers= 33:     1215.5 us/op    2.07 TFLOPS (work)    3.28 TFLOPS (dense-equivalent)
+LITTLEBIT  d_in= 2560 d_out= 9728 r= 640 r2= 640 n=  96  layers= 33:     1237.3 us/op    2.44 TFLOPS (work)    3.86 TFLOPS (dense-equivalent)
+LITTLEBIT  d_in= 2560 d_out= 9728 r= 640 r2= 640 n= 112  layers= 33:     1345.0 us/op    2.62 TFLOPS (work)    4.15 TFLOPS (dense-equivalent)
+LITTLEBIT  d_in= 2560 d_out= 9728 r= 640 r2= 640 n= 128  layers= 33:     1354.4 us/op    2.97 TFLOPS (work)    4.71 TFLOPS (dense-equivalent)
+ggml_cuda_init: found 1 CUDA devices (Total VRAM: 6140 MiB):
+  Device 0: NVIDIA GeForce RTX 4050 Laptop GPU, compute capability 8.9, VMM: yes, VRAM: 6140 MiB
+load_backend: loaded CUDA backend from C:\Vibe Coding\LittleMore\engine\build\bin\ggml-cuda.dll
+ggml_vulkan: Found 2 Vulkan devices:
+ggml_vulkan: 0 = NVIDIA GeForce RTX 4050 Laptop GPU (NVIDIA) | uma: 0 | rebar: 1 | fp16: 1 | bf16: 1 | fp4: 0 | warp size: 32 | shared memory: 49152 | int dot: 1 | matrix cores: NV_coopmat2
+ggml_vulkan: 1 = Intel(R) UHD Graphics (Intel Corporation) | uma: 1 | rebar: 1 | fp16: 1 | bf16: 0 | fp4: 0 | warp size: 32 | shared memory: 32768 | int dot: 1 | matrix cores: none
+load_backend: loaded Vulkan backend from C:\Vibe Coding\LittleMore\engine\build\bin\ggml-vulkan.dll
+load_backend: loaded CPU backend from C:\Vibe Coding\LittleMore\engine\build\bin\ggml-cpu-alderlake.dll
+LITTLEBIT  d_in= 9728 d_out= 2560 r= 640 r2= 640 n=   9  layers= 33:      550.1 us/op    0.51 TFLOPS (work)    0.81 TFLOPS (dense-equivalent)
+LITTLEBIT  d_in= 9728 d_out= 2560 r= 640 r2= 640 n=  12  layers= 33:      597.5 us/op    0.63 TFLOPS (work)    1.00 TFLOPS (dense-equivalent)
+LITTLEBIT  d_in= 9728 d_out= 2560 r= 640 r2= 640 n=  16  layers= 33:      633.0 us/op    0.80 TFLOPS (work)    1.26 TFLOPS (dense-equivalent)
+LITTLEBIT  d_in= 9728 d_out= 2560 r= 640 r2= 640 n=  20  layers= 33:      514.5 us/op    1.22 TFLOPS (work)    1.94 TFLOPS (dense-equivalent)
+LITTLEBIT  d_in= 9728 d_out= 2560 r= 640 r2= 640 n=  24  layers= 33:      522.7 us/op    1.44 TFLOPS (work)    2.29 TFLOPS (dense-equivalent)
+LITTLEBIT  d_in= 9728 d_out= 2560 r= 640 r2= 640 n=  28  layers= 33:      525.4 us/op    1.68 TFLOPS (work)    2.65 TFLOPS (dense-equivalent)
+LITTLEBIT  d_in= 9728 d_out= 2560 r= 640 r2= 640 n=  32  layers= 33:      521.6 us/op    1.93 TFLOPS (work)    3.06 TFLOPS (dense-equivalent)
+LITTLEBIT  d_in= 9728 d_out= 2560 r= 640 r2= 640 n=  40  layers= 33:      668.8 us/op    1.88 TFLOPS (work)    2.98 TFLOPS (dense-equivalent)
+LITTLEBIT  d_in= 9728 d_out= 2560 r= 640 r2= 640 n=  48  layers= 33:      679.6 us/op    2.22 TFLOPS (work)    3.52 TFLOPS (dense-equivalent)
+LITTLEBIT  d_in= 9728 d_out= 2560 r= 640 r2= 640 n=  56  layers= 33:      695.2 us/op    2.53 TFLOPS (work)    4.01 TFLOPS (dense-equivalent)
+LITTLEBIT  d_in= 9728 d_out= 2560 r= 640 r2= 640 n=  64  layers= 33:      692.9 us/op    2.91 TFLOPS (work)    4.60 TFLOPS (dense-equivalent)
+LITTLEBIT  d_in= 9728 d_out= 2560 r= 640 r2= 640 n=  72  layers= 33:     1218.5 us/op    1.86 TFLOPS (work)    2.94 TFLOPS (dense-equivalent)
+LITTLEBIT  d_in= 9728 d_out= 2560 r= 640 r2= 640 n=  80  layers= 33:     1209.7 us/op    2.08 TFLOPS (work)    3.29 TFLOPS (dense-equivalent)
+LITTLEBIT  d_in= 9728 d_out= 2560 r= 640 r2= 640 n=  96  layers= 33:     1288.2 us/op    2.34 TFLOPS (work)    3.71 TFLOPS (dense-equivalent)
+LITTLEBIT  d_in= 9728 d_out= 2560 r= 640 r2= 640 n= 112  layers= 33:     1103.9 us/op    3.19 TFLOPS (work)    5.05 TFLOPS (dense-equivalent)
+LITTLEBIT  d_in= 9728 d_out= 2560 r= 640 r2= 640 n= 128  layers= 33:     1143.9 us/op    3.52 TFLOPS (work)    5.57 TFLOPS (dense-equivalent)
+ggml_cuda_init: found 1 CUDA devices (Total VRAM: 6140 MiB):
+  Device 0: NVIDIA GeForce RTX 4050 Laptop GPU, compute capability 8.9, VMM: yes, VRAM: 6140 MiB
+load_backend: loaded CUDA backend from C:\Vibe Coding\LittleMore\engine\build\bin\ggml-cuda.dll
+ggml_vulkan: Found 2 Vulkan devices:
+ggml_vulkan: 0 = NVIDIA GeForce RTX 4050 Laptop GPU (NVIDIA) | uma: 0 | rebar: 1 | fp16: 1 | bf16: 1 | fp4: 0 | warp size: 32 | shared memory: 49152 | int dot: 1 | matrix cores: NV_coopmat2
+ggml_vulkan: 1 = Intel(R) UHD Graphics (Intel Corporation) | uma: 1 | rebar: 1 | fp16: 1 | bf16: 0 | fp4: 0 | warp size: 32 | shared memory: 32768 | int dot: 1 | matrix cores: none
+load_backend: loaded Vulkan backend from C:\Vibe Coding\LittleMore\engine\build\bin\ggml-vulkan.dll
+load_backend: loaded CPU backend from C:\Vibe Coding\LittleMore\engine\build\bin\ggml-cpu-alderlake.dll
+LITTLEBIT  d_in= 4096 d_out= 4096 r= 640 r2= 640 n=   9  layers= 49:      428.2 us/op    0.44 TFLOPS (work)    0.71 TFLOPS (dense-equivalent)
+LITTLEBIT  d_in= 4096 d_out= 4096 r= 640 r2= 640 n=  12  layers= 49:      538.2 us/op    0.47 TFLOPS (work)    0.75 TFLOPS (dense-equivalent)
+LITTLEBIT  d_in= 4096 d_out= 4096 r= 640 r2= 640 n=  16  layers= 49:      602.8 us/op    0.56 TFLOPS (work)    0.89 TFLOPS (dense-equivalent)
+LITTLEBIT  d_in= 4096 d_out= 4096 r= 640 r2= 640 n=  20  layers= 49:      377.5 us/op    1.11 TFLOPS (work)    1.78 TFLOPS (dense-equivalent)
+LITTLEBIT  d_in= 4096 d_out= 4096 r= 640 r2= 640 n=  24  layers= 49:      378.8 us/op    1.33 TFLOPS (work)    2.13 TFLOPS (dense-equivalent)
+LITTLEBIT  d_in= 4096 d_out= 4096 r= 640 r2= 640 n=  28  layers= 49:      384.1 us/op    1.53 TFLOPS (work)    2.45 TFLOPS (dense-equivalent)
+LITTLEBIT  d_in= 4096 d_out= 4096 r= 640 r2= 640 n=  32  layers= 49:      388.2 us/op    1.73 TFLOPS (work)    2.77 TFLOPS (dense-equivalent)
+LITTLEBIT  d_in= 4096 d_out= 4096 r= 640 r2= 640 n=  40  layers= 49:      596.1 us/op    1.41 TFLOPS (work)    2.25 TFLOPS (dense-equivalent)
+LITTLEBIT  d_in= 4096 d_out= 4096 r= 640 r2= 640 n=  48  layers= 49:      583.8 us/op    1.72 TFLOPS (work)    2.76 TFLOPS (dense-equivalent)
+LITTLEBIT  d_in= 4096 d_out= 4096 r= 640 r2= 640 n=  56  layers= 49:      597.4 us/op    1.97 TFLOPS (work)    3.15 TFLOPS (dense-equivalent)
+LITTLEBIT  d_in= 4096 d_out= 4096 r= 640 r2= 640 n=  64  layers= 49:      616.4 us/op    2.18 TFLOPS (work)    3.48 TFLOPS (dense-equivalent)
+LITTLEBIT  d_in= 4096 d_out= 4096 r= 640 r2= 640 n=  72  layers= 49:      773.4 us/op    1.95 TFLOPS (work)    3.12 TFLOPS (dense-equivalent)
+LITTLEBIT  d_in= 4096 d_out= 4096 r= 640 r2= 640 n=  80  layers= 49:      776.2 us/op    2.16 TFLOPS (work)    3.46 TFLOPS (dense-equivalent)
+LITTLEBIT  d_in= 4096 d_out= 4096 r= 640 r2= 640 n=  96  layers= 49:      820.4 us/op    2.45 TFLOPS (work)    3.93 TFLOPS (dense-equivalent)
+LITTLEBIT  d_in= 4096 d_out= 4096 r= 640 r2= 640 n= 112  layers= 49:      863.4 us/op    2.72 TFLOPS (work)    4.35 TFLOPS (dense-equivalent)
+LITTLEBIT  d_in= 4096 d_out= 4096 r= 640 r2= 640 n= 128  layers= 49:      873.1 us/op    3.07 TFLOPS (work)    4.92 TFLOPS (dense-equivalent)
+ggml_cuda_init: found 1 CUDA devices (Total VRAM: 6140 MiB):
+  Device 0: NVIDIA GeForce RTX 4050 Laptop GPU, compute capability 8.9, VMM: yes, VRAM: 6140 MiB
+load_backend: loaded CUDA backend from C:\Vibe Coding\LittleMore\engine\build\bin\ggml-cuda.dll
+ggml_vulkan: Found 2 Vulkan devices:
+ggml_vulkan: 0 = NVIDIA GeForce RTX 4050 Laptop GPU (NVIDIA) | uma: 0 | rebar: 1 | fp16: 1 | bf16: 1 | fp4: 0 | warp size: 32 | shared memory: 49152 | int dot: 1 | matrix cores: NV_coopmat2
+ggml_vulkan: 1 = Intel(R) UHD Graphics (Intel Corporation) | uma: 1 | rebar: 1 | fp16: 1 | bf16: 0 | fp4: 0 | warp size: 32 | shared memory: 32768 | int dot: 1 | matrix cores: none
+load_backend: loaded Vulkan backend from C:\Vibe Coding\LittleMore\engine\build\bin\ggml-vulkan.dll
+load_backend: loaded CPU backend from C:\Vibe Coding\LittleMore\engine\build\bin\ggml-cpu-alderlake.dll
+LITTLEBIT  d_in= 4096 d_out= 1024 r= 256 r2= 256 n=   9  layers= 64:      104.3 us/op    0.45 TFLOPS (work)    0.72 TFLOPS (dense-equivalent)
+LITTLEBIT  d_in= 4096 d_out= 1024 r= 256 r2= 256 n=  12  layers= 64:      116.1 us/op    0.54 TFLOPS (work)    0.87 TFLOPS (dense-equivalent)
+LITTLEBIT  d_in= 4096 d_out= 1024 r= 256 r2= 256 n=  16  layers= 64:       92.9 us/op    0.90 TFLOPS (work)    1.44 TFLOPS (dense-equivalent)
+LITTLEBIT  d_in= 4096 d_out= 1024 r= 256 r2= 256 n=  20  layers= 64:       82.3 us/op    1.27 TFLOPS (work)    2.04 TFLOPS (dense-equivalent)
+LITTLEBIT  d_in= 4096 d_out= 1024 r= 256 r2= 256 n=  24  layers= 64:       87.6 us/op    1.44 TFLOPS (work)    2.30 TFLOPS (dense-equivalent)
+LITTLEBIT  d_in= 4096 d_out= 1024 r= 256 r2= 256 n=  28  layers= 64:       85.7 us/op    1.71 TFLOPS (work)    2.74 TFLOPS (dense-equivalent)
+LITTLEBIT  d_in= 4096 d_out= 1024 r= 256 r2= 256 n=  32  layers= 64:       85.4 us/op    1.96 TFLOPS (work)    3.14 TFLOPS (dense-equivalent)
+LITTLEBIT  d_in= 4096 d_out= 1024 r= 256 r2= 256 n=  40  layers= 64:      113.6 us/op    1.85 TFLOPS (work)    2.95 TFLOPS (dense-equivalent)
+LITTLEBIT  d_in= 4096 d_out= 1024 r= 256 r2= 256 n=  48  layers= 64:      120.2 us/op    2.09 TFLOPS (work)    3.35 TFLOPS (dense-equivalent)
+LITTLEBIT  d_in= 4096 d_out= 1024 r= 256 r2= 256 n=  56  layers= 64:      122.2 us/op    2.40 TFLOPS (work)    3.84 TFLOPS (dense-equivalent)
+LITTLEBIT  d_in= 4096 d_out= 1024 r= 256 r2= 256 n=  64  layers= 64:      122.7 us/op    2.73 TFLOPS (work)    4.38 TFLOPS (dense-equivalent)
+LITTLEBIT  d_in= 4096 d_out= 1024 r= 256 r2= 256 n=  72  layers= 64:      178.4 us/op    2.12 TFLOPS (work)    3.39 TFLOPS (dense-equivalent)
+LITTLEBIT  d_in= 4096 d_out= 1024 r= 256 r2= 256 n=  80  layers= 64:      174.8 us/op    2.40 TFLOPS (work)    3.84 TFLOPS (dense-equivalent)
+LITTLEBIT  d_in= 4096 d_out= 1024 r= 256 r2= 256 n=  96  layers= 64:      181.1 us/op    2.78 TFLOPS (work)    4.45 TFLOPS (dense-equivalent)
+LITTLEBIT  d_in= 4096 d_out= 1024 r= 256 r2= 256 n= 112  layers= 64:      256.9 us/op    2.29 TFLOPS (work)    3.66 TFLOPS (dense-equivalent)
+LITTLEBIT  d_in= 4096 d_out= 1024 r= 256 r2= 256 n= 128  layers= 64:      254.1 us/op    2.64 TFLOPS (work)    4.23 TFLOPS (dense-equivalent)
+ggml_cuda_init: found 1 CUDA devices (Total VRAM: 6140 MiB):
+  Device 0: NVIDIA GeForce RTX 4050 Laptop GPU, compute capability 8.9, VMM: yes, VRAM: 6140 MiB
+load_backend: loaded CUDA backend from C:\Vibe Coding\LittleMore\engine\build\bin\ggml-cuda.dll
+ggml_vulkan: Found 2 Vulkan devices:
+ggml_vulkan: 0 = NVIDIA GeForce RTX 4050 Laptop GPU (NVIDIA) | uma: 0 | rebar: 1 | fp16: 1 | bf16: 1 | fp4: 0 | warp size: 32 | shared memory: 49152 | int dot: 1 | matrix cores: NV_coopmat2
+ggml_vulkan: 1 = Intel(R) UHD Graphics (Intel Corporation) | uma: 1 | rebar: 1 | fp16: 1 | bf16: 0 | fp4: 0 | warp size: 32 | shared memory: 32768 | int dot: 1 | matrix cores: none
+load_backend: loaded Vulkan backend from C:\Vibe Coding\LittleMore\engine\build\bin\ggml-vulkan.dll
+load_backend: loaded CPU backend from C:\Vibe Coding\LittleMore\engine\build\bin\ggml-cpu-alderlake.dll
+LITTLEBIT  d_in= 4096 d_out=14336 r= 896 r2= 896 n=   9  layers= 16:     1174.1 us/op    0.51 TFLOPS (work)    0.90 TFLOPS (dense-equivalent)
+LITTLEBIT  d_in= 4096 d_out=14336 r= 896 r2= 896 n=  12  layers= 16:     1219.0 us/op    0.65 TFLOPS (work)    1.16 TFLOPS (dense-equivalent)
+LITTLEBIT  d_in= 4096 d_out=14336 r= 896 r2= 896 n=  16  layers= 16:     1319.7 us/op    0.80 TFLOPS (work)    1.42 TFLOPS (dense-equivalent)
+LITTLEBIT  d_in= 4096 d_out=14336 r= 896 r2= 896 n=  20  layers= 16:     1144.7 us/op    1.15 TFLOPS (work)    2.05 TFLOPS (dense-equivalent)
+LITTLEBIT  d_in= 4096 d_out=14336 r= 896 r2= 896 n=  24  layers= 16:     1181.9 us/op    1.34 TFLOPS (work)    2.38 TFLOPS (dense-equivalent)
+LITTLEBIT  d_in= 4096 d_out=14336 r= 896 r2= 896 n=  28  layers= 16:     1189.1 us/op    1.56 TFLOPS (work)    2.77 TFLOPS (dense-equivalent)
+LITTLEBIT  d_in= 4096 d_out=14336 r= 896 r2= 896 n=  32  layers= 16:     1230.2 us/op    1.72 TFLOPS (work)    3.05 TFLOPS (dense-equivalent)
+LITTLEBIT  d_in= 4096 d_out=14336 r= 896 r2= 896 n=  40  layers= 16:     1861.6 us/op    1.42 TFLOPS (work)    2.52 TFLOPS (dense-equivalent)
+LITTLEBIT  d_in= 4096 d_out=14336 r= 896 r2= 896 n=  48  layers= 16:     1889.5 us/op    1.68 TFLOPS (work)    2.98 TFLOPS (dense-equivalent)
+LITTLEBIT  d_in= 4096 d_out=14336 r= 896 r2= 896 n=  56  layers= 16:     1961.8 us/op    1.89 TFLOPS (work)    3.35 TFLOPS (dense-equivalent)
+LITTLEBIT  d_in= 4096 d_out=14336 r= 896 r2= 896 n=  64  layers= 16:     2042.8 us/op    2.07 TFLOPS (work)    3.68 TFLOPS (dense-equivalent)
+LITTLEBIT  d_in= 4096 d_out=14336 r= 896 r2= 896 n=  72  layers= 16:     2702.9 us/op    1.76 TFLOPS (work)    3.13 TFLOPS (dense-equivalent)
+LITTLEBIT  d_in= 4096 d_out=14336 r= 896 r2= 896 n=  80  layers= 16:     2623.9 us/op    2.01 TFLOPS (work)    3.58 TFLOPS (dense-equivalent)
+LITTLEBIT  d_in= 4096 d_out=14336 r= 896 r2= 896 n=  96  layers= 16:     2681.5 us/op    2.37 TFLOPS (work)    4.20 TFLOPS (dense-equivalent)
+LITTLEBIT  d_in= 4096 d_out=14336 r= 896 r2= 896 n= 112  layers= 16:     2850.3 us/op    2.60 TFLOPS (work)    4.61 TFLOPS (dense-equivalent)
+LITTLEBIT  d_in= 4096 d_out=14336 r= 896 r2= 896 n= 128  layers= 16:     2805.7 us/op    3.01 TFLOPS (work)    5.36 TFLOPS (dense-equivalent)
+ggml_cuda_init: found 1 CUDA devices (Total VRAM: 6140 MiB):
+  Device 0: NVIDIA GeForce RTX 4050 Laptop GPU, compute capability 8.9, VMM: yes, VRAM: 6140 MiB
+load_backend: loaded CUDA backend from C:\Vibe Coding\LittleMore\engine\build\bin\ggml-cuda.dll
+ggml_vulkan: Found 2 Vulkan devices:
+ggml_vulkan: 0 = NVIDIA GeForce RTX 4050 Laptop GPU (NVIDIA) | uma: 0 | rebar: 1 | fp16: 1 | bf16: 1 | fp4: 0 | warp size: 32 | shared memory: 49152 | int dot: 1 | matrix cores: NV_coopmat2
+ggml_vulkan: 1 = Intel(R) UHD Graphics (Intel Corporation) | uma: 1 | rebar: 1 | fp16: 1 | bf16: 0 | fp4: 0 | warp size: 32 | shared memory: 32768 | int dot: 1 | matrix cores: none
+load_backend: loaded Vulkan backend from C:\Vibe Coding\LittleMore\engine\build\bin\ggml-vulkan.dll
+load_backend: loaded CPU backend from C:\Vibe Coding\LittleMore\engine\build\bin\ggml-cpu-alderlake.dll
+LITTLEBIT  d_in=14336 d_out= 4096 r= 896 r2= 896 n=   9  layers= 16:     1299.1 us/op    0.46 TFLOPS (work)    0.81 TFLOPS (dense-equivalent)
+LITTLEBIT  d_in=14336 d_out= 4096 r= 896 r2= 896 n=  12  layers= 16:     1265.0 us/op    0.63 TFLOPS (work)    1.11 TFLOPS (dense-equivalent)
+LITTLEBIT  d_in=14336 d_out= 4096 r= 896 r2= 896 n=  16  layers= 16:     1348.9 us/op    0.78 TFLOPS (work)    1.39 TFLOPS (dense-equivalent)
+LITTLEBIT  d_in=14336 d_out= 4096 r= 896 r2= 896 n=  20  layers= 16:     1053.4 us/op    1.25 TFLOPS (work)    2.23 TFLOPS (dense-equivalent)
+LITTLEBIT  d_in=14336 d_out= 4096 r= 896 r2= 896 n=  24  layers= 16:     1046.6 us/op    1.51 TFLOPS (work)    2.69 TFLOPS (dense-equivalent)
+LITTLEBIT  d_in=14336 d_out= 4096 r= 896 r2= 896 n=  28  layers= 16:     1049.5 us/op    1.76 TFLOPS (work)    3.13 TFLOPS (dense-equivalent)
+LITTLEBIT  d_in=14336 d_out= 4096 r= 896 r2= 896 n=  32  layers= 16:     1075.6 us/op    1.97 TFLOPS (work)    3.49 TFLOPS (dense-equivalent)
+LITTLEBIT  d_in=14336 d_out= 4096 r= 896 r2= 896 n=  40  layers= 16:     1468.1 us/op    1.80 TFLOPS (work)    3.20 TFLOPS (dense-equivalent)
+LITTLEBIT  d_in=14336 d_out= 4096 r= 896 r2= 896 n=  48  layers= 16:     1495.7 us/op    2.12 TFLOPS (work)    3.77 TFLOPS (dense-equivalent)
+LITTLEBIT  d_in=14336 d_out= 4096 r= 896 r2= 896 n=  56  layers= 16:     1535.7 us/op    2.41 TFLOPS (work)    4.28 TFLOPS (dense-equivalent)
+LITTLEBIT  d_in=14336 d_out= 4096 r= 896 r2= 896 n=  64  layers= 16:     1554.8 us/op    2.72 TFLOPS (work)    4.83 TFLOPS (dense-equivalent)
+LITTLEBIT  d_in=14336 d_out= 4096 r= 896 r2= 896 n=  72  layers= 16:     2457.5 us/op    1.94 TFLOPS (work)    3.44 TFLOPS (dense-equivalent)
+LITTLEBIT  d_in=14336 d_out= 4096 r= 896 r2= 896 n=  80  layers= 16:     2522.2 us/op    2.10 TFLOPS (work)    3.73 TFLOPS (dense-equivalent)
+LITTLEBIT  d_in=14336 d_out= 4096 r= 896 r2= 896 n=  96  layers= 16:     2610.5 us/op    2.43 TFLOPS (work)    4.32 TFLOPS (dense-equivalent)
+LITTLEBIT  d_in=14336 d_out= 4096 r= 896 r2= 896 n= 112  layers= 16:     2385.5 us/op    3.10 TFLOPS (work)    5.51 TFLOPS (dense-equivalent)
+LITTLEBIT  d_in=14336 d_out= 4096 r= 896 r2= 896 n= 128  layers= 16:     2478.0 us/op    3.41 TFLOPS (work)    6.07 TFLOPS (dense-equivalent)
+ggml_cuda_init: found 1 CUDA devices (Total VRAM: 6140 MiB):
+  Device 0: NVIDIA GeForce RTX 4050 Laptop GPU, compute capability 8.9, VMM: yes, VRAM: 6140 MiB
+load_backend: loaded CUDA backend from C:\Vibe Coding\LittleMore\engine\build\bin\ggml-cuda.dll
+ggml_vulkan: Found 2 Vulkan devices:
+ggml_vulkan: 0 = NVIDIA GeForce RTX 4050 Laptop GPU (NVIDIA) | uma: 0 | rebar: 1 | fp16: 1 | bf16: 1 | fp4: 0 | warp size: 32 | shared memory: 49152 | int dot: 1 | matrix cores: NV_coopmat2
+ggml_vulkan: 1 = Intel(R) UHD Graphics (Intel Corporation) | uma: 1 | rebar: 1 | fp16: 1 | bf16: 0 | fp4: 0 | warp size: 32 | shared memory: 32768 | int dot: 1 | matrix cores: none
+load_backend: loaded Vulkan backend from C:\Vibe Coding\LittleMore\engine\build\bin\ggml-vulkan.dll
+load_backend: loaded CPU backend from C:\Vibe Coding\LittleMore\engine\build\bin\ggml-cpu-alderlake.dll
+LITTLEBIT  d_in= 1024 d_out= 1024 r= 256 r2= 128 n=   9  layers= 64:       38.1 us/op    0.37 TFLOPS (work)    0.50 TFLOPS (dense-equivalent)
+LITTLEBIT  d_in= 1024 d_out= 1024 r= 256 r2= 128 n=  12  layers= 64:       41.4 us/op    0.46 TFLOPS (work)    0.61 TFLOPS (dense-equivalent)
+LITTLEBIT  d_in= 1024 d_out= 1024 r= 256 r2= 128 n=  16  layers= 64:       41.6 us/op    0.61 TFLOPS (work)    0.81 TFLOPS (dense-equivalent)
+LITTLEBIT  d_in= 1024 d_out= 1024 r= 256 r2= 128 n=  20  layers= 64:       33.4 us/op    0.94 TFLOPS (work)    1.25 TFLOPS (dense-equivalent)
+LITTLEBIT  d_in= 1024 d_out= 1024 r= 256 r2= 128 n=  24  layers= 64:       34.2 us/op    1.10 TFLOPS (work)    1.47 TFLOPS (dense-equivalent)
+LITTLEBIT  d_in= 1024 d_out= 1024 r= 256 r2= 128 n=  28  layers= 64:       35.0 us/op    1.26 TFLOPS (work)    1.68 TFLOPS (dense-equivalent)
+LITTLEBIT  d_in= 1024 d_out= 1024 r= 256 r2= 128 n=  32  layers= 64:       35.9 us/op    1.40 TFLOPS (work)    1.87 TFLOPS (dense-equivalent)
+LITTLEBIT  d_in= 1024 d_out= 1024 r= 256 r2= 128 n=  40  layers= 64:       51.5 us/op    1.22 TFLOPS (work)    1.63 TFLOPS (dense-equivalent)
+LITTLEBIT  d_in= 1024 d_out= 1024 r= 256 r2= 128 n=  48  layers= 64:       52.7 us/op    1.43 TFLOPS (work)    1.91 TFLOPS (dense-equivalent)
+LITTLEBIT  d_in= 1024 d_out= 1024 r= 256 r2= 128 n=  56  layers= 64:       56.7 us/op    1.55 TFLOPS (work)    2.07 TFLOPS (dense-equivalent)
+LITTLEBIT  d_in= 1024 d_out= 1024 r= 256 r2= 128 n=  64  layers= 64:       58.8 us/op    1.71 TFLOPS (work)    2.28 TFLOPS (dense-equivalent)
+LITTLEBIT  d_in= 1024 d_out= 1024 r= 256 r2= 128 n=  72  layers= 64:       70.7 us/op    1.60 TFLOPS (work)    2.14 TFLOPS (dense-equivalent)
+LITTLEBIT  d_in= 1024 d_out= 1024 r= 256 r2= 128 n=  80  layers= 64:       71.7 us/op    1.76 TFLOPS (work)    2.34 TFLOPS (dense-equivalent)
+LITTLEBIT  d_in= 1024 d_out= 1024 r= 256 r2= 128 n=  96  layers= 64:       73.8 us/op    2.05 TFLOPS (work)    2.73 TFLOPS (dense-equivalent)
+LITTLEBIT  d_in= 1024 d_out= 1024 r= 256 r2= 128 n= 112  layers= 64:       87.7 us/op    2.01 TFLOPS (work)    2.68 TFLOPS (dense-equivalent)
+LITTLEBIT  d_in= 1024 d_out= 1024 r= 256 r2= 128 n= 128  layers= 64:       91.2 us/op    2.21 TFLOPS (work)    2.94 TFLOPS (dense-equivalent)
+LITTLEBIT  d_in= 2048 d_out= 2048 r= 384 r2= 256 n=   9  layers= 64:       96.3 us/op    0.49 TFLOPS (work)    0.78 TFLOPS (dense-equivalent)
+LITTLEBIT  d_in= 2048 d_out= 2048 r= 384 r2= 256 n=  12  layers= 64:      117.7 us/op    0.53 TFLOPS (work)    0.86 TFLOPS (dense-equivalent)
+LITTLEBIT  d_in= 2048 d_out= 2048 r= 384 r2= 256 n=  16  layers= 64:      141.4 us/op    0.59 TFLOPS (work)    0.95 TFLOPS (dense-equivalent)
+LITTLEBIT  d_in= 2048 d_out= 2048 r= 384 r2= 256 n=  20  layers= 64:       87.6 us/op    1.20 TFLOPS (work)    1.92 TFLOPS (dense-equivalent)
+LITTLEBIT  d_in= 2048 d_out= 2048 r= 384 r2= 256 n=  24  layers= 64:       89.8 us/op    1.40 TFLOPS (work)    2.24 TFLOPS (dense-equivalent)
+LITTLEBIT  d_in= 2048 d_out= 2048 r= 384 r2= 256 n=  28  layers= 64:       92.8 us/op    1.58 TFLOPS (work)    2.53 TFLOPS (dense-equivalent)
+LITTLEBIT  d_in= 2048 d_out= 2048 r= 384 r2= 256 n=  32  layers= 64:       94.8 us/op    1.77 TFLOPS (work)    2.83 TFLOPS (dense-equivalent)
+LITTLEBIT  d_in= 2048 d_out= 2048 r= 384 r2= 256 n=  40  layers= 64:      120.3 us/op    1.74 TFLOPS (work)    2.79 TFLOPS (dense-equivalent)
+LITTLEBIT  d_in= 2048 d_out= 2048 r= 384 r2= 256 n=  48  layers= 64:      120.1 us/op    2.10 TFLOPS (work)    3.35 TFLOPS (dense-equivalent)
+LITTLEBIT  d_in= 2048 d_out= 2048 r= 384 r2= 256 n=  56  layers= 64:      123.1 us/op    2.38 TFLOPS (work)    3.81 TFLOPS (dense-equivalent)
+LITTLEBIT  d_in= 2048 d_out= 2048 r= 384 r2= 256 n=  64  layers= 64:      123.9 us/op    2.71 TFLOPS (work)    4.33 TFLOPS (dense-equivalent)
+LITTLEBIT  d_in= 2048 d_out= 2048 r= 384 r2= 256 n=  72  layers= 64:      185.3 us/op    2.04 TFLOPS (work)    3.26 TFLOPS (dense-equivalent)
+LITTLEBIT  d_in= 2048 d_out= 2048 r= 384 r2= 256 n=  80  layers= 64:      181.5 us/op    2.31 TFLOPS (work)    3.70 TFLOPS (dense-equivalent)
+LITTLEBIT  d_in= 2048 d_out= 2048 r= 384 r2= 256 n=  96  layers= 64:      192.0 us/op    2.62 TFLOPS (work)    4.19 TFLOPS (dense-equivalent)
+LITTLEBIT  d_in= 2048 d_out= 2048 r= 384 r2= 256 n= 112  layers= 64:      259.4 us/op    2.26 TFLOPS (work)    3.62 TFLOPS (dense-equivalent)
+LITTLEBIT  d_in= 2048 d_out= 2048 r= 384 r2= 256 n= 128  layers= 64:      259.9 us/op    2.58 TFLOPS (work)    4.13 TFLOPS (dense-equivalent)
+LITTLEBIT  d_in= 4096 d_out= 4096 r= 640 r2= 512 n=   9  layers= 54:      409.1 us/op    0.42 TFLOPS (work)    0.74 TFLOPS (dense-equivalent)
+LITTLEBIT  d_in= 4096 d_out= 4096 r= 640 r2= 512 n=  12  layers= 54:      454.8 us/op    0.50 TFLOPS (work)    0.89 TFLOPS (dense-equivalent)
+LITTLEBIT  d_in= 4096 d_out= 4096 r= 640 r2= 512 n=  16  layers= 54:      538.9 us/op    0.56 TFLOPS (work)    1.00 TFLOPS (dense-equivalent)
+LITTLEBIT  d_in= 4096 d_out= 4096 r= 640 r2= 512 n=  20  layers= 54:      333.0 us/op    1.13 TFLOPS (work)    2.02 TFLOPS (dense-equivalent)
+LITTLEBIT  d_in= 4096 d_out= 4096 r= 640 r2= 512 n=  24  layers= 54:      349.9 us/op    1.29 TFLOPS (work)    2.30 TFLOPS (dense-equivalent)
+LITTLEBIT  d_in= 4096 d_out= 4096 r= 640 r2= 512 n=  28  layers= 54:      348.7 us/op    1.52 TFLOPS (work)    2.69 TFLOPS (dense-equivalent)
+LITTLEBIT  d_in= 4096 d_out= 4096 r= 640 r2= 512 n=  32  layers= 54:      358.8 us/op    1.68 TFLOPS (work)    2.99 TFLOPS (dense-equivalent)
+LITTLEBIT  d_in= 4096 d_out= 4096 r= 640 r2= 512 n=  40  layers= 54:      512.0 us/op    1.47 TFLOPS (work)    2.62 TFLOPS (dense-equivalent)
+LITTLEBIT  d_in= 4096 d_out= 4096 r= 640 r2= 512 n=  48  layers= 54:      516.2 us/op    1.76 TFLOPS (work)    3.12 TFLOPS (dense-equivalent)
+LITTLEBIT  d_in= 4096 d_out= 4096 r= 640 r2= 512 n=  56  layers= 54:      525.7 us/op    2.01 TFLOPS (work)    3.57 TFLOPS (dense-equivalent)
+LITTLEBIT  d_in= 4096 d_out= 4096 r= 640 r2= 512 n=  64  layers= 54:      539.4 us/op    2.24 TFLOPS (work)    3.98 TFLOPS (dense-equivalent)
+LITTLEBIT  d_in= 4096 d_out= 4096 r= 640 r2= 512 n=  72  layers= 54:      718.2 us/op    1.89 TFLOPS (work)    3.36 TFLOPS (dense-equivalent)
+LITTLEBIT  d_in= 4096 d_out= 4096 r= 640 r2= 512 n=  80  layers= 54:      725.8 us/op    2.08 TFLOPS (work)    3.70 TFLOPS (dense-equivalent)
+LITTLEBIT  d_in= 4096 d_out= 4096 r= 640 r2= 512 n=  96  layers= 54:      716.3 us/op    2.53 TFLOPS (work)    4.50 TFLOPS (dense-equivalent)
+LITTLEBIT  d_in= 4096 d_out= 4096 r= 640 r2= 512 n= 112  layers= 54:      820.2 us/op    2.58 TFLOPS (work)    4.58 TFLOPS (dense-equivalent)
+LITTLEBIT  d_in= 4096 d_out= 4096 r= 640 r2= 512 n= 128  layers= 54:      842.8 us/op    2.87 TFLOPS (work)    5.10 TFLOPS (dense-equivalent)
+LITTLEBIT  d_in= 5120 d_out= 5120 r= 768 r2= 640 n=   9  layers= 36:      561.2 us/op    0.46 TFLOPS (work)    0.84 TFLOPS (dense-equivalent)
+LITTLEBIT  d_in= 5120 d_out= 5120 r= 768 r2= 640 n=  12  layers= 36:      671.1 us/op    0.52 TFLOPS (work)    0.94 TFLOPS (dense-equivalent)
+LITTLEBIT  d_in= 5120 d_out= 5120 r= 768 r2= 640 n=  16  layers= 36:      825.0 us/op    0.56 TFLOPS (work)    1.02 TFLOPS (dense-equivalent)
+LITTLEBIT  d_in= 5120 d_out= 5120 r= 768 r2= 640 n=  20  layers= 36:      496.9 us/op    1.16 TFLOPS (work)    2.11 TFLOPS (dense-equivalent)
+LITTLEBIT  d_in= 5120 d_out= 5120 r= 768 r2= 640 n=  24  layers= 36:      517.9 us/op    1.34 TFLOPS (work)    2.43 TFLOPS (dense-equivalent)
+LITTLEBIT  d_in= 5120 d_out= 5120 r= 768 r2= 640 n=  28  layers= 36:      524.8 us/op    1.54 TFLOPS (work)    2.80 TFLOPS (dense-equivalent)
+LITTLEBIT  d_in= 5120 d_out= 5120 r= 768 r2= 640 n=  32  layers= 36:      508.2 us/op    1.82 TFLOPS (work)    3.30 TFLOPS (dense-equivalent)
+LITTLEBIT  d_in= 5120 d_out= 5120 r= 768 r2= 640 n=  40  layers= 36:      682.6 us/op    1.69 TFLOPS (work)    3.07 TFLOPS (dense-equivalent)
+LITTLEBIT  d_in= 5120 d_out= 5120 r= 768 r2= 640 n=  48  layers= 36:      676.6 us/op    2.05 TFLOPS (work)    3.72 TFLOPS (dense-equivalent)
+LITTLEBIT  d_in= 5120 d_out= 5120 r= 768 r2= 640 n=  56  layers= 36:      705.2 us/op    2.29 TFLOPS (work)    4.16 TFLOPS (dense-equivalent)
+LITTLEBIT  d_in= 5120 d_out= 5120 r= 768 r2= 640 n=  64  layers= 36:      704.3 us/op    2.62 TFLOPS (work)    4.76 TFLOPS (dense-equivalent)
+LITTLEBIT  d_in= 5120 d_out= 5120 r= 768 r2= 640 n=  72  layers= 36:     1053.5 us/op    1.97 TFLOPS (work)    3.58 TFLOPS (dense-equivalent)
+LITTLEBIT  d_in= 5120 d_out= 5120 r= 768 r2= 640 n=  80  layers= 36:     1054.3 us/op    2.19 TFLOPS (work)    3.98 TFLOPS (dense-equivalent)
+LITTLEBIT  d_in= 5120 d_out= 5120 r= 768 r2= 640 n=  96  layers= 36:     1091.5 us/op    2.54 TFLOPS (work)    4.61 TFLOPS (dense-equivalent)
+LITTLEBIT  d_in= 5120 d_out= 5120 r= 768 r2= 640 n= 112  layers= 36:     1182.4 us/op    2.73 TFLOPS (work)    4.97 TFLOPS (dense-equivalent)
+LITTLEBIT  d_in= 5120 d_out= 5120 r= 768 r2= 640 n= 128  layers= 36:     1235.4 us/op    2.99 TFLOPS (work)    5.43 TFLOPS (dense-equivalent)
+LITTLEBIT  d_in= 5120 d_out=13824 r=1152 r2=1024 n=   9  layers= 13:     1625.5 us/op    0.46 TFLOPS (work)    0.78 TFLOPS (dense-equivalent)
+LITTLEBIT  d_in= 5120 d_out=13824 r=1152 r2=1024 n=  12  layers= 13:     1937.1 us/op    0.51 TFLOPS (work)    0.88 TFLOPS (dense-equivalent)
+LITTLEBIT  d_in= 5120 d_out=13824 r=1152 r2=1024 n=  16  layers= 13:     2308.6 us/op    0.57 TFLOPS (work)    0.98 TFLOPS (dense-equivalent)
+LITTLEBIT  d_in= 5120 d_out=13824 r=1152 r2=1024 n=  20  layers= 13:     1443.9 us/op    1.14 TFLOPS (work)    1.96 TFLOPS (dense-equivalent)
+LITTLEBIT  d_in= 5120 d_out=13824 r=1152 r2=1024 n=  24  layers= 13:     1467.9 us/op    1.35 TFLOPS (work)    2.31 TFLOPS (dense-equivalent)
+LITTLEBIT  d_in= 5120 d_out=13824 r=1152 r2=1024 n=  28  layers= 13:     1417.9 us/op    1.63 TFLOPS (work)    2.80 TFLOPS (dense-equivalent)
+LITTLEBIT  d_in= 5120 d_out=13824 r=1152 r2=1024 n=  32  layers= 13:     1535.8 us/op    1.72 TFLOPS (work)    2.95 TFLOPS (dense-equivalent)
+LITTLEBIT  d_in= 5120 d_out=13824 r=1152 r2=1024 n=  40  layers= 13:     2292.4 us/op    1.44 TFLOPS (work)    2.47 TFLOPS (dense-equivalent)
+LITTLEBIT  d_in= 5120 d_out=13824 r=1152 r2=1024 n=  48  layers= 13:     2358.4 us/op    1.68 TFLOPS (work)    2.88 TFLOPS (dense-equivalent)
+LITTLEBIT  d_in= 5120 d_out=13824 r=1152 r2=1024 n=  56  layers= 13:     2607.3 us/op    1.77 TFLOPS (work)    3.04 TFLOPS (dense-equivalent)
+LITTLEBIT  d_in= 5120 d_out=13824 r=1152 r2=1024 n=  64  layers= 13:     2412.5 us/op    2.19 TFLOPS (work)    3.76 TFLOPS (dense-equivalent)
+LITTLEBIT  d_in= 5120 d_out=13824 r=1152 r2=1024 n=  72  layers= 13:     3255.2 us/op    1.82 TFLOPS (work)    3.13 TFLOPS (dense-equivalent)
+LITTLEBIT  d_in= 5120 d_out=13824 r=1152 r2=1024 n=  80  layers= 13:     3240.4 us/op    2.04 TFLOPS (work)    3.49 TFLOPS (dense-equivalent)
+LITTLEBIT  d_in= 5120 d_out=13824 r=1152 r2=1024 n=  96  layers= 13:     3377.8 us/op    2.34 TFLOPS (work)    4.02 TFLOPS (dense-equivalent)
+LITTLEBIT  d_in= 5120 d_out=13824 r=1152 r2=1024 n= 112  layers= 13:     4676.7 us/op    1.97 TFLOPS (work)    3.39 TFLOPS (dense-equivalent)
+LITTLEBIT  d_in= 5120 d_out=13824 r=1152 r2=1024 n= 128  layers= 13:     4294.0 us/op    2.46 TFLOPS (work)    4.22 TFLOPS (dense-equivalent)
+LITTLEBIT  d_in=13824 d_out= 5120 r=1152 r2=1024 n=   9  layers= 13:     1638.4 us/op    0.45 TFLOPS (work)    0.78 TFLOPS (dense-equivalent)
+LITTLEBIT  d_in=13824 d_out= 5120 r=1152 r2=1024 n=  12  layers= 13:     1728.5 us/op    0.57 TFLOPS (work)    0.98 TFLOPS (dense-equivalent)
+LITTLEBIT  d_in=13824 d_out= 5120 r=1152 r2=1024 n=  16  layers= 13:     1629.2 us/op    0.81 TFLOPS (work)    1.39 TFLOPS (dense-equivalent)
+LITTLEBIT  d_in=13824 d_out= 5120 r=1152 r2=1024 n=  20  layers= 13:     1335.7 us/op    1.23 TFLOPS (work)    2.12 TFLOPS (dense-equivalent)
+LITTLEBIT  d_in=13824 d_out= 5120 r=1152 r2=1024 n=  24  layers= 13:     1358.1 us/op    1.46 TFLOPS (work)    2.50 TFLOPS (dense-equivalent)
+LITTLEBIT  d_in=13824 d_out= 5120 r=1152 r2=1024 n=  28  layers= 13:     1367.2 us/op    1.69 TFLOPS (work)    2.90 TFLOPS (dense-equivalent)
+LITTLEBIT  d_in=13824 d_out= 5120 r=1152 r2=1024 n=  32  layers= 13:     1384.1 us/op    1.91 TFLOPS (work)    3.27 TFLOPS (dense-equivalent)
+LITTLEBIT  d_in=13824 d_out= 5120 r=1152 r2=1024 n=  40  layers= 13:     1866.6 us/op    1.77 TFLOPS (work)    3.03 TFLOPS (dense-equivalent)
+LITTLEBIT  d_in=13824 d_out= 5120 r=1152 r2=1024 n=  48  layers= 13:     1882.5 us/op    2.10 TFLOPS (work)    3.61 TFLOPS (dense-equivalent)
+LITTLEBIT  d_in=13824 d_out= 5120 r=1152 r2=1024 n=  56  layers= 13:     1951.7 us/op    2.37 TFLOPS (work)    4.06 TFLOPS (dense-equivalent)
+LITTLEBIT  d_in=13824 d_out= 5120 r=1152 r2=1024 n=  64  layers= 13:     1901.0 us/op    2.78 TFLOPS (work)    4.77 TFLOPS (dense-equivalent)
+LITTLEBIT  d_in=13824 d_out= 5120 r=1152 r2=1024 n=  72  layers= 13:     3101.3 us/op    1.91 TFLOPS (work)    3.29 TFLOPS (dense-equivalent)
+LITTLEBIT  d_in=13824 d_out= 5120 r=1152 r2=1024 n=  80  layers= 13:     3161.8 us/op    2.09 TFLOPS (work)    3.58 TFLOPS (dense-equivalent)
+LITTLEBIT  d_in=13824 d_out= 5120 r=1152 r2=1024 n=  96  layers= 13:     3407.0 us/op    2.32 TFLOPS (work)    3.99 TFLOPS (dense-equivalent)
+LITTLEBIT  d_in=13824 d_out= 5120 r=1152 r2=1024 n= 112  layers= 13:     3296.6 us/op    2.80 TFLOPS (work)    4.81 TFLOPS (dense-equivalent)
+LITTLEBIT  d_in=13824 d_out= 5120 r=1152 r2=1024 n= 128  layers= 13:     3310.3 us/op    3.19 TFLOPS (work)    5.47 TFLOPS (dense-equivalent)

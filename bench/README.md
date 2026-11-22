@@ -37,12 +37,22 @@ the generated tables print such a pass as "PASS (provisional: <model> on proxy w
   same llama-bench run starts 10-20 % slow while the GPU recovers from the power-capped prompt phase. llama-bench runs
   one untimed pass per test before its 10 timed repetitions; all are kept, and the reported value is their median (the
   first repetition can still be a few percent slow).
-- Warm-up: this laptop GPU idles at 1605 MHz and needs about a second of load to reach its boost clock (2040-2340 MHz),
-  and drops back while the CPU loads a model. So right before the measured run the harness runs short generations of
-  the same model for at least 3 s, and it samples the SM clock with nvidia-smi during the measured run (stored as
-  min / median / max) so a slow run can be recognised.
-- GPU memory (`vram_mb`): the peak of nvidia-smi's `memory.used` during the run minus the value right before it, i.e.
-  what the benchmark process allocated (weights, KV cache, compute buffers, CUDA context).
+- Warm-up: this laptop GPU idles at 1605 MHz, needs about a second of load to reach its boost clock (2040-2340 MHz)
+  and drops back while the CPU loads a model. So before each of the two llama-bench calls the harness starts
+  `bench/gpu_load.py` (memory-bound copies of 256 MiB, close to the power draw of token generation; `--mode gemm` for
+  float16 matrix products), lets it run for 3 s, keeps it running while llama-bench loads the model, and stops it when
+  llama-bench reports its own untimed warm-up pass (`--progress`). The SM clock is read when the first timed repetition
+  starts (`tg128_clock_at_start_mhz`, `pp512_clock_at_start_mhz`); a run below 1800 MHz is flagged `clock_low` and
+  repeated once by `run_plan`. Measured effect on the first timed repetition of tg128 (Qwen3-0.6B, 2 rounds each): with no
+  warm-up it was 11-14 % (LittleBit) and 15 % (bf16) below the median of the others; with this load 3.7 % slower to
+  1.6 % faster (LittleBit), while bf16 still starts 7-13 % slow although the SM clock at that moment was 2010-2295 MHz,
+  i.e. that penalty is not the SM clock (not further attributed); the reported value is the median, which it does not
+  move. The SM clock column covers only the measured runs (after the load stopped).
+- GPU memory (`vram_mb`): the peak of nvidia-smi's `memory.used` while llama-bench measured (after the load stopped)
+  minus the value before the load started, i.e. what the benchmark process allocated (weights, KV cache, compute
+  buffers, CUDA context).
+- Provenance: `run_plan` stores the engine commit, whether the engine tree had uncommitted changes, the commit llama-bench
+  reports (its build info, refreshed only when CMake reconfigures) and this repository's commit in the results JSON.
 - Rounds: `run_plan` runs the whole list once per round and repeats the rounds (A B C ... A B C ...), so drifts of the
   machine (clock, temperature, the DRAM bandwidth, which varies between 128 and 188 GB/s from run to run on this GPU)
   hit every file alike. The tables give the mean of the round medians and the range of the round medians.

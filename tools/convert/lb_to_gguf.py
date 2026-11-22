@@ -142,8 +142,16 @@ _HEAD_TYPES = ("f16", "q8_0", "q6_k")
 # ggml type of the embedding / output head per head_type
 _HEAD_QTYPE = {"f16": gguf.GGMLQuantizationType.F16, "q8_0": gguf.GGMLQuantizationType.Q8_0,
                "q6_k": gguf.GGMLQuantizationType.Q6_K}
-# GGUF names of the head tensors (the output head exists only when it is not tied to the embedding)
+# GGUF names of the head tensors (the output head exists only when it is not tied to the embedding), and the suffix of
+# the checkpoint key each one is made from (llama.cpp's converters copy them unchanged for the supported families)
 _HEAD_TENSORS = ("token_embd.weight", "output.weight")
+_HEAD_SOURCES = {"token_embd.weight": "embed_tokens.weight", "output.weight": "lm_head.weight"}
+# Content check of a quantized head (with validation on): relative RMS error of the dequantized head against the
+# checkpoint's values.  Expected for normally distributed weights: half a quantization step over sqrt(3) relative to the
+# block maximum, about 5.5e-3 (Q8_0, 32-value blocks) and 1.9e-2 (Q6_K, 16-value sub-blocks); measured 5.35e-3 /
+# 1.78e-2 on the tiny test models and 5.35e-3 / 1.77e-2 on the Qwen3-0.6B embedding.  The bounds are 2x the expectation
+# (shared with tests/convert/test_head_type.py).  A corrupted block, a wrong scale or a wrong row order is far above.
+HEAD_REL_RMS_MAX = {"q8_0": 1.1e-2, "q6_k": 3.8e-2}
 # Names the maker / Samsung tooling use for the scale tensors of a path; used to recognise
 # which checkpoint keys belong to LittleBit linears (everything else is a plain tensor).
 _LB_KEY = ref._KEY
@@ -180,6 +188,8 @@ class ConversionReport:
     arch: str = ""
     config_check_skipped: bool = False      # littlebit_config.json cross-check skipped (override flag)
     lb_bytes: int = 0                       # bytes of the B1 sign matrices written
+    ckpt: Path | None = None                # the checkpoint directory (for the head content check)
+    head_rel_rms: dict[str, float] = field(default_factory=dict)  # quantized head tensor -> relative RMS error
     head_type: str = "f16"                  # precision of token_embd / output (see "Head type" above)
 
 
@@ -544,7 +554,7 @@ def convert_checkpoint(ckpt_dir: Path, out: Path, head_type: str = "f16", valida
 def _build(ckpt: Path, params: dict[str, ref.LBLinearParams], tmp: Path, validate: bool,
            head_type: str = "f16") -> ConversionReport:
     """Everything between 'inputs checked' and 'rename': build the GGUF in `tmp` and validate it."""
-    report = ConversionReport(n_linears=len(params), head_type=head_type)
+    report = ConversionReport(n_linears=len(params), head_type=head_type, ckpt=ckpt)
     conv = _make_converter(ckpt, tmp, head_type)
     report.arch = conv.model_arch.name.lower()
 
@@ -699,6 +709,10 @@ def _verify(path: Path, params: dict[str, ref.LBLinearParams], report: Conversio
         if t is not None and t.tensor_type != want:
             return (f"{hname} was written as {t.tensor_type.name}, not {want.name} as --head-type {report.head_type} "
                     f"asks (row length {int(t.shape[0])}: Q8_0 needs a multiple of 32, Q6_K of 256)")
+    if validate and report.head_type != "f16":
+        msg = _verify_head_content(by_name, report)
+        if msg is not None:
+            return msg
     n_lb_v = sum(1 for n in by_name if n.endswith(".lb_v"))
     expected = sum(len(v) for v in report.probes.values())
     if n_lb_v != expected or set(report.probes) != set(params):
@@ -762,6 +776,45 @@ def _verify(path: Path, params: dict[str, ref.LBLinearParams], report: Conversio
             if not err <= tol:
                 return f"{mod} -> {pr.gguf_name}: max relative error {err:.3e} exceeds tolerance {tol:.3e}"
             report.n_validated += 1
+    return None
+
+
+def _verify_head_content(by_name: dict, report: ConversionReport) -> str | None:
+    """Dequantize each quantized head tensor of the written file and compare it with the checkpoint's values.
+
+    The type check above only proves the tensor has the requested TYPE; this proves its CONTENT is the checkpoint's head
+    within the quantization error (HEAD_REL_RMS_MAX), so a wrong quantizer, a corrupted block or a swapped tensor cannot
+    pass.  The source is the checkpoint tensor whose key ends in `_HEAD_SOURCES[name]` with the same shape; a quantized
+    head without such a source is an error (it could not be checked).  Returns None or the error message.
+    """
+    assert report.ckpt is not None
+    keys = _checkpoint_keys(report.ckpt)
+    bound = HEAD_REL_RMS_MAX[report.head_type]
+    for hname in _HEAD_TENSORS:
+        t = by_name.get(hname)
+        if t is None:
+            continue
+        got = gguf.quants.dequantize(np.asarray(t.data), t.tensor_type).astype(np.float64)
+        cands = [k for k in keys if k.endswith(_HEAD_SOURCES[hname])]
+        src = None
+        for shard in _shard_files(report.ckpt):
+            with safe_open(str(shard), framework="pt") as f:
+                for k in cands:
+                    if k in f.keys():
+                        w = f.get_tensor(k).float().numpy().astype(np.float64)
+                        if w.shape == got.shape:
+                            src = w
+            if src is not None:
+                break
+        if src is None:
+            return (f"{hname}: no checkpoint tensor ending in {_HEAD_SOURCES[hname]!r} with shape {got.shape} to check "
+                    f"the {report.head_type} head against")
+        den = float(np.mean(src * src))
+        rel = float(np.sqrt(np.mean((got - src) ** 2) / den)) if den > 0 else float(np.sqrt(np.mean(got * got)))
+        report.head_rel_rms[hname] = rel
+        if not rel <= bound:
+            return (f"{hname}: the {report.head_type} head differs from the checkpoint by relative RMS {rel:.3e} "
+                    f"(bound {bound:.1e}): the quantized head is not the checkpoint's head")
     return None
 
 

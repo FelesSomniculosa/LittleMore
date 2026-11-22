@@ -114,7 +114,7 @@ def test_gpu_error_is_within_dense_floor_factor(ggufs, cfg, prompt):
     """-ngl 99: LittleBit's error stays within GPU_OVER_DENSE_FLOOR_MAX x the DENSE model's CUDA floor.
 
     16 tokens: the chunked decode kernels of the CUDA op.  The PROMPT_PREFILL prompt (44 tokens) is above the chunk limit
-    of every Qwen3-0.6B linear (16 tokens), so every LittleBit linear of the prompt batch runs the prefill path
+    of every Qwen3-0.6B linear (16 or 24 tokens), so every LittleBit linear of the prompt batch runs the prefill path
     (dequantized sign tiles + float32 cuBLAS GEMMs).
 
     Prefill, default configuration (flash attention + f16 KV): the dense factor does NOT apply, and the bound is
@@ -155,7 +155,9 @@ def test_gpu_error_is_within_dense_floor_factor(ggufs, cfg, prompt):
     dn, ids_d = A.engine_logits(dense, prompt, 99, extra)
     assert ids == ids_d
     if prompt is A.PROMPT_PREFILL:
-        assert len(ids) > 32, len(ids)   # above the chunk limit of every Qwen3-0.6B linear
+        # above the chunk limit of every Qwen3-0.6B linear (16 tokens for k / v, 24 for the others,
+        # ggml-cuda/littlebit-dispatch.h)
+        assert len(ids) > 24, len(ids)
     e_lb = metrics(lb, A.reference_logits(ids))["max_abs"]
     e_dense = metrics(dn, A.dense_reference_logits(ids))["max_abs"]
     print(f"gpu {cfg} {len(ids)} tokens: LittleBit {e_lb:.2e}, dense floor {e_dense:.2e}, ratio {e_lb / e_dense:.2f}")
@@ -208,8 +210,7 @@ def littlebit_placement(gguf, ngl: int, extra: tuple = ()) -> list[tuple[str, st
 
 def test_littlebit_nodes_and_weights_on_cuda_at_ngl99(ggufs):
     """-ngl 99: every LITTLEBIT node runs on CUDA0 and every one of its sources (activation and weights) lives there,
-    with no per-call weight copy (Task 11's placement by capability).  Teeth: the same check on a run with the Vulkan
-    device (no LittleBit kernel there, so nodes and weights stay on the CPU) flags every node."""
+    with no per-call weight copy (Task 11's placement by capability).  Teeth: test_placement_check_detects_littlebit_off_cuda."""
     b1, _ = ggufs
 
     def off_cuda(nodes):
@@ -219,9 +220,26 @@ def test_littlebit_nodes_and_weights_on_cuda_at_ngl99(ggufs):
     assert gpu and len(gpu) % 196 == 0, len(gpu)     # 28 layers x 7 linears per printed graph
     assert not off_cuda(gpu), off_cuda(gpu)[:3]
     assert all(len(s) >= 9 for _, _, s in gpu)       # x + 8 weight tensors (packed residual scales) per node
-    # wrong placement must be detected: on Vulkan (no LittleBit kernel) the nodes and weights stay on the CPU
+
+
+def _engine_devices() -> str:
+    """The device list of the engine build (`llama-completion --list-devices`)."""
+    r = subprocess.run([str(A.BIN / ("llama-completion" + A.EXE)), "--list-devices"], cwd=A.ROOT, env=A._env(),
+                       text=True, encoding="utf-8", errors="replace", stdin=subprocess.DEVNULL, stdout=subprocess.PIPE,
+                       stderr=subprocess.STDOUT, timeout=120)
+    return r.stdout
+
+
+def test_placement_check_detects_littlebit_off_cuda(ggufs):
+    """Teeth of the placement test: with a Vulkan device (no LittleBit kernel there; any Vulkan device will do, on the
+    test machine Vulkan0 is the integrated Intel GPU) the LittleBit nodes and weights stay on the CPU, and the same
+    check as above flags every node.  Skipped on machines without a Vulkan0 device."""
+    if not re.search(r"^\s*Vulkan0:", _engine_devices(), re.M):
+        pytest.skip("no Vulkan0 device in this engine build / machine: the negative control needs one")
+    b1, _ = ggufs
     vk = littlebit_placement(b1, 99, ("-dev", "Vulkan0"))
-    assert vk and len(off_cuda(vk)) == len(vk) and any(d == "CPU" for _, d, _ in vk), vk[:3]
+    off_cuda = [(n, d, s) for n, d, s in vk if d != "CUDA0" or any(sd != "CUDA0" or "#" in sn for sn, sd in s)]
+    assert vk and len(off_cuda) == len(vk) and any(d == "CPU" for _, d, _ in vk), vk[:3]
 
 
 @pytest.mark.parametrize("ngl", [0, 99], ids=["cpu", "gpu"])

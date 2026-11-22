@@ -441,7 +441,7 @@ Dispatch by batch size `n` in `ggml_cuda_op_littlebit`:
 | n | path |
 |---|---|
 | 1..8 | the decode kernels, one launch pair (previous section) |
-| 9..16, 9..24, 9..48 or 9..96, by the layer's number of signs S = (r + r2) (d_in + d_out): below 6 Mi, 6..12 Mi, 12..24 Mi, from 24 Mi | the decode kernels on consecutive 8-token chunks (unchanged kernels; every token's result is bit-identical to a smaller call) |
+| 9..16, 9..24, 9..40 or 9..48, by the layer's number of signs S = (r + r2) (d_in + d_out): below 1 Mi, 1..6 Mi, 6..8 Mi, from 8 Mi | the decode kernels on consecutive 8-token chunks (unchanged kernels; every token's result is bit-identical to a smaller call) |
 | above | prefill path |
 
 - **Prefill path:** the signs are expanded to floats that already carry the inner scales, `A[j][k] = sgn(V[j,k]) * s_v2[k]`
@@ -493,16 +493,34 @@ Dispatch by batch size `n` in `ggml_cuda_op_littlebit`:
   The prefill path's time is not monotonic in n: cuBLAS is slower at 16 tokens than at 20 on every shape, and steps up at
   40 and at 80 tokens (kernel choices of cuBLAS for these GEMM shapes; not investigated further), so no single limit is
   right for every layer. The old rule (32 tokens, 48 from 8 Mi signs) was too high for the small layers (up to 74 us,
-  i.e. 1.9x, too slow at 32 tokens on 1024 x 3072; 200 us at 48 tokens on 2048 x 6144) and too low for the largest ones
-  (5120 x 13824: 885 us too slow at 80 tokens, the 48 -> 49 step of +35 %). New rule: 16 tokens below 6 Mi signs, 24 for
-  6..12 Mi, 48 for 12..24 Mi, 96 from 24 Mi. Its excess over the faster path at the measured n: at most 7 us on every
-  Qwen3-0.6B / 1.7B shape below 6 Mi (was up to 74), 27 us on the 1.7B FFN shapes (was up to 200), 482 us at 128 tokens
-  on 5120 x 13824 (was 885 at 80), and one regression: 4096 x 4096 (9 Mi, crossover 56) is now on the prefill path from
-  25 tokens, up to 108 us (30 %) slower at 40 tokens than the chunked path (it has as many signs as the 1.7B FFN layers,
-  whose crossover is 28-32, so the sign count cannot separate them). The limits are measured on this one GPU and are
-  GPU specific (the header says so); only speed depends on them. Boundaries tested: `test-littlebit-ref` (5c) now covers
-  one shape per band (T + 1 = 17, 25, 49, 97 on the prefill path against T on the chunked path), and
-  `test-backend-ops` has cases at 16 / 17, 24 / 25, 48 / 49 and 96 / 97 tokens.
+  i.e. 1.9x, too slow at 32 tokens on 1024 x 3072). A first re-tune by sign count alone (16 / 24 / 48 / 96 tokens for
+  <6 / 6..12 / 12..24 / >=24 Mi) fixed that but made 4096 x 4096 up to 30 % slower at 25-56 tokens than the old rule.
+
+  **Re-tune of fix round 2** (`tools/dev/chunk_crossover_study.sh` / `.py`, raw data in
+  `docs/data/chunk_crossover_2026-11-22_{chunk,gemm}.txt`; 22 layer shapes at 0.55 bits per weight: every linear of
+  Qwen3-0.6B, Qwen3-1.7B, Qwen3-4B and Llama-3-8B plus the built-in larger shapes, n = 9, 12, 16, 20, 24, 28, 32, 40, 48,
+  56, 64, 72, 80, 96, 112, 128, one run per path). Goal: no shape slower than with the old rule by more than 5 % at any
+  measured n, keeping the gain on the small layers. Per shape, the limits that meet the goal:
+
+  | S (Mi signs) | shapes | limits within 5 % of the old rule |
+  |---|---|---|
+  | 0.5 .. 0.8 | Qwen3-0.6B k, v | 16 .. 32 |
+  | 1.5 .. 3.0 | the other Qwen3-0.6B linears, Qwen3-1.7B q, k, v, o, Qwen3-4B / Llama-3-8B k, v (4096 x 1024: 24 .. 32) | 16, 20 or 24 .. 32 |
+  | 6.5 | Qwen3-4B q (2560 x 4096: 24 .. 40), o (4096 x 2560: 32 .. 56) | 32 .. 40 |
+  | 8 .. 39 | Qwen3-1.7B / 4B, Llama-3-8B FFN, 4096 x 4096 (48 .. 56), 5120 x 5120, 5120 x 13824 ... | 48 (some shapes also 40 or up to 80) |
+
+  New rule (in `littlebit-dispatch.h`): 16 tokens below 1 Mi signs, 24 for 1..6 Mi, 40 for 6..8 Mi, 48 from 8 Mi. Result
+  on the 22 measured shapes: never slower than the old rule at any measured n (worst ratio 1.00); against the faster of
+  the two paths at most 1.11x for the layers below 6 Mi (the old rule: up to 1.91x), and for the large layers the same
+  as the old rule (up to 1.35x at 72 tokens on 9728 x 2560, where the chunked kernels stay faster up to 112 tokens). A
+  later switch for the large layers cannot be had without a trade-off: 2560 x 4096 (6.5 Mi) needs the switch by 40
+  tokens and 4096 x 4096 (9 Mi) not before 48; 14336 x 4096 (31.5 Mi) is 13 % slower than the old rule at 64 tokens
+  with a 96-token limit. A second feature was looked at: the d_out / d_in aspect ratio does not separate the shapes
+  (square 4096 x 4096 switches late, square 2048 x 2048 early; wide and tall shapes of the same sign count behave
+  alike), the sign count with these band edges does. Single runs carry the usual ~10 % spread, and the limits are
+  measured on this one GPU and are GPU specific (the header says so); only speed depends on them. Boundaries tested:
+  `test-littlebit-ref` (5c) covers one shape per band (T + 1 = 17, 25, 41, 49 on the prefill path against T on the
+  chunked path), and `test-backend-ops` has cases at 16 / 17, 24 / 25, 40 / 41 and 48 / 49 tokens.
 - **Determinism and CUDA graphs:** every output element has one fixed sequence of operations (cuBLAS is bit-reproducible
   for a given toolkit, GPU and shape; ggml never enables cuBLAS atomics); repeated runs are bit-identical (harness check).
   The path is plain stream work (kernels and cuBLAS calls; cuBLAS has its workspace set by ggml-cuda, so it allocates
@@ -517,11 +535,11 @@ Dispatch by batch size `n` in `ggml_cuda_op_littlebit`:
   accumulation over K terms has a relative rounding error of order 1e-7 sqrt(K) per output (K up to d_in = 10368 here),
   i.e. NMSE of order 1e-13..1e-12, which is what is measured. Dispatch boundaries on the same tokens
   (`test_cuda_dispatch_boundaries`, 9 shapes, at least one per band of the rule): 9 tokens (8 + 1 chunks) bit-identical to
-  an 8-token and a 1-token call; T + 1 tokens on the prefill path against T on the chunked path (T = 16, 24, 48, 96):
-  worst NMSE 3.5e-13, worst max difference 7.2e-7 of the output scale.
-- **Tests:** `test-backend-ops -o LITTLEBIT -b CUDA0`: the 210 cases with n > 8 pass (451 in all; with the Task 13 rule:
-  n = 9, 16 on small layers, 24 on a 6 Mi-sign layer, 40 / 48 on a 13.75 Mi-sign layer and 96 on a 24 Mi-sign layer:
-  chunks; 17, 25, 32, 33, 40, 49, 64, 97, 512, 2048: prefill; before Task 13 32 tokens on small layers were chunks; tiles: d_in 5248 with 640 + 640 latent rows (latent
+  an 8-token and a 1-token call; T + 1 tokens on the prefill path against T on the chunked path (T = 16, 24, 40, 48):
+  worst NMSE 3.8e-13, worst max difference 6.1e-7 of the output scale.
+- **Tests:** `test-backend-ops -o LITTLEBIT -b CUDA0`: the 210 cases with n > 8 pass (451 in all; with the fix-round-2
+  rule: n = 9, 16 on small layers, 24 on a 1.3 Mi-sign layer, 40 on a 6 Mi-sign layer, 40 / 48 on a 13.75 Mi-sign layer:
+  chunks; 17, 25, 32, 33, 41, 49, 64, 512, 2048: prefill; tiles: d_in 5248 with 640 + 640 latent rows (latent
   tiles of 768 + 512 rows, the first holding primary and residual rows), 1408 rows without residual, d_out 4100 (output
   tiles 3200 + 900 or 2944 + 1156) and 2048 tokens with r + r2 = 256 (output tiles bounded by the batch: 2048 + 2048 +
   404)). `test-littlebit-ref`: 606 CUDA cases with 9..2048 tokens, the dispatch-boundary checks, 4 of the 10 misaligned
