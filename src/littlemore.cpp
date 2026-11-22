@@ -1,0 +1,1180 @@
+// littlemore.cpp - implementation of the LittleMore C API (include/littlemore.h) over llama.cpp's llama.h.
+//
+// What lives here:
+//   - one-time initialisation: logging, loading the ggml backend plugins from the directory of this library,
+//     llama_backend_init();
+//   - error reporting: a thread-local last-error string, filled by every failing call, enriched with the
+//     error lines the engine logged on the same thread during the call;
+//   - the auto-fit of GPU layers (n_gpu_layers = -1): a per-layer memory estimate read from the GGUF file and
+//     compared with the free memory of the GPU devices (or a forced budget);
+//   - model, session, tokenizer and generation wrappers with streaming that never splits a UTF-8 character.
+//
+// No C++ exception ever crosses the C boundary: every entry point catches and turns exceptions into statuses.
+
+#include "littlemore.h"
+
+#include "ggml-backend.h"
+#include "ggml.h"
+#include "gguf.h"
+#include "llama.h"
+
+#include <algorithm>
+#include <cstdio>
+#include <cstdlib>
+#include <cstring>
+#include <limits>
+#include <mutex>
+#include <new>
+#include <string>
+#include <vector>
+
+#ifdef _WIN32
+#    define WIN32_LEAN_AND_MEAN
+#    define NOMINMAX
+#    include <windows.h>
+#else
+#    include <dlfcn.h>
+#endif
+
+// "MAJOR.MINOR.PATCH", from the header's version macros (also used in error messages).
+#define LM_STR2(x) #x
+#define LM_STR(x) LM_STR2(x)
+static const char k_version[] = LM_STR(LM_VERSION_MAJOR) "." LM_STR(LM_VERSION_MINOR) "." LM_STR(LM_VERSION_PATCH);
+
+// The engine marks the old batch API as deprecated in favour of llama_batch_ext; this file uses only the new
+// one, so no warning suppression is needed.
+
+namespace {
+
+// ---------------------------------------------------------------------------------------------------------------
+// Errors and logging
+// ---------------------------------------------------------------------------------------------------------------
+
+// Message of the last failure on this thread (lm_last_error). thread_local: threads never see each other's errors.
+thread_local std::string t_last_error;
+// Error lines the engine logged on this thread since the current API call began (see call_scope).
+thread_local std::string t_engine_errors;
+// Level of the previous log message on this thread, for GGML_LOG_LEVEL_CONT continuation lines.
+thread_local ggml_log_level t_prev_level = GGML_LOG_LEVEL_NONE;
+
+// Messages at or above this level are printed to stderr (LITTLEMORE_LOG, see docs/environment-variables.md).
+// Default: errors only, because a library should not chat on its caller's terminal; errors are also returned
+// through lm_last_error().
+ggml_log_level g_print_level = GGML_LOG_LEVEL_ERROR;
+bool g_print_nothing = false;
+
+void read_log_env() {
+    const char * v = std::getenv("LITTLEMORE_LOG");
+    if (!v || !*v) {
+        return;
+    }
+    const std::string s(v);
+    if (s == "debug") {
+        g_print_level = GGML_LOG_LEVEL_DEBUG;
+    } else if (s == "info") {
+        g_print_level = GGML_LOG_LEVEL_INFO;
+    } else if (s == "warn") {
+        g_print_level = GGML_LOG_LEVEL_WARN;
+    } else if (s == "error") {
+        g_print_level = GGML_LOG_LEVEL_ERROR;
+    } else if (s == "none") {
+        g_print_nothing = true;
+    }
+}
+
+// Receives every log line of llama.cpp and ggml (both share this callback, see llama_log_set).
+void log_callback(ggml_log_level level, const char * text, void * /*user*/) {
+    const ggml_log_level eff = level == GGML_LOG_LEVEL_CONT ? t_prev_level : level;
+    if (level != GGML_LOG_LEVEL_CONT) {
+        t_prev_level = level;
+    }
+    if (eff == GGML_LOG_LEVEL_ERROR && t_engine_errors.size() < 4096) {
+        t_engine_errors += text;
+    }
+    if (!g_print_nothing && eff >= g_print_level && eff != GGML_LOG_LEVEL_NONE) {
+        std::fputs(text, stderr);
+    }
+}
+
+// Collapses the captured engine error lines into one line: "a; b; c".
+std::string engine_errors_one_line() {
+    std::string out;
+    size_t start = 0;
+    const std::string & s = t_engine_errors;
+    while (start < s.size()) {
+        size_t end = s.find('\n', start);
+        if (end == std::string::npos) {
+            end = s.size();
+        }
+        std::string line = s.substr(start, end - start);
+        while (!line.empty() && (line.back() == '\r' || line.back() == ' ')) {
+            line.pop_back();
+        }
+        if (!line.empty()) {
+            if (!out.empty()) {
+                out += "; ";
+            }
+            out += line;
+        }
+        start = end + 1;
+    }
+    return out;
+}
+
+// Records a failure and returns its status, so call sites read `return fail(LM_ERR_X, "...")`.
+lm_status fail(lm_status status, const std::string & message) {
+    t_last_error = message.empty() ? std::string(lm_status_name(status)) : message;
+    return status;
+}
+
+// Same as fail(), with the engine's own error lines of this call appended (they usually say why).
+lm_status fail_with_engine(lm_status status, const std::string & message) {
+    const std::string engine = engine_errors_one_line();
+    return fail(status, engine.empty() ? message : message + " (engine: " + engine + ")");
+}
+
+// Marks the start of an API call: engine error lines from earlier calls are not reported again.
+struct call_scope {
+    call_scope() { t_engine_errors.clear(); }
+};
+
+// Wraps an entry point body: turns every C++ exception into a status with a message.
+template <typename F> lm_status guarded(const char * fn, F && body) {
+    try {
+        call_scope scope;
+        return body();
+    } catch (const std::bad_alloc &) {
+        return fail(LM_ERR_OUT_OF_MEMORY, std::string(fn) + ": out of memory");
+    } catch (const std::exception & e) {
+        return fail(LM_ERR_INTERNAL, std::string(fn) + ": internal error: " + e.what());
+    } catch (...) {
+        return fail(LM_ERR_INTERNAL, std::string(fn) + ": unknown internal error");
+    }
+}
+
+// ---------------------------------------------------------------------------------------------------------------
+// Options structs (the struct_size protocol of the header)
+// ---------------------------------------------------------------------------------------------------------------
+
+// Reads a caller's options struct into `out` (which holds the defaults on entry):
+//   - struct_size smaller than the struct_size field itself: invalid;
+//   - smaller than ours: an older caller; copy what it has, keep our defaults for the rest;
+//   - larger than ours: a newer caller; accepted only if every byte we do not know is zero, because a non-zero
+//     unknown field is a request this library cannot honour and must not ignore silently.
+template <typename T> lm_status read_struct(const T * in, T & out, const char * fn, const char * type) {
+    if (!in) {
+        return LM_OK;
+    }
+    const size_t n = in->struct_size;
+    if (n < sizeof(size_t)) {
+        return fail(LM_ERR_INVALID_ARG, std::string(fn) + ": " + type + ".struct_size is " + std::to_string(n) +
+                                            "; set it to sizeof(" + type + ") (or use " + type + "_default)");
+    }
+    if (n > sizeof(T)) {
+        const unsigned char * bytes = reinterpret_cast<const unsigned char *>(in);
+        for (size_t i = sizeof(T); i < n; ++i) {
+            if (bytes[i] != 0) {
+                return fail(LM_ERR_UNSUPPORTED, std::string(fn) + ": " + type + " has fields this library (" +
+                                                    k_version + ") does not know (struct_size " +
+                                                    std::to_string(n) + ", known " + std::to_string(sizeof(T)) +
+                                                    "); upgrade the littlemore library");
+            }
+        }
+    }
+    std::memcpy(static_cast<void *>(&out), in, std::min(n, sizeof(T)));
+    out.struct_size = sizeof(T);
+    return LM_OK;
+}
+
+// ---------------------------------------------------------------------------------------------------------------
+// One-time initialisation: logging, backend plugins
+// ---------------------------------------------------------------------------------------------------------------
+
+std::once_flag g_init_once;
+std::string    g_init_error; // non-empty when initialisation failed (then every call reports it)
+std::string    g_backend_dir;
+
+// Directory that contains this library (littlemore.dll / liblittlemore.so), as UTF-8, without a trailing
+// separator. The backend plugins are installed next to it, which is the only place we can rely on: the
+// executable may be anything (python.exe, a game, a test runner) in any directory.
+std::string library_dir() {
+#ifdef _WIN32
+    HMODULE self = nullptr;
+    if (!GetModuleHandleExW(GET_MODULE_HANDLE_EX_FLAG_FROM_ADDRESS | GET_MODULE_HANDLE_EX_FLAG_UNCHANGED_REFCOUNT,
+                            reinterpret_cast<LPCWSTR>(&library_dir), &self)) {
+        return std::string();
+    }
+    std::wstring path(MAX_PATH, L'\0');
+    for (;;) {
+        const DWORD n = GetModuleFileNameW(self, &path[0], static_cast<DWORD>(path.size()));
+        if (n == 0) {
+            return std::string();
+        }
+        if (n < path.size()) {
+            path.resize(n);
+            break;
+        }
+        path.resize(path.size() * 2); // truncated: long path, try a bigger buffer
+    }
+    const size_t slash = path.find_last_of(L"\\/");
+    if (slash != std::wstring::npos) {
+        path.resize(slash);
+    }
+    const int len = WideCharToMultiByte(CP_UTF8, 0, path.c_str(), -1, nullptr, 0, nullptr, nullptr);
+    if (len <= 1) {
+        return std::string();
+    }
+    std::string out(static_cast<size_t>(len - 1), '\0');
+    WideCharToMultiByte(CP_UTF8, 0, path.c_str(), -1, &out[0], len, nullptr, nullptr);
+    return out;
+#else
+    Dl_info info;
+    if (!dladdr(reinterpret_cast<void *>(&library_dir), &info) || !info.dli_fname) {
+        return std::string();
+    }
+    std::string path(info.dli_fname);
+    const size_t slash = path.find_last_of('/');
+    return slash == std::string::npos ? std::string(".") : path.substr(0, slash);
+#endif
+}
+
+void init_once() {
+    read_log_env();
+    llama_log_set(log_callback, nullptr); // also sets ggml's logger, so plugin loading is filtered too
+#ifdef GGML_BACKEND_DL
+    g_backend_dir = library_dir();
+    if (g_backend_dir.empty()) {
+        g_init_error = "cannot determine the directory of the littlemore library to load the backend plugins from";
+        return;
+    }
+    // Loads the best variant of every backend found there (e.g. the AVX2 CPU plugin on an AVX2 machine, the
+    // CUDA plugin only when its runtime and an NVIDIA driver are present).
+    ggml_backend_load_all_from_path(g_backend_dir.c_str());
+#endif
+    llama_backend_init();
+    if (ggml_backend_dev_by_type(GGML_BACKEND_DEVICE_TYPE_CPU) == nullptr) {
+        g_init_error = "no CPU backend could be loaded";
+#ifdef GGML_BACKEND_DL
+        g_init_error += " from '" + g_backend_dir + "' (the ggml-cpu plugin must be next to the littlemore library)";
+#endif
+    }
+}
+
+// Runs the initialisation once per process; returns false (with the error recorded) if it failed.
+bool ensure_init(const char * fn) {
+    std::call_once(g_init_once, init_once);
+    if (!g_init_error.empty()) {
+        fail(LM_ERR_BACKEND, std::string(fn) + ": " + g_init_error);
+        return false;
+    }
+    return true;
+}
+
+// ---------------------------------------------------------------------------------------------------------------
+// Devices
+// ---------------------------------------------------------------------------------------------------------------
+
+// The GPU devices llama.cpp would pick by default (llama_model_load in engine/src/llama.cpp), so that the
+// fit and the load use the same list: every GPU device except RPC ones, without a second device that has the
+// same device id (one physical GPU seen through two backends, e.g. CUDA0 and Vulkan0: the first registered
+// backend wins, CUDA before Vulkan), and integrated GPUs only when there is no discrete one. RPC servers are
+// not used by littlemore.
+std::vector<ggml_backend_dev_t> default_gpu_devices() {
+    std::vector<ggml_backend_dev_t> gpus, igpus;
+    for (size_t i = 0; i < ggml_backend_dev_count(); ++i) {
+        ggml_backend_dev_t dev = ggml_backend_dev_get(i);
+        const enum ggml_backend_dev_type type = ggml_backend_dev_type(dev);
+        if (type == GGML_BACKEND_DEVICE_TYPE_GPU) {
+            if (std::strcmp(ggml_backend_reg_name(ggml_backend_dev_backend_reg(dev)), "RPC") == 0) {
+                continue;
+            }
+            ggml_backend_dev_props props;
+            ggml_backend_dev_get_props(dev, &props);
+            const bool dup = std::any_of(gpus.begin(), gpus.end(), [&](ggml_backend_dev_t d) {
+                ggml_backend_dev_props dp;
+                ggml_backend_dev_get_props(d, &dp);
+                return props.device_id && dp.device_id && std::strcmp(props.device_id, dp.device_id) == 0;
+            });
+            if (!dup) {
+                gpus.push_back(dev);
+            }
+        } else if (type == GGML_BACKEND_DEVICE_TYPE_IGPU) {
+            // As llama.cpp: an integrated GPU seen by several backends is used through the first one only.
+            if (igpus.empty() || ggml_backend_dev_backend_reg(dev) == ggml_backend_dev_backend_reg(igpus.back())) {
+                igpus.push_back(dev);
+            }
+        }
+    }
+    return gpus.empty() ? igpus : gpus;
+}
+
+std::string available_devices_text() {
+    std::string out;
+    for (size_t i = 0; i < ggml_backend_dev_count(); ++i) {
+        if (!out.empty()) {
+            out += ", ";
+        }
+        out += ggml_backend_dev_name(ggml_backend_dev_get(i));
+    }
+    return out;
+}
+
+// Turns lm_model_options.devices into a device list (see the header for the syntax).
+lm_status parse_devices(const char * spec, std::vector<ggml_backend_dev_t> & out) {
+    out.clear();
+    if (!spec || !*spec) {
+        out = default_gpu_devices();
+        return LM_OK;
+    }
+    if (std::strcmp(spec, "none") == 0) {
+        return LM_OK;
+    }
+    std::string s(spec);
+    size_t start = 0;
+    while (start <= s.size()) {
+        size_t end = s.find(',', start);
+        if (end == std::string::npos) {
+            end = s.size();
+        }
+        std::string name = s.substr(start, end - start);
+        name.erase(0, name.find_first_not_of(" \t"));
+        name.erase(name.find_last_not_of(" \t") + 1);
+        if (name.empty()) {
+            return fail(LM_ERR_INVALID_ARG, std::string("lm_model_load: empty device name in devices \"") + spec + "\"");
+        }
+        ggml_backend_dev_t dev = ggml_backend_dev_by_name(name.c_str());
+        if (!dev) {
+            return fail(LM_ERR_BACKEND, "lm_model_load: unknown device '" + name + "' (loaded devices: " +
+                                            available_devices_text() + ")");
+        }
+        const enum ggml_backend_dev_type type = ggml_backend_dev_type(dev);
+        if (type != GGML_BACKEND_DEVICE_TYPE_GPU && type != GGML_BACKEND_DEVICE_TYPE_IGPU) {
+            return fail(LM_ERR_INVALID_ARG, "lm_model_load: device '" + name +
+                                                "' is not a GPU; the CPU is always used, list GPU devices only or \"none\"");
+        }
+        if (std::find(out.begin(), out.end(), dev) == out.end()) {
+            out.push_back(dev);
+        }
+        start = end + 1;
+    }
+    return LM_OK;
+}
+
+// ---------------------------------------------------------------------------------------------------------------
+// Auto-fit of GPU layers
+// ---------------------------------------------------------------------------------------------------------------
+
+// Fixed part of the per-device reserve: CUDA/Vulkan runtime allocations that are not model weights, KV cache
+// or the compute graph (cuBLAS workspace, memory pools, staging buffers). See docs/c-api.md for the
+// measurement this and the other reserve terms are checked against.
+constexpr uint64_t k_fixed_reserve = 256ull << 20;
+// Batch the reserve is sized for: the engine's default physical batch (n_ubatch = 512).
+constexpr uint64_t k_fit_ubatch = 512;
+// Default context of the fit (and of sessions): 4096 tokens, capped at the model's training context.
+constexpr uint32_t k_default_ctx = 4096;
+
+struct fit_plan {
+    int32_t  n_gpu_layers = 0;
+    uint64_t budget       = 0;
+    uint64_t reserve      = 0;
+    uint64_t layer_max    = 0;
+    uint64_t head         = 0;
+};
+
+// Reads an unsigned integer key; `fallback` when it is missing or not an integer.
+uint64_t gguf_uint(const gguf_context * g, const std::string & key, uint64_t fallback) {
+    const int64_t id = gguf_find_key(g, key.c_str());
+    if (id < 0) {
+        return fallback;
+    }
+    switch (gguf_get_kv_type(g, id)) {
+        case GGUF_TYPE_UINT32: return gguf_get_val_u32(g, id);
+        case GGUF_TYPE_INT32:  return static_cast<uint64_t>(std::max<int32_t>(0, gguf_get_val_i32(g, id)));
+        case GGUF_TYPE_UINT64: return gguf_get_val_u64(g, id);
+        case GGUF_TYPE_INT64:  return static_cast<uint64_t>(std::max<int64_t>(0, gguf_get_val_i64(g, id)));
+        default:               return fallback;
+    }
+}
+
+// Per-layer value of a key that is either one integer for all layers or an array with one entry per layer
+// (models with varying KV heads per layer, e.g. hybrid attention/recurrent models write 0 for recurrent layers).
+std::vector<uint64_t> gguf_per_layer(const gguf_context * g, const std::string & key, size_t n_layer, uint64_t fallback) {
+    std::vector<uint64_t> v(n_layer, fallback);
+    const int64_t id = gguf_find_key(g, key.c_str());
+    if (id < 0) {
+        return v;
+    }
+    if (gguf_get_kv_type(g, id) != GGUF_TYPE_ARRAY) {
+        std::fill(v.begin(), v.end(), gguf_uint(g, key, fallback));
+        return v;
+    }
+    const enum gguf_type at = gguf_get_arr_type(g, id);
+    const size_t n = std::min(gguf_get_arr_n(g, id), n_layer);
+    const void * data = gguf_get_arr_data(g, id);
+    for (size_t i = 0; i < n; ++i) {
+        if (at == GGUF_TYPE_UINT32) {
+            v[i] = static_cast<const uint32_t *>(data)[i];
+        } else if (at == GGUF_TYPE_INT32) {
+            v[i] = static_cast<uint64_t>(std::max<int32_t>(0, static_cast<const int32_t *>(data)[i]));
+        }
+    }
+    return v;
+}
+
+// Plans how many layers fit on the GPU devices, from the GGUF file alone (before loading anything).
+//
+// Estimate per block il: the bytes of every tensor named "blk.<il>.*" (as stored in the file; a GPU buffer
+// may pad a few rows, which the fixed reserve covers) plus its f16 KV cache at n_ctx tokens:
+//     n_ctx * n_head_kv(il) * (key_length + value_length) * 2 bytes.
+// The output head is the extra layer llama.cpp offloads first (n_gpu_layers = 1 puts only the head on the
+// GPU): output.weight, or a copy of token_embd.weight when the model ties them, plus the other small non-block
+// tensors (output norm, ...). The token embedding itself always stays on the CPU (llama.cpp's rule).
+// Reserve per device: k_fixed_reserve plus the compute buffer's two largest terms at a 512-token batch: the
+// logits of the whole batch (n_vocab * 512 * 4 bytes) and the attention scores of all heads without
+// flash attention (n_ctx * 512 * n_head * 4 bytes).
+//
+// Greedy fill from the head down to the first block (llama.cpp offloads the LAST n_gpu_layers - 1 blocks), so
+// the result is the largest n_gpu_layers whose estimate fits.
+//
+// LittleBit B1 weights: the estimate counts them on the GPU. On a device that runs the fused LittleBit op
+// (CUDA) that is where the engine puts them; on one that does not (Vulkan) the engine keeps them on the CPU,
+// so the estimate is then conservative (fewer layers than would fit). The placement itself is never changed
+// here: the engine applies its capability-based rule to whatever n_gpu_layers is chosen.
+lm_status plan_fit(const char * path, const std::vector<ggml_backend_dev_t> & devs, uint64_t forced_budget,
+                   uint32_t fit_n_ctx, fit_plan & plan) {
+    gguf_init_params gp = { /*.no_alloc =*/ true, /*.ctx =*/ nullptr };
+    gguf_context * g = gguf_init_from_file(path, gp);
+    if (!g) {
+        return fail_with_engine(LM_ERR_MODEL_LOAD, std::string("lm_model_load: cannot read '") + path + "' as a GGUF file");
+    }
+    struct gguf_guard {
+        gguf_context * g;
+        ~gguf_guard() { gguf_free(g); }
+    } guard{ g };
+
+    std::vector<uint64_t> layer_w;
+    uint64_t out_w = 0, embd_w = 0, misc_w = 0;
+    bool has_output = false;
+    for (int64_t i = 0; i < gguf_get_n_tensors(g); ++i) {
+        const char * name = gguf_get_tensor_name(g, i);
+        const uint64_t size = gguf_get_tensor_size(g, i);
+        int il = -1;
+        if (std::sscanf(name, "blk.%d.", &il) == 1 && il >= 0) {
+            if (static_cast<size_t>(il) >= layer_w.size()) {
+                layer_w.resize(static_cast<size_t>(il) + 1, 0);
+            }
+            layer_w[static_cast<size_t>(il)] += size;
+        } else if (std::strcmp(name, "output.weight") == 0) {
+            out_w = size;
+            has_output = true;
+        } else if (std::strcmp(name, "token_embd.weight") == 0) {
+            embd_w = size;
+        } else {
+            misc_w += size;
+        }
+    }
+    const size_t n_layer = layer_w.size();
+
+    std::string arch = "llama";
+    {
+        const int64_t id = gguf_find_key(g, "general.architecture");
+        if (id >= 0 && gguf_get_kv_type(g, id) == GGUF_TYPE_STRING) {
+            arch = gguf_get_val_str(g, id);
+        }
+    }
+    const uint64_t n_embd   = gguf_uint(g, arch + ".embedding_length", 0);
+    const uint64_t n_ctx_tr = gguf_uint(g, arch + ".context_length", k_default_ctx);
+    const std::vector<uint64_t> n_head    = gguf_per_layer(g, arch + ".attention.head_count", n_layer, 0);
+    const std::vector<uint64_t> n_head_kv = gguf_per_layer(g, arch + ".attention.head_count_kv", n_layer, 0);
+    uint64_t n_head_max = 0;
+    for (uint64_t h : n_head) {
+        n_head_max = std::max(n_head_max, h);
+    }
+    const uint64_t head_dim_default = n_head_max ? n_embd / n_head_max : 0;
+    const uint64_t key_len = gguf_uint(g, arch + ".attention.key_length", head_dim_default);
+    const uint64_t val_len = gguf_uint(g, arch + ".attention.value_length", head_dim_default);
+    uint64_t n_vocab = 0;
+    {
+        const int64_t id = gguf_find_key(g, "tokenizer.ggml.tokens");
+        if (id >= 0 && gguf_get_kv_type(g, id) == GGUF_TYPE_ARRAY) {
+            n_vocab = gguf_get_arr_n(g, id);
+        }
+    }
+    const uint64_t n_ctx = fit_n_ctx ? fit_n_ctx : std::min<uint64_t>(k_default_ctx, n_ctx_tr ? n_ctx_tr : k_default_ctx);
+
+    // Budget: forced, or what the devices report free right now.
+    uint64_t budget = forced_budget;
+    if (budget == 0) {
+        for (ggml_backend_dev_t dev : devs) {
+            size_t free = 0, total = 0;
+            ggml_backend_dev_memory(dev, &free, &total);
+            budget += free;
+        }
+    }
+    const uint64_t per_dev_reserve = k_fixed_reserve + n_vocab * k_fit_ubatch * 4 + n_ctx * k_fit_ubatch * n_head_max * 4;
+    const uint64_t reserve = per_dev_reserve * devs.size();
+    const uint64_t head = (has_output ? out_w : embd_w) + misc_w;
+
+    plan = fit_plan();
+    plan.budget  = budget;
+    plan.reserve = reserve;
+    plan.head    = head;
+    std::vector<uint64_t> layer_total(n_layer);
+    for (size_t il = 0; il < n_layer; ++il) {
+        layer_total[il] = layer_w[il] + n_ctx * n_head_kv[il] * (key_len + val_len) * 2;
+        plan.layer_max = std::max(plan.layer_max, layer_total[il]);
+    }
+    if (budget <= reserve || budget - reserve < head) {
+        plan.n_gpu_layers = 0;
+        return LM_OK;
+    }
+    uint64_t avail = budget - reserve - head;
+    int32_t ngl = 1; // the head
+    for (size_t k = n_layer; k-- > 0;) {
+        if (layer_total[k] > avail) {
+            break;
+        }
+        avail -= layer_total[k];
+        ++ngl;
+    }
+    plan.n_gpu_layers = ngl;
+    return LM_OK;
+}
+
+// ---------------------------------------------------------------------------------------------------------------
+// UTF-8 streaming
+// ---------------------------------------------------------------------------------------------------------------
+
+// Length of the longest prefix of `s` that does not end inside a multi-byte UTF-8 character. Token pieces of
+// byte-level vocabularies can split one character over several tokens; holding the incomplete tail back
+// means every piece given to the callback is valid UTF-8 on its own (Python and C# decode it directly).
+size_t complete_utf8_prefix(const std::string & s) {
+    const size_t n = s.size();
+    // A character is at most 4 bytes: only the last 3 bytes can start an unfinished one.
+    for (size_t back = 1; back <= 3 && back <= n; ++back) {
+        const unsigned char c = static_cast<unsigned char>(s[n - back]);
+        if ((c & 0xC0) == 0x80) {
+            continue; // continuation byte: keep looking for the lead byte
+        }
+        size_t need = 1;
+        if ((c & 0xE0) == 0xC0) {
+            need = 2;
+        } else if ((c & 0xF0) == 0xE0) {
+            need = 3;
+        } else if ((c & 0xF8) == 0xF0) {
+            need = 4;
+        }
+        return back < need ? n - back : n;
+    }
+    return n;
+}
+
+} // namespace
+
+
+// ---------------------------------------------------------------------------------------------------------------
+// Opaque objects
+// ---------------------------------------------------------------------------------------------------------------
+
+struct lm_model {
+    llama_model * model = nullptr;
+    lm_model_info info{};
+};
+
+struct lm_session {
+    lm_model *      model = nullptr;
+    llama_context * ctx   = nullptr;
+    std::mutex      mu; // serialises calls on this session (the header's per-session thread-safety rule)
+    // Context size the caller asked for. The engine rounds its allocation up (to a multiple of 256 tokens), but
+    // prompt plus answer are limited to what was requested, so a session behaves the same on every engine version.
+    uint32_t        n_ctx = 0;
+};
+
+// ---------------------------------------------------------------------------------------------------------------
+// Generation core (shared by lm_chat and lm_generate)
+// ---------------------------------------------------------------------------------------------------------------
+
+namespace {
+
+lm_status tokenize_into(const llama_vocab * vocab, const char * text, size_t len, bool special,
+                        std::vector<llama_token> & out, const char * fn) {
+    if (len > static_cast<size_t>(std::numeric_limits<int32_t>::max())) {
+        return fail(LM_ERR_INVALID_ARG, std::string(fn) + ": text is longer than 2 GiB");
+    }
+    out.resize(len + 8);
+    int32_t n = llama_tokenize(vocab, text, static_cast<int32_t>(len), out.data(), static_cast<int32_t>(out.size()),
+                               special, special);
+    if (n < 0) {
+        if (n == std::numeric_limits<int32_t>::min()) {
+            return fail_with_engine(LM_ERR_TOKENIZE, std::string(fn) + ": tokenization failed (too many tokens)");
+        }
+        out.resize(static_cast<size_t>(-n));
+        n = llama_tokenize(vocab, text, static_cast<int32_t>(len), out.data(), static_cast<int32_t>(out.size()),
+                           special, special);
+        if (n < 0) {
+            return fail_with_engine(LM_ERR_TOKENIZE, std::string(fn) + ": tokenization failed");
+        }
+    }
+    out.resize(static_cast<size_t>(n));
+    return LM_OK;
+}
+
+// Builds the sampler chain of one call. Temperature <= 0: greedy (argmax), fully deterministic. Otherwise the
+// usual llama.cpp order: top-k, top-p, temperature, then a seeded random draw.
+llama_sampler * make_sampler(const lm_sampling & s) {
+    llama_sampler_chain_params cp = llama_sampler_chain_default_params();
+    cp.no_perf = true;
+    llama_sampler * chain = llama_sampler_chain_init(cp);
+    if (s.temperature <= 0.0f) {
+        llama_sampler_chain_add(chain, llama_sampler_init_greedy());
+        return chain;
+    }
+    if (s.top_k > 0) {
+        llama_sampler_chain_add(chain, llama_sampler_init_top_k(s.top_k));
+    }
+    if (s.top_p < 1.0f) {
+        llama_sampler_chain_add(chain, llama_sampler_init_top_p(s.top_p, 1));
+    }
+    llama_sampler_chain_add(chain, llama_sampler_init_temp(s.temperature));
+    llama_sampler_chain_add(chain, llama_sampler_init_dist(s.seed));
+    return chain;
+}
+
+lm_status check_sampling(const lm_sampling * in, lm_sampling & s, const char * fn) {
+    lm_sampling_default(&s);
+    const lm_status st = read_struct(in, s, fn, "lm_sampling");
+    if (st != LM_OK) {
+        return st;
+    }
+    if (s.max_tokens <= 0) {
+        return fail(LM_ERR_INVALID_ARG, std::string(fn) + ": lm_sampling.max_tokens must be > 0");
+    }
+    if (s.top_k < 0 || !(s.top_p > 0.0f && s.top_p <= 1.0f) || s.temperature != s.temperature) {
+        return fail(LM_ERR_INVALID_ARG, std::string(fn) + ": lm_sampling has top_k < 0, top_p outside (0, 1] or a NaN temperature");
+    }
+    return LM_OK;
+}
+
+// Fills the batch with tokens[first, first + n) at positions first.., logits only for the last one if wanted.
+void fill_batch(llama_batch_ext * batch, const llama_token * tokens, int32_t n, llama_pos pos0, bool logits_last) {
+    llama_batch_ext_clear(batch);
+    for (int32_t i = 0; i < n; ++i) {
+        const int32_t   idx = llama_batch_ext_add_token(batch, 0, tokens[i]);
+        const llama_pos pos = pos0 + i;
+        llama_batch_ext_set_pos(batch, idx, &pos);
+    }
+    if (logits_last && n > 0) {
+        llama_batch_ext_set_output_logits(batch, n - 1, true);
+    }
+}
+
+lm_status decode_status(int32_t rc, const char * fn) {
+    if (rc == 0) {
+        return LM_OK;
+    }
+    if (rc == 1) {
+        return fail_with_engine(LM_ERR_CONTEXT_FULL, std::string(fn) + ": no room left in the context (KV cache)");
+    }
+    return fail_with_engine(LM_ERR_DECODE, std::string(fn) + ": the engine failed to compute a batch (code " +
+                                                std::to_string(rc) + ")");
+}
+
+// Reads the prompt and streams up to s.max_tokens generated pieces. The caller holds the session lock.
+lm_status run(lm_session * session, const std::string & prompt, const lm_sampling & s, lm_token_cb cb, void * user,
+              const char * fn) {
+    llama_context *     ctx   = session->ctx;
+    const llama_vocab * vocab = llama_model_get_vocab(session->model->model);
+
+    std::vector<llama_token> tokens;
+    lm_status st = tokenize_into(vocab, prompt.data(), prompt.size(), true, tokens, fn);
+    if (st != LM_OK) {
+        return st;
+    }
+    if (tokens.empty()) {
+        return fail(LM_ERR_TOKENIZE, std::string(fn) + ": the prompt has no tokens");
+    }
+    const uint32_t n_ctx = session->n_ctx;
+    if (tokens.size() >= n_ctx) {
+        return fail(LM_ERR_CONTEXT_FULL, std::string(fn) + ": the prompt has " + std::to_string(tokens.size()) +
+                                             " tokens and leaves no room in a context of " + std::to_string(n_ctx) +
+                                             " tokens (raise lm_session_options.n_ctx)");
+    }
+
+    // Every call starts from an empty state: deterministic, and the header's "complete in itself" rule.
+    llama_memory_clear(llama_get_memory(ctx), true);
+
+    llama_batch_ext * batch = llama_batch_ext_init(ctx);
+    llama_sampler *   smpl  = make_sampler(s);
+    struct cleanup {
+        llama_batch_ext * b;
+        llama_sampler *   s;
+        ~cleanup() {
+            llama_batch_ext_free(b);
+            llama_sampler_free(s);
+        }
+    } guard{ batch, smpl };
+
+    // The prompt, in chunks of at most n_batch tokens (the batch capacity); logits only after the last token.
+    const int32_t n_batch = static_cast<int32_t>(llama_n_batch(ctx));
+    const int32_t n_prompt = static_cast<int32_t>(tokens.size());
+    for (int32_t i = 0; i < n_prompt; i += n_batch) {
+        const int32_t n = std::min(n_batch, n_prompt - i);
+        fill_batch(batch, tokens.data() + i, n, i, i + n == n_prompt);
+        st = decode_status(llama_process(ctx, LLAMA_PROCESS_TYPE_DECODE, batch), fn);
+        if (st != LM_OK) {
+            return st;
+        }
+    }
+
+    std::string pending; // generated bytes not yet given to the callback (an unfinished UTF-8 character)
+    std::vector<char> piece(256);
+    llama_pos n_past = n_prompt;
+    for (int32_t i = 0; i < s.max_tokens; ++i) {
+        const llama_token tok = llama_sampler_sample(smpl, ctx, -1);
+        if (llama_vocab_is_eog(vocab, tok)) {
+            break;
+        }
+        int32_t n = llama_token_to_piece(vocab, tok, piece.data(), static_cast<int32_t>(piece.size()), 0, false);
+        if (n < 0) {
+            piece.resize(static_cast<size_t>(-n));
+            n = llama_token_to_piece(vocab, tok, piece.data(), static_cast<int32_t>(piece.size()), 0, false);
+        }
+        if (n > 0) {
+            pending.append(piece.data(), static_cast<size_t>(n));
+            const size_t ready = complete_utf8_prefix(pending);
+            if (ready > 0) {
+                const std::string out = pending.substr(0, ready);
+                pending.erase(0, ready);
+                if (cb && cb(out.c_str(), out.size(), user) != 0) {
+                    return LM_OK; // the caller asked to stop
+                }
+            }
+        }
+        // Feed the token back, unless it was the last one we may generate or the context is full.
+        if (i + 1 == s.max_tokens || static_cast<uint32_t>(n_past) + 1 > n_ctx) {
+            break;
+        }
+        llama_token t = tok;
+        fill_batch(batch, &t, 1, n_past, true);
+        st = decode_status(llama_process(ctx, LLAMA_PROCESS_TYPE_DECODE, batch), fn);
+        if (st != LM_OK) {
+            return st;
+        }
+        ++n_past;
+    }
+    // An unfinished character at the very end (the model stopped mid-character) is given as U+FFFD, so the
+    // callback still never sees invalid UTF-8.
+    if (!pending.empty() && cb) {
+        static const char replacement[] = "\xEF\xBF\xBD";
+        cb(replacement, sizeof(replacement) - 1, user);
+    }
+    return LM_OK;
+}
+
+} // namespace
+
+// ---------------------------------------------------------------------------------------------------------------
+// Public API
+// ---------------------------------------------------------------------------------------------------------------
+
+extern "C" {
+
+const char * lm_version(void) {
+    return k_version;
+}
+
+int32_t lm_api_version(void) {
+    return LM_API_VERSION;
+}
+
+const char * lm_last_error(void) {
+    return t_last_error.c_str();
+}
+
+const char * lm_status_name(lm_status status) {
+    switch (status) {
+        case LM_OK:                   return "LM_OK";
+        case LM_ERR_INVALID_ARG:      return "LM_ERR_INVALID_ARG";
+        case LM_ERR_UNSUPPORTED:      return "LM_ERR_UNSUPPORTED";
+        case LM_ERR_BACKEND:          return "LM_ERR_BACKEND";
+        case LM_ERR_MODEL_LOAD:       return "LM_ERR_MODEL_LOAD";
+        case LM_ERR_OUT_OF_MEMORY:    return "LM_ERR_OUT_OF_MEMORY";
+        case LM_ERR_SESSION:          return "LM_ERR_SESSION";
+        case LM_ERR_TEMPLATE:         return "LM_ERR_TEMPLATE";
+        case LM_ERR_TOKENIZE:         return "LM_ERR_TOKENIZE";
+        case LM_ERR_CONTEXT_FULL:     return "LM_ERR_CONTEXT_FULL";
+        case LM_ERR_DECODE:           return "LM_ERR_DECODE";
+        case LM_ERR_BUFFER_TOO_SMALL: return "LM_ERR_BUFFER_TOO_SMALL";
+        case LM_ERR_INTERNAL:         return "LM_ERR_INTERNAL";
+    }
+    return "LM_ERR_UNKNOWN";
+}
+
+size_t lm_backends_info(char * buf, size_t cap) {
+    size_t result = 0;
+    const lm_status st = guarded("lm_backends_info", [&]() -> lm_status {
+        if (!buf && cap > 0) {
+            return fail(LM_ERR_INVALID_ARG, "lm_backends_info: buf is NULL but cap is not 0");
+        }
+        if (!ensure_init("lm_backends_info")) {
+            return LM_ERR_BACKEND;
+        }
+        std::string text;
+        for (size_t i = 0; i < ggml_backend_dev_count(); ++i) {
+            ggml_backend_dev_t dev = ggml_backend_dev_get(i);
+            const enum ggml_backend_dev_type type = ggml_backend_dev_type(dev);
+            const char * type_name = type == GGML_BACKEND_DEVICE_TYPE_CPU    ? "CPU"
+                                     : type == GGML_BACKEND_DEVICE_TYPE_GPU  ? "GPU"
+                                     : type == GGML_BACKEND_DEVICE_TYPE_IGPU ? "iGPU"
+                                                                             : "accelerator";
+            char line[512];
+            if (type == GGML_BACKEND_DEVICE_TYPE_GPU || type == GGML_BACKEND_DEVICE_TYPE_IGPU) {
+                size_t free = 0, total = 0;
+                ggml_backend_dev_memory(dev, &free, &total);
+                std::snprintf(line, sizeof(line), "%s: %s [%s, free %.1f GiB of %.1f GiB]\n", ggml_backend_dev_name(dev),
+                              ggml_backend_dev_description(dev), type_name, free / 1073741824.0, total / 1073741824.0);
+            } else {
+                std::snprintf(line, sizeof(line), "%s: %s [%s]\n", ggml_backend_dev_name(dev),
+                              ggml_backend_dev_description(dev), type_name);
+            }
+            text += line;
+        }
+        if (text.empty()) {
+            return fail(LM_ERR_BACKEND, "lm_backends_info: no backend device is loaded");
+        }
+        if (cap > 0) {
+            const size_t n = std::min(cap - 1, text.size());
+            std::memcpy(buf, text.data(), n);
+            buf[n] = '\0';
+        }
+        result = text.size();
+        return LM_OK;
+    });
+    return st == LM_OK ? result : 0;
+}
+
+lm_status lm_model_options_default(lm_model_options * opts) {
+    if (!opts) {
+        return fail(LM_ERR_INVALID_ARG, "lm_model_options_default: opts is NULL");
+    }
+    std::memset(opts, 0, sizeof(*opts));
+    opts->struct_size  = sizeof(*opts);
+    opts->n_gpu_layers = LM_GPU_LAYERS_AUTO;
+    opts->devices      = nullptr;
+    opts->vram_budget  = 0;
+    opts->fit_n_ctx    = 0;
+    opts->use_mmap     = 1;
+    return LM_OK;
+}
+
+lm_status lm_session_options_default(lm_session_options * opts) {
+    if (!opts) {
+        return fail(LM_ERR_INVALID_ARG, "lm_session_options_default: opts is NULL");
+    }
+    std::memset(opts, 0, sizeof(*opts));
+    opts->struct_size = sizeof(*opts);
+    return LM_OK;
+}
+
+lm_status lm_sampling_default(lm_sampling * s) {
+    if (!s) {
+        return fail(LM_ERR_INVALID_ARG, "lm_sampling_default: s is NULL");
+    }
+    std::memset(s, 0, sizeof(*s));
+    s->struct_size = sizeof(*s);
+    s->temperature = 0.8f;
+    s->top_k       = 40;
+    s->top_p       = 0.95f;
+    s->seed        = 0;
+    s->max_tokens  = 256;
+    return LM_OK;
+}
+
+lm_status lm_model_load(const char * path, const lm_model_options * opts_in, lm_model ** out) {
+    if (out) {
+        *out = nullptr;
+    }
+    return guarded("lm_model_load", [&]() -> lm_status {
+        if (!path || !out) {
+            return fail(LM_ERR_INVALID_ARG, "lm_model_load: path and out must not be NULL");
+        }
+        lm_model_options opts;
+        lm_model_options_default(&opts);
+        lm_status st = read_struct(opts_in, opts, "lm_model_load", "lm_model_options");
+        if (st != LM_OK) {
+            return st;
+        }
+        if (opts.n_gpu_layers < LM_GPU_LAYERS_AUTO) {
+            return fail(LM_ERR_INVALID_ARG, "lm_model_load: n_gpu_layers must be -1 (auto), 0 or positive");
+        }
+        if (!ensure_init("lm_model_load")) {
+            return LM_ERR_BACKEND;
+        }
+        std::vector<ggml_backend_dev_t> devs;
+        st = parse_devices(opts.devices, devs);
+        if (st != LM_OK) {
+            return st;
+        }
+
+        fit_plan plan;
+        int32_t  ngl = opts.n_gpu_layers;
+        if (devs.empty()) {
+            ngl = 0; // no GPU to offload to (the engine would ignore the layers anyway)
+        } else if (ngl == LM_GPU_LAYERS_AUTO) {
+            st = plan_fit(path, devs, opts.vram_budget, opts.fit_n_ctx, plan);
+            if (st != LM_OK) {
+                return st;
+            }
+            ngl = plan.n_gpu_layers;
+        }
+
+        llama_model_params mp = llama_model_default_params();
+        std::vector<ggml_backend_dev_t> dev_list = devs;
+        dev_list.push_back(nullptr); // the engine reads a NULL-terminated list; {NULL} alone means "no GPU"
+        mp.devices      = dev_list.data();
+        mp.n_gpu_layers = ngl;
+        // AUTO lets the engine memory-map the file where it can; NONE reads it into allocated memory.
+        if (opts.use_mmap == 0) {
+            mp.load_mode = LLAMA_LOAD_MODE_NONE;
+        }
+
+        llama_model * model = llama_model_load_from_file(path, mp);
+        if (!model) {
+            return fail_with_engine(LM_ERR_MODEL_LOAD, std::string("lm_model_load: cannot load model '") + path + "'");
+        }
+
+        lm_model * m = new (std::nothrow) lm_model();
+        if (!m) {
+            llama_model_free(model);
+            return fail(LM_ERR_OUT_OF_MEMORY, "lm_model_load: out of memory");
+        }
+        m->model = model;
+        lm_model_info & info = m->info;
+        info.struct_size = sizeof(info);
+        info.n_layer     = llama_model_n_layer(model);
+        info.n_gpu_layers = devs.empty() ? 0 : std::min(ngl, info.n_layer + 1);
+        info.n_ctx_train = llama_model_n_ctx_train(model);
+        info.n_vocab     = llama_vocab_n_tokens(llama_model_get_vocab(model));
+        info.n_embd      = llama_model_n_embd(model);
+        info.size_bytes  = llama_model_size(model);
+        info.n_params    = llama_model_n_params(model);
+        info.fit_budget_bytes  = plan.budget;
+        info.fit_reserve_bytes = plan.reserve;
+        info.fit_layer_bytes   = plan.layer_max;
+        info.fit_head_bytes    = plan.head;
+        std::string names;
+        for (ggml_backend_dev_t d : devs) {
+            if (!names.empty()) {
+                names += ",";
+            }
+            names += ggml_backend_dev_name(d);
+        }
+        std::snprintf(info.gpu_devices, sizeof(info.gpu_devices), "%s", names.c_str());
+        llama_model_desc(model, info.description, sizeof(info.description));
+        *out = m;
+        return LM_OK;
+    });
+}
+
+void lm_model_free(lm_model * model) {
+    if (!model) {
+        return;
+    }
+    llama_model_free(model->model);
+    delete model;
+}
+
+lm_status lm_model_get_info(const lm_model * model, lm_model_info * info) {
+    if (!model || !info) {
+        return fail(LM_ERR_INVALID_ARG, "lm_model_get_info: model and info must not be NULL");
+    }
+    const size_t n = info->struct_size;
+    if (n < offsetof(lm_model_info, n_gpu_layers)) {
+        return fail(LM_ERR_INVALID_ARG, "lm_model_get_info: info->struct_size is too small; set it to sizeof(lm_model_info)");
+    }
+    // Copy only what the caller's (possibly older, smaller) struct can hold; keep its struct_size.
+    std::memcpy(reinterpret_cast<char *>(info) + sizeof(size_t), reinterpret_cast<const char *>(&model->info) + sizeof(size_t),
+                std::min(n, sizeof(lm_model_info)) - sizeof(size_t));
+    return LM_OK;
+}
+
+lm_status lm_session_new(lm_model * model, const lm_session_options * opts_in, lm_session ** out) {
+    if (out) {
+        *out = nullptr;
+    }
+    return guarded("lm_session_new", [&]() -> lm_status {
+        if (!model || !out) {
+            return fail(LM_ERR_INVALID_ARG, "lm_session_new: model and out must not be NULL");
+        }
+        lm_session_options opts;
+        lm_session_options_default(&opts);
+        lm_status st = read_struct(opts_in, opts, "lm_session_new", "lm_session_options");
+        if (st != LM_OK) {
+            return st;
+        }
+        if (opts.n_threads < 0) {
+            return fail(LM_ERR_INVALID_ARG, "lm_session_new: n_threads must be >= 0");
+        }
+        if (llama_model_has_encoder(model->model)) {
+            return fail(LM_ERR_UNSUPPORTED, "lm_session_new: encoder-decoder models are not supported");
+        }
+        llama_context_params cp = llama_context_default_params();
+        const uint32_t n_ctx_train = static_cast<uint32_t>(std::max(0, model->info.n_ctx_train));
+        cp.n_ctx = opts.n_ctx ? opts.n_ctx : std::min(k_default_ctx, n_ctx_train ? n_ctx_train : k_default_ctx);
+        const uint32_t n_batch = opts.n_batch ? opts.n_batch : 512;
+        cp.n_batch  = n_batch;
+        cp.n_ubatch = n_batch;
+        if (opts.n_threads > 0) {
+            cp.n_threads       = opts.n_threads;
+            cp.n_threads_batch = opts.n_threads;
+        }
+        cp.no_perf = true;
+
+        llama_context * ctx = llama_init_from_model(model->model, cp);
+        if (!ctx) {
+            const std::string engine = engine_errors_one_line();
+            const bool oom = engine.find("alloc") != std::string::npos || engine.find("memory") != std::string::npos;
+            return fail_with_engine(oom ? LM_ERR_OUT_OF_MEMORY : LM_ERR_SESSION,
+                                    "lm_session_new: cannot create the engine context (n_ctx " + std::to_string(cp.n_ctx) + ")");
+        }
+        lm_session * s = new (std::nothrow) lm_session();
+        if (!s) {
+            llama_free(ctx);
+            return fail(LM_ERR_OUT_OF_MEMORY, "lm_session_new: out of memory");
+        }
+        s->model = model;
+        s->ctx   = ctx;
+        s->n_ctx = std::min(cp.n_ctx, llama_n_ctx(ctx));
+        *out = s;
+        return LM_OK;
+    });
+}
+
+void lm_session_free(lm_session * session) {
+    if (!session) {
+        return;
+    }
+    llama_free(session->ctx);
+    delete session;
+}
+
+lm_status lm_chat(lm_session * session, const lm_message * msgs, size_t n, const lm_sampling * s_in, lm_token_cb cb,
+                  void * user) {
+    return guarded("lm_chat", [&]() -> lm_status {
+        if (!session || !msgs || n == 0) {
+            return fail(LM_ERR_INVALID_ARG, "lm_chat: session and msgs must not be NULL and n must be > 0");
+        }
+        std::vector<llama_chat_message> chat(n);
+        size_t total = 0;
+        for (size_t i = 0; i < n; ++i) {
+            if (!msgs[i].role || !msgs[i].content) {
+                return fail(LM_ERR_INVALID_ARG, "lm_chat: message " + std::to_string(i) + " has a NULL role or content");
+            }
+            chat[i].role    = msgs[i].role;
+            chat[i].content = msgs[i].content;
+            total += std::strlen(msgs[i].role) + std::strlen(msgs[i].content);
+        }
+        lm_sampling s;
+        lm_status st = check_sampling(s_in, s, "lm_chat");
+        if (st != LM_OK) {
+            return st;
+        }
+        // The model's own template; NULL makes llama_chat_apply_template use "chatml", as llama.cpp does.
+        const char * tmpl = llama_model_chat_template(session->model->model, nullptr);
+        std::vector<char> buf(2 * total + 256);
+        int32_t len = llama_chat_apply_template(tmpl, chat.data(), n, true, buf.data(), static_cast<int32_t>(buf.size()));
+        if (len > static_cast<int32_t>(buf.size())) {
+            buf.resize(static_cast<size_t>(len));
+            len = llama_chat_apply_template(tmpl, chat.data(), n, true, buf.data(), static_cast<int32_t>(buf.size()));
+        }
+        if (len < 0) {
+            return fail_with_engine(LM_ERR_TEMPLATE,
+                                    "lm_chat: the model's chat template is not one llama.cpp recognises "
+                                    "(llama_chat_apply_template supports its built-in template families only)");
+        }
+        const std::string prompt(buf.data(), static_cast<size_t>(len));
+        std::lock_guard<std::mutex> lock(session->mu);
+        return run(session, prompt, s, cb, user, "lm_chat");
+    });
+}
+
+lm_status lm_generate(lm_session * session, const char * prompt, const lm_sampling * s_in, lm_token_cb cb, void * user) {
+    return guarded("lm_generate", [&]() -> lm_status {
+        if (!session || !prompt) {
+            return fail(LM_ERR_INVALID_ARG, "lm_generate: session and prompt must not be NULL");
+        }
+        lm_sampling s;
+        const lm_status st = check_sampling(s_in, s, "lm_generate");
+        if (st != LM_OK) {
+            return st;
+        }
+        std::lock_guard<std::mutex> lock(session->mu);
+        return run(session, std::string(prompt), s, cb, user, "lm_generate");
+    });
+}
+
+lm_status lm_tokenize(const lm_model * model, const char * text, size_t len, int32_t * tokens, size_t cap,
+                      int add_special, size_t * n_out) {
+    return guarded("lm_tokenize", [&]() -> lm_status {
+        if (!model || !text || !n_out || (!tokens && cap > 0)) {
+            return fail(LM_ERR_INVALID_ARG, "lm_tokenize: model, text and n_out must not be NULL (tokens only when cap is 0)");
+        }
+        std::vector<llama_token> v;
+        const lm_status st = tokenize_into(llama_model_get_vocab(model->model), text, len, add_special != 0, v, "lm_tokenize");
+        if (st != LM_OK) {
+            return st;
+        }
+        *n_out = v.size();
+        if (v.size() > cap) {
+            return fail(LM_ERR_BUFFER_TOO_SMALL, "lm_tokenize: " + std::to_string(v.size()) + " tokens do not fit into " +
+                                                     std::to_string(cap));
+        }
+        static_assert(sizeof(llama_token) == sizeof(int32_t), "token ids are 32-bit");
+        if (!v.empty()) {
+            std::memcpy(tokens, v.data(), v.size() * sizeof(int32_t));
+        }
+        return LM_OK;
+    });
+}
+
+lm_status lm_detokenize(const lm_model * model, const int32_t * tokens, size_t n, char * buf, size_t cap, int special,
+                        size_t * len_out) {
+    return guarded("lm_detokenize", [&]() -> lm_status {
+        if (!model || (!tokens && n > 0) || !len_out || (!buf && cap > 0)) {
+            return fail(LM_ERR_INVALID_ARG, "lm_detokenize: model and len_out must not be NULL (tokens only when n is 0, buf only when cap is 0)");
+        }
+        if (n > static_cast<size_t>(std::numeric_limits<int32_t>::max())) {
+            return fail(LM_ERR_INVALID_ARG, "lm_detokenize: too many tokens");
+        }
+        const llama_vocab * vocab = llama_model_get_vocab(model->model);
+        const int32_t n_vocab = llama_vocab_n_tokens(vocab);
+        for (size_t i = 0; i < n; ++i) {
+            if (tokens[i] < 0 || tokens[i] >= n_vocab) {
+                return fail(LM_ERR_TOKENIZE, "lm_detokenize: token " + std::to_string(i) + " has id " + std::to_string(tokens[i]) +
+                                                 ", outside the vocabulary [0, " + std::to_string(n_vocab) + ")");
+            }
+        }
+        // llama_detokenize writes no NUL and returns -needed when the text does not fit: measure first, then copy.
+        std::vector<char> text(64 + n * 8);
+        int32_t len = llama_detokenize(vocab, tokens, static_cast<int32_t>(n), text.data(), static_cast<int32_t>(text.size()),
+                                       special == 0, special != 0);
+        if (len < 0) {
+            text.resize(static_cast<size_t>(-len));
+            len = llama_detokenize(vocab, tokens, static_cast<int32_t>(n), text.data(), static_cast<int32_t>(text.size()),
+                                   special == 0, special != 0);
+            if (len < 0) {
+                return fail_with_engine(LM_ERR_TOKENIZE, "lm_detokenize: detokenization failed");
+            }
+        }
+        *len_out = static_cast<size_t>(len);
+        if (static_cast<size_t>(len) + 1 > cap) {
+            return fail(LM_ERR_BUFFER_TOO_SMALL, "lm_detokenize: " + std::to_string(len) + " bytes (plus NUL) do not fit into " +
+                                                     std::to_string(cap));
+        }
+        std::memcpy(buf, text.data(), static_cast<size_t>(len));
+        buf[len] = '\0';
+        return LM_OK;
+    });
+}
+
+} // extern "C"

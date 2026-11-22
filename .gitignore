@@ -15,3 +15,5 @@ __pycache__/
 .swarm/
 # Downloaded base models, generated checkpoints, GGUFs and logits (see docs/development.md).
 .cache/
+# Top-level CMake build of the C API, the engine and the backend plugins (see docs/development.md).
+/build/
