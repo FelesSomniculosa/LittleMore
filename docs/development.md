@@ -170,6 +170,32 @@ builds), and `test-backend-ops test -o LITTLEBIT -b CPU` does the same through t
 kernel" in [engine-changes.md](engine-changes.md#cpu-avx2-kernel-of-ggml_op_littlebit) for the CPU speed measurements and
 `engine/tools/littlebit-bench/cpu_bench.cpp` for the benchmark program.
 
+## 7b. Perplexity parity (engine vs reference)
+
+```powershell
+.venv\Scripts\python.exe -m pytest tests/e2e -m smoke -v -s          # about 3.5 minutes; LITTLEMORE_PPL_CHUNKS=N sets the chunk count
+```
+
+`tests/e2e/test_perplexity_parity.py` scores the first 32 chunks of 512 tokens (16384 tokens, 8160 scored) of the
+WikiText-2 raw test split with `tools/dev/reference.py` (CPU, fp32, factorized) and with `llama-perplexity` on the
+init-only Qwen3-0.6B LittleBit 0.55 GGUF, and requires the two perplexities to agree within 1 %: on CUDA, on the CPU
+(AVX2 kernel; `-ngl 0 -dev none`, because plain `-ngl 0` still offloads prefill matmuls to the GPU), and, within 0.1 %,
+on the CPU with the f16 roundings of attention removed (`-fa off -ctk f32 -ctv f32`). A second test compares the whole
+token-id stream of the engine's tokenizer with the Hugging Face one, and a mutation test shows that a 2 % change of one
+scale vector, or a one-token shift of the reference's input, breaks the bound.
+
+The dataset is pinned: `Salesforce/wikitext`, config `wikitext-2-raw-v1`, revision
+`b08601e04326c79dfdd32d625aee71d232d685c3`, file `test-00000-of-00001.parquet` (0.7 MB, sha256 `5f1bea06...ab246d91`);
+`.cache/data/wiki.test.raw` is its `text` column joined with `""` (1287656 bytes, sha256 `bbf94c53...964574a`, rebuilt
+by the test from the parquet if missing). The test skips with a reason when the dataset, base model or binaries are absent.
+
+What it proves: the whole engine (converter, CPU and CUDA fused op, graph, attention, head) computes the same function as
+the independent PyTorch reference over thousands of tokens. Limits: the weights are untrained (init only), so the
+perplexity is in the tens of millions and says nothing about quality; parity is the point. Only a subset of the test
+split is scored (the first 32 of 583 chunks), and a single sequence length (512). Individual chunks differ by up to
+a few percent (CUDA) because ppl is exp(NLL) of an extremely flat distribution and the CUDA prefill path rounds
+differently; these errors are independent and average out (aggregate gap 0.05 % over 32 chunks, 0.13 % over 64).
+
 ## 8. Speed benchmarks and the speed gate
 
 ```powershell
