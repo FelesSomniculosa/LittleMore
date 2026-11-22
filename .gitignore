@@ -1,8 +1,7 @@
 # Python virtual environment (created per docs/setup-windows.md).
 .venv/
-# Local notes and plans of the AI coding tools used on this project.
-.superpowers/
-# Separate git clone of the patched llama.cpp (see docs/engine-changes.md).
+# The patched llama.cpp. During development it is a separate local git clone, ignored here; in the public
+# repository it becomes a git submodule (see docs/engine-changes.md).
 /engine/
 # Python bytecode caches.
 __pycache__/

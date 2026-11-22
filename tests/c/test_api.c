@@ -684,7 +684,7 @@ static void test_small_info(const lm_model * m) {
 /* ---- lm_last_error is per thread -------------------------------------------------------------------------- */
 
 typedef struct error_job {
-    char message[256];
+    char message[256]; /* may truncate a long message; only its beginning is checked */
 } error_job;
 
 static void error_job_run(error_job * job) {
@@ -707,7 +707,7 @@ static void * error_job_main(void * arg) {
 
 static void test_error_per_thread(void) {
     error_job job;
-    char      mine[1024];
+    char      mine[256]; /* may truncate a long engine message: the checks below only rely on its beginning */
     lm_model * m = NULL;
     memset(&job, 0, sizeof(job));
     lm_model_load("main-thread-missing.gguf", NULL, &m);
@@ -726,7 +726,9 @@ static void test_error_per_thread(void) {
     }
 #endif
     CHECK(strstr(job.message, "thread-only-missing.gguf") != NULL, "other thread's error: %s", job.message);
-    CHECK(strcmp(lm_last_error(), mine) == 0 && strstr(mine, "main-thread-missing.gguf") != NULL,
+    /* Prefix comparison: robust to `mine` being truncated (the message length depends on how many engine log lines
+     * the failing path adds: 179 characters with the GPU auto-fit pre-check, 336 without a GPU). */
+    CHECK(strncmp(lm_last_error(), mine, strlen(mine)) == 0 && strstr(mine, "main-thread-missing.gguf") != NULL,
           "this thread's error changed to: %s", lm_last_error());
 }
 

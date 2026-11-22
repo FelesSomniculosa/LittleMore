@@ -17,8 +17,12 @@
 
 name: CI
 
+# Pushes to main and tags run CI; other branches run it through their pull request only (otherwise a PR branch
+# would be built twice, once per event).
 on:
   push:
+    branches: [main]
+    tags: ["*"]
   pull_request:
 
 # Least privilege: the jobs only read the repository.
@@ -56,16 +60,20 @@ jobs:
           python-version: "3.13"
           cache: pip
 
-      # Python test dependencies. torch comes from PyTorch's CPU-only index (a small download instead of GBs of
-      # CUDA libraries). The converter uses the engine's own gguf-py (engine/gguf-py), which has the B1 type this
+      # Python test dependencies, pinned to the versions of the maintainer's environment in which the whole test
+      # subset below passed (154 passed): torch 2.11.0, transformers 5.23.0, numpy 2.5.5, safetensors 0.8.0,
+      # sentencepiece 0.2.3, gguf 0.19.0, pytest 9.2.0. NOT YET SEEN WORKING: the local torch is the CUDA build
+      # (2.11.0+cu128); that the CPU index offers 2.11.0 is assumed. build / setuptools / wheel / ninja are not pinned
+      # (they are not part of what the tests exercise). torch comes from PyTorch's CPU-only index (a small download
+      # instead of GBs of CUDA libraries). The converter uses the engine's own gguf-py (engine/gguf-py), which has the B1 type this
       # project adds; the `gguf` package is installed as well because the engine's scripts import it.
       # `ninja` from PyPI gives both runners the same generator.
       - name: Install Python dependencies
         shell: bash
         run: |
           python -m pip install --upgrade pip
-          python -m pip install torch --index-url https://download.pytorch.org/whl/cpu
-          python -m pip install safetensors numpy pytest transformers gguf sentencepiece build setuptools wheel ninja
+          python -m pip install torch==2.11.0 --index-url https://download.pytorch.org/whl/cpu
+          python -m pip install safetensors==0.8.0 numpy==2.5.5 pytest==9.2.0 transformers==5.23.0 gguf==0.19.0 sentencepiece==0.2.3 build setuptools wheel ninja
 
       # Ninja builds need the MSVC compiler on PATH; the runner image has Visual Studio but not in the
       # environment. This action sets that environment up.
@@ -153,12 +161,16 @@ jobs:
   # ---------------------------------------------------------------------------------------------------------------
   # CUDA compile-only check, Linux. The official NVIDIA development image has nvcc and the CUDA libraries; no GPU
   # is needed to compile. The project targets CUDA 12.x (docs/setup-windows.md), hence a 12.9 image.
+  # NOT YET SEEN WORKING: this job could not be run before publishing, so `continue-on-error: true` keeps a
+  # failure here from turning the workflow red. Remove that line after the first green run.
   # ---------------------------------------------------------------------------------------------------------------
   cuda-compile-linux:
     name: CUDA compile-only (Linux, CUDA 12.9)
     runs-on: ubuntu-22.04
     timeout-minutes: 120
+    continue-on-error: true
     container:
+      # GUESS: this image tag was not looked up on Docker Hub; fix it if the job cannot pull it.
       image: nvidia/cuda:12.9.1-devel-ubuntu22.04
     steps:
       # The bare container has no git, and actions/checkout needs it to fetch submodules.
@@ -172,7 +184,8 @@ jobs:
           submodules: recursive
 
       # Architectures: 75 (Turing), 80/86 (Ampere), 89 (Ada, the maintainer's GPU). The LittleBit tensor-core
-      # prefill path needs compute capability 8.0+, so 80/86/89 are the ones that matter.
+      # prefill path needs compute capability 8.0+, so 80/86/89 are the ones that matter. GUESS: this list is my
+      # choice, not taken from a tested configuration; it only affects compile time.
       - name: Configure
         run: |
           cmake -G Ninja -B build \
@@ -206,6 +219,7 @@ jobs:
 
       # Installs only the compiler and the libraries needed to build (no driver).
       - name: Install the CUDA toolkit
+        # GUESSES (written from memory, not tried): the action version v0.2.24 and the sub-packages list below.
         uses: Jimver/cuda-toolkit@v0.2.24
         with:
           cuda: "12.9.1"

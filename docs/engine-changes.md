@@ -756,7 +756,7 @@ Tried and **not adopted** (gain below 5 % or a loss; sources restored):
 | latent block of 16 warps = 512 rows (planes built once per path instead of once per 256 rows; one block per SM) | 1.06-1.12x slower on the 1.7B layers (fewer blocks per SM hide less latency) |
 | 4 Horner chains of 7 planes instead of 2 of 14 (more independent instructions per warp; bit-identical) | latent only: 0.99-1.02; latent and output: 1.00-1.04 (output kernels then spill) |
 | latent kernel at 3 blocks per SM (`__launch_bounds__(256, 3)`, 80 registers, no spills) | 0.97-1.00 |
-| sharing the planes of x between q / k / v and gate / up (lever 1 of the plan) | not possible losslessly: the planes are those of x * s_v2, and s_v2 (a per-input-column scale) is different for every linear; sharing them would change the arithmetic |
+| sharing the planes of x between q / k / v and gate / up (a speed idea considered after building the planes inside the latent kernel) | not possible losslessly: the planes are those of x * s_v2, and s_v2 (a per-input-column scale) is different for every linear; sharing them would change the arithmetic |
 
 Mutations of this round (each built and run, source restored; test-littlebit-ref / test-backend-ops CUDA0):
 path 1 using s_v2 instead of s_v2r: fails, 314/452, error 2.2; the build written into the slot being read: fails,
@@ -779,7 +779,7 @@ VRAM, measured (peak `nvidia-smi` memory during `llama-bench -p 512`, 2 rounds e
 1181 MiB (1.7B); the scratch no longer holds the planes of x (computed for 1.7B down at 512 tokens: 13.1 MB -> 3.7
 MB). Accuracy and
 determinism unchanged: every change is bit-identical (test-littlebit-ref worst 1.806e-7, NMSE 2.251e-12, as before).
-Not tried (lever 3 of the plan): cp.async prefetch of the weight bits (the diagnostic build without any per-chunk weight
+Not tried (a further speed idea): cp.async prefetch of the weight bits (the diagnostic build without any per-chunk weight
 loads saved little, and the loads are already issued one chunk / one row tile ahead), persistent or stream-K
 scheduling (the row split, a cheaper form of the same balancing, took most of what imbalance cost), smaller tiles for
 small shapes (the m16n8k256 instruction fixes 8 tokens and 16 rows per tile; smaller blocks were not built). Not
