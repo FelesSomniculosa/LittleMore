@@ -310,15 +310,51 @@ def _stream_text(invoke: Callable[[Any], int], lock: threading.Lock, active: _Ac
         active.discard(stop)
 
 
+# Exceptions that escaped a token callback before its own `try` could catch them, per calling thread (see
+# _collect_text). Filled by the unraisable hook below while a collecting C call runs on that thread.
+_ESCAPED: dict[int, list[BaseException]] = {}
+
+
+def _install_unraisable_hook() -> None:
+    """Route exceptions that ctypes reports as "Exception ignored on calling ctypes callback function" back to the
+    collecting call of the thread they happened on (other unraisable exceptions go to the previous hook).
+
+    Why: Ctrl+C during a non-streaming generation raises KeyboardInterrupt in the main thread at the next Python
+    bytecode, which is the ENTRY of the token callback, before its `try` block. ctypes cannot pass an exception to C,
+    so it prints it, calls sys.unraisablehook and returns an undefined value to the library (measured: the generation
+    stopped early and `generate()` returned the truncated text as if it were complete, the KeyboardInterrupt lost).
+    The hook records the exception so `_collect_text` re-raises it after the C call. The hook is installed again if
+    another library replaced sys.unraisablehook in the meantime (it then chains to that one)."""
+    if getattr(sys.unraisablehook, "_littlemore", False):
+        return
+    previous = sys.unraisablehook
+
+    def hook(unraisable: Any) -> None:
+        escaped = _ESCAPED.get(threading.get_ident())
+        if escaped is not None and "ctypes callback" in str(getattr(unraisable, "err_msg", "") or ""):
+            escaped.append(unraisable.exc_value)
+            return
+        previous(unraisable)
+
+    hook._littlemore = True  # type: ignore[attr-defined]
+    sys.unraisablehook = hook
+
+
 def _collect_text(invoke: Callable[[Any], int], lock: threading.Lock, active: _ActiveStreams,
                   check_open: Callable[[], None]) -> str:
-    """Run one generation call in the calling thread and return the whole text (no worker thread needed)."""
+    """Run one generation call in the calling thread and return the whole text (no worker thread needed).
+
+    An exception inside the callback (including KeyboardInterrupt from Ctrl+C, also when it arrives at the very
+    first bytecode of the callback, see _install_unraisable_hook) stops the generation and is re-raised here after
+    the C call has returned; a partial text is never returned as if it were complete."""
     chunks: list[bytes] = []
     stop = threading.Event()
     failure: list[BaseException] = []
 
     def on_piece(ptr: int, length: int, _user: int) -> int:
         try:
+            if failure:  # an earlier call of this callback failed outside its try block: stop now
+                return 1
             chunks.append(ctypes.string_at(ptr, length))
             return 1 if stop.is_set() else 0
         except BaseException as e:  # noqa: BLE001 - cannot cross the C boundary: stop, re-raise after the call
@@ -326,12 +362,18 @@ def _collect_text(invoke: Callable[[Any], int], lock: threading.Lock, active: _A
             return 1
 
     cb = _lib.TokenCallback(on_piece)
+    _install_unraisable_hook()
+    ident = threading.get_ident()
     active.add(stop)
+    _ESCAPED[ident] = failure
     try:
         with lock:
             check_open()
-            _lib.check(invoke(cb))
+            status = invoke(cb)
+        if not failure:
+            _lib.check(status)
     finally:
+        _ESCAPED.pop(ident, None)
         active.discard(stop)
     if failure:
         raise failure[0]  # also KeyboardInterrupt: it was caught in the callback and is re-raised here

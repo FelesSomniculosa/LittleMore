@@ -256,6 +256,8 @@ LM_API lm_status LM_CALL lm_model_load(const char * path, const lm_model_options
 /**
  * Frees a model. NULL is ignored (LM_OK). Sessions borrow the model: while any session of it is alive the model
  * is not freed and LM_ERR_BUSY is returned (free the sessions first, then call again).
+ * A handle that was already freed must not be passed again (to this or any other function): like free(), that is
+ * undefined behaviour the library cannot detect (an opaque pointer to freed memory looks like any other pointer).
  */
 LM_API lm_status LM_CALL lm_model_free(lm_model * model);
 
@@ -348,7 +350,8 @@ LM_API lm_status LM_CALL lm_session_new(lm_model * model, const lm_session_optio
 /**
  * Frees a session. NULL is ignored (LM_OK). Called from inside the session's own token callback it does
  * nothing and returns LM_ERR_REENTRANT. It must not run while another thread is inside a call on the session
- * (it waits for a running call to finish, but calls that start afterwards would use freed memory).
+ * (it waits for a running call to finish, but calls that start afterwards would use freed memory). A freed session
+ * must not be passed again (double free, use after free): undefined behaviour, as for lm_model_free.
  */
 LM_API lm_status LM_CALL lm_session_free(lm_session * session);
 
