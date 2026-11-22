@@ -367,6 +367,16 @@ def test_lazy_checkpoint_values_do_not_pin_the_file(tmp_path):
     assert len(kept) == 8 and grown < 64 * 2**20, f"commit grew by {grown / 2**20:.0f} MiB for 8 small modules"
 
 
+def test_lazy_checkpoint_rank_reads_only_the_shape(tmp_path, monkeypatch):
+    """`rank(mod)` is the column count of U, from the `U_shape` tensor alone (no module is unpacked)."""
+    g = torch.Generator().manual_seed(16)
+    _write(tmp_path, [_tensors("a.proj", 6, 10, 4, g)])
+    lazy = ref.LazyCheckpoint(tmp_path)
+    expected = lazy["a.proj"].primary.U.shape[1]
+    monkeypatch.setattr(ref, "_build_path", lambda *a: pytest.fail("rank() unpacked the module"))
+    assert lazy.rank("a.proj") == expected == 4
+
+
 def test_lazy_checkpoint_errors(tmp_path):
     """Missing tensors fail when indexing (names only); a shape mismatch fails when the module is looked up."""
     g = torch.Generator().manual_seed(12)

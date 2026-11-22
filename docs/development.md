@@ -155,8 +155,9 @@ Memory: the LittleBit linears are read one module at a time (`reference.LazyChec
 Qwen3-8B checkpoint at 0.55 bits per weight (`LittleBitLLM/littlebit-qwen3-8b-0.55bpw`): 4.9 GiB peak working set,
 about 2.5 minutes, of which the read-back validation of the 252 linears takes about 2 minutes. Checkpoints written by
 the LittleBit training code carry three bookkeeping scalars per linear (`_eff_bit_target`, `_eff_bit_actual`,
-`_split_dim_final`); they are left out after `_split_dim_final` is checked against the rank of the signs
-(`tests/convert/test_bookkeeping_tensors.py`).
+`_split_dim_final`); they are left out after `_split_dim_final` is checked against the rank of the signs, before any
+tensor is converted (a bad checkpoint fails within seconds). The two `_eff_bit_*` values are informational and dropped
+without a check, also when a module has no `_split_dim_final` (`tests/convert/test_bookkeeping_tensors.py`).
 
 Input widths (hidden size, intermediate size) must be multiples of 128, because
 a `B1` row is whole 128-sign blocks; the converter refuses anything else. The
@@ -237,8 +238,9 @@ few percent of the perplexity of single chunks) is specific to the LittleBit mod
 the tensor-core prefill path, alone or together, removes it (they reduce it by up to a third). Its cause is not decided
 (hypotheses: rounding in the CUDA LittleBit kernels or the float32 GEMM path, amplified by the very flat output
 distribution of an untrained model; not tested). It is not the F16 output head's 16-bit cuBLAS accumulation that
-explains the CUDA gap of the 8B model (7c): with `GGML_CUDA_CUBLAS_COMPUTE_TYPE=f32` the 32-chunk std stays at 1.26e-2
-(1.27e-2 without). The standard error of the mean per-chunk gap is 0.0156/sqrt(64) = 2e-3
+explains the CUDA gap of the 8B model (7c): re-measured over the same 64 chunks as the table, the default run gives std
+0.0156 and mean gap +1.27e-3 again, and with `GGML_CUDA_CUBLAS_COMPUTE_TYPE=f32` std 0.0154 and mean gap +1.10e-3
+(over the first 32 chunks: 0.0127 and 0.0126). The standard error of the mean per-chunk gap is 0.0156/sqrt(64) = 2e-3
 over 64 chunks (2.8e-3 over 32), so the measured mean gaps of the default CUDA run (-4.5e-4 over 32 chunks, +1.27e-3 over
 64 chunks) are both within one standard error of zero, i.e. consistent with zero; no trend with the chunk count is
 claimed. On the CPU the default-settings perplexity gap is 1.16e-3 over 32 chunks (3.4e-3 over the first 8 chunks); it
@@ -264,7 +266,7 @@ $env:LITTLEMORE_RUN_8B = "1"; .venv\Scripts\python.exe -m pytest tests/e2e/test_
 `tests/e2e/test_community_8b.py` loads the converted `LittleBitLLM/littlebit-qwen3-8b-0.55bpw` GGUF through the Python
 SDK with auto-fit (all 36 layers and the head on a 6 GB GPU, GPU memory below 6 GiB, 32 greedy tokens), checks that
 the engine's tokenizer matches the checkpoint's, and compares the engine's perplexity (CUDA) with the float32 reference
-on the first chunks of WikiText-2 (1 % bound as in 7b, and 0.1 % with 32-bit cuBLAS compute, see below). It needs about 3 GB of downloads and a 2.9 GiB GGUF and never
+on the first chunks of WikiText-2 (1 % bound as in 7b, and 0.03 % with 32-bit cuBLAS compute, see below). It needs about 3 GB of downloads and a 2.9 GiB GGUF and never
 fetches or converts anything itself: without `LITTLEMORE_RUN_8B=1`, or without the files, it skips and says what is
 missing (download and conversion commands in its docstring and in [quickstart.md](quickstart.md)). The reference runs
 memory-lean (`build_model(..., packed_signs=True)` keeps the signs bit-packed and `lean_float32` applies the bf16
@@ -293,8 +295,10 @@ A trained model is much less sensitive to small faults than the init-only 0.6B o
 is weak. Measured on the first 4 chunks (relative perplexity change of the reference): a 2 % error on one output scale
 +2.5e-4 (layer 0 `down_proj`) or -2.8e-5 (layer 0 `q_proj`), a 10 % error -1.3e-4, the residual path of layer 18's
 `down_proj` left out +8.8e-3, a one-token shift of the input +1.6e-2. The test therefore also runs the engine with
-`GGML_CUDA_CUBLAS_COMPUTE_TYPE=f32` and requires 0.1 % there (measured gap 6e-6 over 4 chunks, 1.2e-5 over 32), and a
-mutation test shows that the missing residual path fails it. Scale errors of a few percent stay below every
+`GGML_CUDA_CUBLAS_COMPUTE_TYPE=f32` and requires 3e-4 there (measured gap 6.1e-6 over 4 chunks, 1.2e-5 over 32); a
+control test shows that the default run (gap 1.44e-3 over 4 chunks) fails that bound, so a pass means the switch took
+effect, and a mutation test shows that the missing residual path fails it. The 2 % scale error on layer 0's
+`down_proj` (2.5e-4) stays below it. Scale errors of a few percent stay below every
 perplexity bound here; the converter's bit-exact per-layer check covers them.
 
 ## 8. Speed benchmarks and the speed gate

@@ -15,10 +15,11 @@ residual path, half an epoch of quantization-aware distillation; licence CC BY-N
     second half scored, exactly as that test).  The reference runs memory-lean: signs kept bit-packed
     (`build_model(..., packed_signs=True)`) and the bf16 embedding / head applied in float32 (`lean_float32`), about
     4 GiB of RAM instead of about 9; the numbers are those of the plain float32 reference (tests/dev/test_reference.py).
-  * `test_engine_matches_reference_tightly_with_f32_head_compute`: the same within 0.1 % with the CUDA backend's
-    cuBLAS matmuls forced to 32-bit compute (the only source of the CUDA gap on this model, see `CUBLAS_F32`), and
-    `test_tight_bound_detects_a_missing_residual_path` shows that this tight bound catches a fault the 1 % bound
-    misses on a trained model (its docstring has the measured sensitivities).
+  * `test_engine_matches_reference_tightly_with_f32_head_compute`: the same within 0.03 % with the CUDA backend's
+    cuBLAS matmuls forced to 32-bit compute (the only source of the CUDA gap on this model, see `CUBLAS_F32`);
+    `test_tight_bound_fails_without_the_switch` shows the default engine result is outside that bound (so a pass is
+    not a loose bound), and `test_tight_bound_detects_a_missing_residual_path` shows that the tight bound catches a
+    fault the 1 % bound misses on a trained model (its docstring has the measured sensitivities).
   * `test_token_streams_identical`: the engine's tokenizer and the checkpoint's Hugging Face tokenizer give the same
     ids for the scored text, so a tokenizer difference cannot pass for a numeric one.
 
@@ -217,9 +218,12 @@ def reference(ckpt, chunk_ids):
 # batches (CUBLAS_COMPUTE_16F; ggml-cuda.cu).  On this trained model that is the whole engine-vs-reference gap on CUDA
 # (measured, 32 chunks: +9.5e-4 relative with it, -1.2e-5 with 32-bit compute; on the CPU with exact attention the gap
 # is 1.4e-6).  llama.cpp's own switch GGML_CUDA_CUBLAS_COMPUTE_TYPE=f32 forces 32-bit compute, so with it a much tighter
-# bound applies: TIGHT_TOL, about 80x the gap measured over 32 chunks (1.2e-5; 6e-6 over the first 4).
+# bound applies: TIGHT_TOL = 3e-4.  Why this value, measured: with the switch the gap is 6.1e-6 over the first 4 chunks
+# and 1.2e-5 over 32 (25x to 50x below the bound); WITHOUT it the gap is 1.44e-3 over 4 chunks, 1.85e-3 over 8 and
+# 9.5e-4 over 32 (3x to 6x above), so the tight check fails when the switch does not reach the engine
+# (`test_tight_bound_fails_without_the_switch`).  A missing residual path on one layer moves it by 8.7e-3 (caught).
 CUBLAS_F32 = {"GGML_CUDA_CUBLAS_COMPUTE_TYPE": "f32"}
-TIGHT_TOL = 1e-3
+TIGHT_TOL = 3e-4
 
 
 def _engine_nll(engine_assets, n: int, env: dict[str, str], monkeypatch) -> tuple[list[float], float, float]:
@@ -230,6 +234,14 @@ def _engine_nll(engine_assets, n: int, env: dict[str, str], monkeypatch) -> tupl
         nll, eng_ppl, secs, _ = P.engine_chunk_nlls(engine_assets, P.RAW, n, P.CUDA)
     assert abs(P.ppl(nll) - eng_ppl) / eng_ppl < 1e-4      # the differenced running values reproduce the total
     return nll, eng_ppl, secs
+
+
+@pytest.fixture(scope="module")
+def engine_default(engine_assets, chunk_ids):
+    """Engine result on CUDA with the default settings (16-bit cuBLAS accumulation for the F16 head)."""
+    with pytest.MonkeyPatch.context() as mp:
+        mp.delenv("GGML_CUDA_CUBLAS_COMPUTE_TYPE", raising=False)
+        return _engine_nll(engine_assets, len(chunk_ids), {}, mp)
 
 
 @pytest.fixture(scope="module")
@@ -250,20 +262,34 @@ def _report(tag: str, ref_nll, eng_nll, eng_ppl, ref_secs, eng_secs) -> float:
     return rel
 
 
-def test_engine_matches_reference_on_real_weights(engine_assets, chunk_ids, reference, monkeypatch):
+def test_engine_matches_reference_on_real_weights(reference, engine_default):
     """Engine (CUDA, default settings) vs reference (CPU, float32) perplexity: within 1 % (as for Qwen3-0.6B)."""
     _, ref_nll, ref_secs = reference
-    eng_nll, eng_ppl, eng_secs = _engine_nll(engine_assets, len(chunk_ids), {}, monkeypatch)
+    eng_nll, eng_ppl, eng_secs = engine_default
     rel = _report("default", ref_nll, eng_nll, eng_ppl, ref_secs, eng_secs)
     assert rel <= P.REL_TOL, f"perplexity differs by {rel:.3%} (> {P.REL_TOL:.0%})"
 
 
+def test_tight_bound_fails_without_the_switch(reference, engine_default):
+    """Control for the tight check: the DEFAULT engine result (no GGML_CUDA_CUBLAS_COMPUTE_TYPE) is outside TIGHT_TOL.
+
+    So a tight-check pass shows that the switch reached the engine and removed the head's 16-bit accumulation, not that
+    the bound is loose.  Measured: 1.44e-3 over the default 4 chunks (4.8x TIGHT_TOL).
+    """
+    _, ref_nll, _ = reference
+    _, eng_ppl, _ = engine_default
+    ref_ppl = P.ppl(ref_nll)
+    rel = abs(eng_ppl - ref_ppl) / ref_ppl
+    print(f"\n[8b control] default engine vs reference: rel={rel:.3e} (TIGHT_TOL {TIGHT_TOL:.0e})")
+    assert rel > TIGHT_TOL
+
+
 def test_engine_matches_reference_tightly_with_f32_head_compute(reference, engine_f32_head):
-    """With 32-bit cuBLAS compute the engine matches the reference within 0.1 % (see CUBLAS_F32)."""
+    """With 32-bit cuBLAS compute the engine matches the reference within TIGHT_TOL = 0.03 % (see CUBLAS_F32)."""
     _, ref_nll, ref_secs = reference
     eng_nll, eng_ppl, eng_secs = engine_f32_head
     rel = _report("GGML_CUDA_CUBLAS_COMPUTE_TYPE=f32", ref_nll, eng_nll, eng_ppl, ref_secs, eng_secs)
-    assert rel <= TIGHT_TOL, f"perplexity differs by {rel:.3%} (> {TIGHT_TOL:.1%})"
+    assert rel <= TIGHT_TOL, f"perplexity differs by {rel:.3%} (> {TIGHT_TOL:.2%})"
 
 
 def test_tight_bound_detects_a_missing_residual_path(reference, chunk_ids, engine_f32_head):
@@ -271,8 +297,9 @@ def test_tight_bound_detects_a_missing_residual_path(reference, chunk_ids, engin
 
     Measured sensitivity on this trained model (4 chunks, relative perplexity change of the reference): residual path
     of layer 18's down_proj left out +8.8e-3 (caught by TIGHT_TOL, NOT by the 1 % bound), a one-token shift of the
-    input +1.6e-2, but a 2 % error on one output scale only +2.5e-4 (layer 0 down_proj) or -2.8e-5 (layer 0 q_proj):
-    single scale errors of that size are left to the converter's bit-exact per-layer check (tools/convert/validate.py).
+    input +1.6e-2, but a 2 % error on one output scale only +2.5e-4 (layer 0 down_proj) or -2.8e-5 (layer 0 q_proj),
+    both below TIGHT_TOL: single scale errors of that size are left to the converter's bit-exact per-layer check
+    (tools/convert/validate.py).
     """
     model, ref_nll, _ = reference
     eng_nll, eng_ppl, _ = engine_f32_head

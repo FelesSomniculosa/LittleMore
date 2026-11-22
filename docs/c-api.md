@@ -133,7 +133,9 @@ Known limits, measured:
 - **0 GPU layers still uses the GPU (intended), `devices = "none"` is the CPU-only switch.** With a GPU in the
   device list, the engine runs large prompt batches on the GPU even when no layer is offloaded (explicit
   `n_gpu_layers = 0`, or an auto-fit that fits nothing), as llama.cpp does: it costs GPU memory and makes
-  prompts much faster. `devices = "none"` uses no GPU and allocates no GPU memory; the CPU-mode CTest runs assert
+  prompts much faster. `devices = "none"` uses no GPU: the model allocates nothing on it (no weights, cache or
+  compute buffers). Loading the backends still creates a driver context on the GPU, about 73 MiB in `nvidia-smi`
+  (measured on the RTX 4050 Laptop with no model loaded at all). The CPU-mode CTest runs assert
   this from the engine's allocation log (no GPU buffer, no node on a GPU), and a control run in CUDA mode shows
   the same check detects GPU use. Measured on one RTX 4050 Laptop GPU (6 GiB), 0 GPU layers, GPU kept vs
   `"none"` (3 interleaved rounds, median of 15; llama-bench with 4 threads and batch 512, first-token time

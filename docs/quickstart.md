@@ -44,8 +44,8 @@ python -c "import littlemore; print([b['name'] for b in littlemore.backends_info
 
 The example uses the community checkpoint
 [`LittleBitLLM/littlebit-qwen3-8b-0.55bpw`](https://huggingface.co/LittleBitLLM/littlebit-qwen3-8b-0.55bpw):
-Qwen3-8B compressed to 0.55 bits per weight with LittleBit-2 and recovered with half an epoch of quantization-aware
-distillation (2.97 GB download). See "Licences" below before you use it.
+Qwen3-8B compressed to 0.55 bits per weight with LittleBit-2 and, per its model card, recovered with 0.5 epoch of
+quantization-aware knowledge distillation (2.97 GB download). See "Licences" below before you use it.
 
 ```powershell
 .venv\Scripts\hf.exe download LittleBitLLM/littlebit-qwen3-8b-0.55bpw `
@@ -68,8 +68,8 @@ writes a 2.84 GiB file (2905 MiB): 490 MiB of 1-bit sign matrices, the token emb
 layers back from the file and compares it with an independent float64 evaluation of the checkpoint; any difference
 aborts the conversion and leaves no file behind.
 
-Measured for this model: 2.5 to 3 minutes (about 2 minutes of it is the read-back check), at most 4.9 GiB of RAM (the
-layers are processed one at a time). The converter estimates its memory need first and stops with a message if the
+Measured for this model: about 3 minutes (161 to 182 s in two runs; about 2 minutes of it is the read-back check)
+and about 5 GiB of RAM at the peak (4.92 to 4.95 GiB; the layers are processed one at a time). The converter estimates its memory need first and stops with a message if the
 free RAM is clearly too small. `--head-type q8_0` (or `q6_k`) stores the embedding and the head in 8 (or 6.6) bits per
 value instead of 16: a smaller file and faster generation, at a small accuracy cost (measured on Qwen3-0.6B and 1.7B in
 [bench/results/phase1.md](../bench/results/phase1.md), not on this model); the 8B model fits a 6 GB GPU without it.
@@ -111,22 +111,24 @@ is in [python/README.md](../python/README.md).
   4096-token context. A number (`n_gpu_layers=20`) sets the count yourself.
 - **`n_gpu_layers=0` still uses the GPU** for long prompts (it processes prompt batches of 32 tokens or more there,
   which makes prompts much faster; here 1613 MiB of GPU memory), while generation runs on the CPU. This is intended.
-- **`devices="none"`** (CLI `--cpu-only`) uses no GPU at all: only the CPU computes and no GPU memory is allocated for
-  the model (loading the backends alone shows about 70 MiB in `nvidia-smi`).
+- **`devices="none"`** (CLI `--cpu-only`) uses no GPU at all: only the CPU computes and the model allocates nothing on
+  the GPU (loading the backends alone still shows a driver context of about 73 MiB in `nvidia-smi`, measured with no
+  model loaded).
 - On Windows the driver does not report other programs' GPU memory reliably. If another program uses a lot of it, set
   `vram_budget` (bytes) so the fit does not overcommit.
 
 ## 6. Speed
 
-Measured with `llama-bench` through `bench/run_bench.py` (median of 10 repetitions, 3 interleaved rounds for the GPU
-row; 3 repetitions, 1 round for the others; GPU SM clock 1.5 to 2.3 GHz during the runs). Raw results:
+Measured with `llama-bench` through `bench/run_bench.py`. GPU row: 3 interleaved rounds of 10 repetitions, the value
+is the mean of the 3 round medians; other rows: 1 round of 3 repetitions, the median. GPU SM clock 1.5 to 2.3 GHz
+during the runs; llama-bench's default thread count. Raw results:
 `bench/results/community_8b_*.json`.
 
 | Setting | Generation, tokens/s | Prompt (512 tokens), tokens/s | GPU memory |
 |---|---|---|---|
 | all layers on the GPU (what auto-fit picks) | 63.5 | 1223 | 2197 MiB (llama-bench) / 2703 MiB (SDK, 4096 context) |
 | `n_gpu_layers=0` (GPU only for prompt batches) | 13.3 | 735 | 1667 MiB (llama-bench) |
-| CPU only (`devices="none"`, 10-core i7-13620H) | 13.4 | 41 | none |
+| CPU only (`devices="none"`, i7-13620H) | 13.4 | 41 | none |
 
 Through the SDK, 32 greedy tokens took 0.59 s on the GPU (first piece after 82 ms, then 61.5 tokens/s) and 3.0 s on the
 CPU only.
@@ -135,9 +137,11 @@ CPU only.
 
 **This checkpoint is far below the original model**, and it is an early one:
 
-- Its model card reports WikiText-2 perplexity 24.48 against 9.73 for the original Qwen3-8B (lower is better), C4
-  32.10 against 13.30, and ARC-Challenge 19.5 % (chance level) against 55.5 %. It was trained for 0.5 epoch, a tenth
-  of what the LittleBit paper uses; the card expects large gains from longer training.
+- Its model card (and the evaluation logs in the model repository) report, for the original Qwen3-8B (BF16) against
+  this checkpoint: WikiText-2 perplexity 9.73 against 24.48 (lower is better), C4 perplexity 13.30 against 32.10,
+  ARC-Easy 83.5 % against 44.4 %, ARC-Challenge 55.5 % against 19.5 % (the card notes this is chance level for 4
+  choices), PIQA 76.5 % against 62.6 % (zero-shot accuracy). The card calls it an early checkpoint: 0.5 epoch of
+  distillation where the LittleBit paper uses 5, and it expects large gains from longer training.
 - LittleMore reproduces the card's number: WikiText-2 perplexity **24.49** (engine on the GPU, 2048-token windows,
   every token scored, the test split joined as the card's evaluation does: 299078 tokens, 146 windows; see the note
   below), against 24.48 on the card.
@@ -150,10 +154,13 @@ CPU only.
 
 Correctness, separately from quality: on the first 32 chunks of 512 tokens of WikiText-2 (the setting of the
 project's perplexity parity test), the engine and an independent float32 PyTorch evaluation of the checkpoint
-(`tools/dev/reference.py`) agree within 0.1 % on the GPU (21.653 against 21.632) and within 0.0002 % on the CPU with
-exact attention settings (21.63250 against 21.63247). The small GPU difference comes from the output head: for prompt
-batches, cuBLAS multiplies the F16 head with 16-bit accumulation; with `GGML_CUDA_CUBLAS_COMPUTE_TYPE=f32` (an
-llama.cpp setting) the GPU result is 21.6322, and generation speed and prompt speed did not change measurably.
+(`tools/dev/reference.py`) agree within 0.1 % on the GPU (21.653 against 21.632, +0.095 %) and within 0.0002 % on
+the CPU with exact attention settings (21.63250 against 21.63247). The small GPU difference comes from the output
+head: for prompt batches, cuBLAS multiplies the F16 head with 16-bit accumulation. LittleMore keeps that default (it is
+llama.cpp's); to remove the difference, set the llama.cpp environment variable `GGML_CUDA_CUBLAS_COMPUTE_TYPE=f32`
+before starting Python or the CLI: the GPU result is then 21.6322 (-1.2e-5 relative to the reference instead of
++9.5e-4), and generation and prompt speed did not change measurably on this model (see
+[environment-variables.md](environment-variables.md)).
 
 Note on the perplexity settings: the card's value comes from the LittleBit evaluation script; its log in the model
 repository shows 299078 tokens in 146 windows, i.e. non-overlapping 2048-token windows over the test split joined with
@@ -165,10 +172,12 @@ every token. `llama-perplexity` by default scores only the second half of each w
 
 ## Licences
 
-- **The community checkpoint is CC BY-NC 4.0 (non-commercial)**, inherited from the LittleBit code, and the base
-  model's licence (Qwen3-8B) also applies; see its model card. It is an independent community release, not an
+- **The community checkpoint is CC BY-NC 4.0 (non-commercial)**: its model card says so ("inherited from the
+  LittleBit code") and adds that the base model's own licence also applies; Qwen/Qwen3-8B is Apache 2.0 (its model
+  card metadata). It is an independent community release, not an
   official Samsung model.
-- Samsung's own LittleBit checkpoints and code are also released under CC BY-NC 4.0 (non-commercial).
+- The LittleBit code (github.com/SamsungLabs/LittleBit) is released under CC BY-NC 4.0 (its LICENSE file). For any
+  other LittleBit checkpoint, read the licence on its own card.
 - LittleMore itself is MIT licensed; the bundled engine binaries carry the llama.cpp / ggml MIT licence
   (`THIRD_PARTY_NOTICES` in the wheel). The licence of a model you run is separate from the software's: check it before
   you use a model commercially.

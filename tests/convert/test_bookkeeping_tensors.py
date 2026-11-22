@@ -44,11 +44,12 @@ def q3(tmp_path_factory):
 
 
 def _add_bookkeeping(src: Path, dst: Path, rank_offset: dict[str, int] | None = None,
-                     extra: dict[str, torch.Tensor] | None = None) -> list[str]:
+                     extra: dict[str, torch.Tensor] | None = None, split_dim: bool = True) -> list[str]:
     """Copy checkpoint `src` to `dst` and add the three bookkeeping scalars to every LittleBit linear.
 
     `rank_offset` maps a module name to a number added to its `_split_dim_final` (to fake a wrong rank);
-    `extra` adds arbitrary further tensors.  Returns the module names that got bookkeeping scalars.
+    `extra` adds arbitrary further tensors; `split_dim=False` leaves `_split_dim_final` out (only the two
+    `_eff_bit_*` scalars).  Returns the module names that got bookkeeping scalars.
     """
     shutil.copytree(src, dst)
     f = dst / "model.safetensors"
@@ -58,7 +59,8 @@ def _add_bookkeeping(src: Path, dst: Path, rank_offset: dict[str, int] | None = 
         rank = int(t[f"{m}.U_shape"][1])
         t[f"{m}._eff_bit_target"] = torch.tensor(0.55, dtype=torch.bfloat16)
         t[f"{m}._eff_bit_actual"] = torch.tensor(0.546875, dtype=torch.bfloat16)
-        t[f"{m}._split_dim_final"] = torch.tensor(rank + (rank_offset or {}).get(m, 0), dtype=torch.int64)
+        if split_dim:
+            t[f"{m}._split_dim_final"] = torch.tensor(rank + (rank_offset or {}).get(m, 0), dtype=torch.int64)
     t.update(extra or {})
     save_file(t, str(f), metadata={"format": "pt"})
     return mods
@@ -85,6 +87,44 @@ def test_wrong_split_dim_final_is_refused(q3, tmp_path):
     with pytest.raises(lb.ConversionError, match=rf"{victim}\._split_dim_final is {rank + 8} but .* rank {rank}"):
         lb.convert(tmp_path / "ck", tmp_path / "o.gguf")
     assert not (tmp_path / "o.gguf").exists()
+
+
+class _PrepareCalled(Exception):
+    """Raised by the patched converter: llama.cpp's tensor conversion was reached."""
+
+
+@needs_qwen_tok
+def test_wrong_split_dim_final_fails_before_any_tensor_is_converted(q3, tmp_path, monkeypatch):
+    """The rank check runs before llama.cpp's converter converts tensors (prepare_tensors), so an 8B checkpoint with
+    a bad rank fails within seconds instead of after minutes of conversion.
+
+    Mutation check: with the check moved after prepare_tensors this test sees _PrepareCalled instead of the error.
+    """
+    victim = "model.layers.0.self_attn.k_proj"
+    _add_bookkeeping(q3, tmp_path / "ck", rank_offset={victim: 1})
+    make = lb._make_converter
+
+    def make_guarded(*a, **k):
+        """The real converter, whose prepare_tensors raises _PrepareCalled."""
+        conv = make(*a, **k)
+
+        def boom():
+            raise _PrepareCalled()
+        conv.prepare_tensors = boom
+        return conv
+    monkeypatch.setattr(lb, "_make_converter", make_guarded)
+    with pytest.raises(lb.ConversionError, match=rf"{victim}\._split_dim_final"):
+        lb.convert(tmp_path / "ck", tmp_path / "o.gguf")
+
+
+@needs_qwen_tok
+def test_eff_bit_scalars_without_split_dim_are_dropped_unchecked(q3, tmp_path):
+    """`_eff_bit_*` alone (no `_split_dim_final`) are informational: dropped, nothing to check, conversion validates."""
+    mods = _add_bookkeeping(q3, tmp_path / "ck", split_dim=False)
+    report = lb.convert_checkpoint(tmp_path / "ck", tmp_path / "o.gguf")
+    assert report.n_validated == report.n_linears == len(mods)
+    assert len(report.bookkeeping) == 2 * len(mods)
+    assert all(k.endswith(("._eff_bit_target", "._eff_bit_actual")) for k in report.bookkeeping)
 
 
 @needs_qwen_tok

@@ -39,7 +39,8 @@ def _add_model_args(p: argparse.ArgumentParser) -> None:
                    help='layers to put on the GPU: "auto" (default, as many as fit) or a number. Note: with 0 the GPU '
                         "still speeds up big prompt batches; use --cpu-only to avoid the GPU completely")
     p.add_argument("--cpu-only", action="store_true",
-                   help='use no GPU at all (devices="none"): no GPU memory is allocated, generation and prompts run on the CPU')
+                   help='use no GPU at all (devices="none"): the model allocates nothing on the GPU (the loaded backends still '
+                        'hold a small driver context, about 73 MiB), generation and prompts run on the CPU')
     p.add_argument("--devices", default=None, metavar="NAMES",
                    help='comma-separated device names as listed by the library, e.g. "CUDA0" (default: every GPU)')
     p.add_argument("--n-ctx", type=int, default=0, help="context size in tokens (0 = library default, 4096)")

@@ -354,7 +354,8 @@ class Model:
             the GPU still speeds up large prompt batches (it costs about 0.7 to 1 GiB of GPU memory; generation
             stays on the CPU). This is intended; use `devices="none"` for no GPU use at all.
         devices: which devices to use, by the names `backends_info()` prints. `None` (default) = every GPU,
-            `"none"` = CPU only (no GPU memory is allocated), `"CUDA0"` or `"CUDA0,CUDA1"` = exactly these.
+            `"none"` = CPU only (the model allocates nothing on the GPU; loading the backends still shows a driver
+            context of about 73 MiB in nvidia-smi), `"CUDA0"` or `"CUDA0,CUDA1"` = exactly these.
         n_ctx: context size in tokens (prompt plus answer); 0 = the library default (4096, capped at the model's).
         n_threads: CPU threads; 0 = the library default.
         n_batch: prompt batch size; 0 = the library default (512).

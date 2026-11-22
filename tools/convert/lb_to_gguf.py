@@ -65,7 +65,8 @@ no such restriction: any logical rank >= 1 is padded up (see `_build_path`).
 Checkpoints from the LittleBit training code
     Trained checkpoints (e.g. the community release LittleBitLLM/littlebit-qwen3-8b-0.55bpw) carry three bookkeeping
     scalars per linear (`_eff_bit_target`, `_eff_bit_actual`, `_split_dim_final`); they are not weights and are left
-    out after `_split_dim_final` is checked against the rank of the signs (see `_drop_bookkeeping`).
+    out after `_split_dim_final` is checked against the rank of the signs, before any tensor is converted; the
+    `_eff_bit_*` values are informational and dropped unchecked (see `_drop_bookkeeping`).
 
 Memory
     The LittleBit linears are read one module at a time (`reference.LazyCheckpoint`); the peak is the B1 copies of all
@@ -121,9 +122,9 @@ import os
 import re
 import sys
 import tempfile
+from collections.abc import Mapping
 from dataclasses import dataclass, field
 from pathlib import Path
-from collections.abc import Mapping
 from typing import Any
 
 import numpy as np
@@ -609,7 +610,7 @@ def _build(ckpt: Path, params: Mapping[str, ref.LBLinearParams], tmp: Path, vali
             lb_filtered.add(filt)
     for filt in lb_filtered:
         conv.model_tensors.pop(filt, None)
-    recorded_rank = _drop_bookkeeping(conv, ckpt, params, report)
+    _drop_bookkeeping(conv, ckpt, params, report)   # also checks _split_dim_final, before any tensor is converted
     report.dropped = sorted(src for src, filt in conv._source_tensor_names.items()
                             if filt is None and _lb_module_of(src) not in params)
     keys = set(_checkpoint_keys(ckpt))
@@ -638,9 +639,6 @@ def _build(ckpt: Path, params: Mapping[str, ref.LBLinearParams], tmp: Path, vali
         p = params[mod]   # read and unpacked now; replaced by the next module's on the next iteration
         bid, sub = _split_layer_name(mod)
         out_f, in_f = p.primary.U.shape[0], p.primary.V.shape[1]
-        if mod in recorded_rank and recorded_rank[mod] != p.primary.U.shape[1]:
-            raise ConversionError(f"{mod}._split_dim_final is {recorded_rank[mod]} but the sign matrices of {mod} "
-                                  f"have rank {p.primary.U.shape[1]}: the checkpoint does not match its own bookkeeping")
         ltype = layer_types[bid] if (layer_types and bid is not None and bid < len(layer_types)) else None
         key = (ltype, sub, out_f, in_f)
         if key not in probe_cache:
@@ -698,15 +696,17 @@ def _build(ckpt: Path, params: Mapping[str, ref.LBLinearParams], tmp: Path, vali
 
 
 def _drop_bookkeeping(conv: ModelBase, ckpt: Path, params: Mapping[str, ref.LBLinearParams],
-                      report: ConversionReport) -> dict[str, int]:
+                      report: ConversionReport) -> None:
     """Take the LittleBit bookkeeping scalars (`_LB_BOOKKEEPING`) of LittleBit linears out of the converter's index.
 
-    Returns module -> the rank its `_split_dim_final` records.  `_build` compares it with the rank of the module's
-    sign matrices (the number of columns of U, which `reference.LazyCheckpoint` checks against V and the scales;
-    the residual path has the same shape, checked in `convert_checkpoint`) when it unpacks the module: a different
-    value means the tensors are not what the training code recorded, so the checkpoint is refused rather than
-    converted.  The `_eff_bit_*` values are informational (the bits per weight the training code aimed for and
-    reached); their range over the model is logged.  The names of everything dropped are kept in `report.bookkeeping`.
+    Runs before llama.cpp's converter touches any tensor, so a bad checkpoint fails within seconds.
+    `_split_dim_final` must equal the rank of its linear's sign matrices: the logical column count of U from its
+    `U_shape` tensor (`reference.LazyCheckpoint.rank`, no signs unpacked; `convert_checkpoint` has already checked
+    that shape against the packed words, against V and the scales, and the residual path against the primary one).
+    A different value means the tensors are not what the training code recorded, so the checkpoint is refused.
+    The `_eff_bit_*` values are informational (the bits per weight the training code aimed for and reached) and are
+    NOT checked: they are dropped whether or not the module also has a `_split_dim_final`, and only their range over
+    the model is logged.  The names of everything dropped are kept in `report.bookkeeping`.
     """
     found: dict[str, str] = {}   # source key -> the name the converter indexed it under
     for src, filt in conv._source_tensor_names.items():
@@ -714,8 +714,8 @@ def _drop_bookkeeping(conv: ModelBase, ckpt: Path, params: Mapping[str, ref.LBLi
         if m and m["mod"] in params and filt is not None:
             found[src] = filt
     if not found:
-        return {}
-    recorded: dict[str, int] = {}
+        return
+    n_ranks = 0
     eff: dict[str, list[float]] = {"_eff_bit_target": [], "_eff_bit_actual": []}
     for shard in _shard_files(ckpt):
         with safe_open(str(shard), framework="pt") as f:
@@ -730,7 +730,11 @@ def _drop_bookkeeping(conv: ModelBase, ckpt: Path, params: Mapping[str, ref.LBLi
                 if m["name"] == "_split_dim_final":
                     if value.is_floating_point() or value.is_complex():
                         raise ConversionError(f"{key}: expected an integer rank (LittleBit bookkeeping), found {value.dtype}")
-                    recorded[m["mod"]] = int(value.item())
+                    rank = _rank_of(params, m["mod"])
+                    if int(value.item()) != rank:
+                        raise ConversionError(f"{key} is {int(value.item())} but the sign matrices of {m['mod']} have "
+                                              f"rank {rank}: the checkpoint does not match its own bookkeeping")
+                    n_ranks += 1
                 else:
                     eff[m["name"]].append(float(value.float().item()))
     for filt in found.values():
@@ -738,8 +742,13 @@ def _drop_bookkeeping(conv: ModelBase, ckpt: Path, params: Mapping[str, ref.LBLi
     report.bookkeeping = sorted(found)
     ranges = ", ".join(f"{k} {min(v):.4f}..{max(v):.4f}" for k, v in eff.items() if v)
     logger.info("left out %d LittleBit bookkeeping scalars (%d recorded ranks, checked against the signs; %s)",
-                len(found), len(recorded), ranges or "no bit-budget values")
-    return recorded
+                len(found), n_ranks, ranges or "no bit-budget values")
+
+
+def _rank_of(params: Mapping[str, ref.LBLinearParams], mod: str) -> int:
+    """Rank of module `mod`'s primary path: from the shape tensor alone for a LazyCheckpoint, else from U."""
+    rank = getattr(params, "rank", None)
+    return int(rank(mod)) if callable(rank) else int(params[mod].primary.U.shape[1])
 
 
 def _write_gemma3_swa_pattern(conv: ModelBase) -> None:

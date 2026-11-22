@@ -289,6 +289,16 @@ class LazyCheckpoint(Mapping):
                     t[name] = f.get_tensor(key).clone()
         return LBLinearParams(_build_path(mod, t, ""), _build_path(mod, t, "_R") if self._residual[mod] else None)
 
+    def rank(self, mod: str) -> int:
+        """Rank of module `mod`'s primary path (columns of U) from its small `U_shape` tensor; no signs are read.
+
+        Only the shape tensor is consulted; a lookup (`self[mod]`) checks it against the packed signs."""
+        from safetensors import safe_open
+
+        shard, key = self._index[mod]["U_shape"]
+        with safe_open(str(shard), framework="pt") as f:
+            return int(f.get_tensor(key).reshape(-1)[1])
+
     def __contains__(self, mod: object) -> bool:
         """Membership from the index alone (the inherited Mapping version would read and unpack the module)."""
         return mod in self._index
