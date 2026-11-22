@@ -28,6 +28,7 @@ from __future__ import annotations
 
 import atexit
 import ctypes
+import math
 import operator
 import queue
 import re
@@ -116,6 +117,8 @@ def _make_sampling(**kw: Any) -> _lib.Sampling:
     s = _lib.Sampling()
     _lib.check(lib.lm_sampling_default(ctypes.byref(s)), lib)
     if kw.get("temperature") is not None:
+        if math.isnan(float(kw["temperature"])):  # the library refuses NaN too; refuse it here as the other ranges
+            raise ValueError("temperature must be a number, not NaN (<= 0 is greedy)")
         s.temperature = float(kw["temperature"])
     if kw.get("top_k") is not None:
         s.top_k = _sampling_int("top_k", kw["top_k"], 0, 2**31 - 1)  # 0 turns it off

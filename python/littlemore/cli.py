@@ -10,7 +10,8 @@ what is missing instead of failing with an import traceback. `run` and `bench` n
 
 Exit codes: 0 success; 1 a LittleMore or conversion error (printed as `error: ...` on stderr, no traceback);
 2 a command-line usage error: a bad option (argparse) or a bad value the library refuses (for example
-`--max-tokens 0`), also printed as `error: ...`.
+`--max-tokens 0`), also printed as `error: ...`; 130 interrupted by Ctrl+C while loading or benchmarking (Ctrl+C during
+a streamed answer of `run` only stops that answer).
 """
 from __future__ import annotations
 
@@ -331,6 +332,10 @@ def main(argv: Sequence[str] | None = None) -> int:
     except LittleMoreError as e:
         print(f"error: {e}", file=sys.stderr)
         return 2 if e.status_name == "USAGE" else 1
+    except KeyboardInterrupt:  # Ctrl+C outside a streamed answer (loading, bench): no traceback
+        print(file=sys.stderr)
+        print("interrupted", file=sys.stderr)
+        return 130
 
 
 if __name__ == "__main__":
