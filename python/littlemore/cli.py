@@ -8,16 +8,19 @@
 transformers and the GGUF writer; a plain `pip install littlemore` does not carry those, so `convert` explains
 what is missing instead of failing with an import traceback. `run` and `bench` need only the installed package.
 
-Exit codes: 0 success, 1 a LittleMore or conversion error (printed as `error: ...` on stderr, no traceback),
-2 a command-line usage error (argparse).
+Exit codes: 0 success; 1 a LittleMore or conversion error (printed as `error: ...` on stderr, no traceback);
+2 a command-line usage error: a bad option (argparse) or a bad value the library refuses (for example
+`--max-tokens 0`), also printed as `error: ...`.
 """
 from __future__ import annotations
 
 import argparse
+import importlib
 import json
 import statistics
 import sys
 import time
+import types
 from pathlib import Path
 from typing import Sequence
 
@@ -62,25 +65,47 @@ def _open_model(a: argparse.Namespace, n_ctx: int | None = None):
 # --------------------------------------------------------------------------------------------------------------
 # convert
 # --------------------------------------------------------------------------------------------------------------
+def _find_converter() -> tuple[Path | None, list[Path]]:
+    """Locate `tools/convert/lb_to_gguf.py`: first in the source checkout this package lives in, then in the working
+    directory (running from the repository root). Returns (repository root or None, the roots that were searched)."""
+    roots = [_lib._REPO_ROOT, Path.cwd()]
+    for root in roots:
+        if (root / "tools" / "convert" / "lb_to_gguf.py").is_file():
+            return root, roots
+    return None, roots
+
+
 def _cmd_convert(argv: Sequence[str]) -> int:
-    """Forward `argv` to the repository's converter (`python -m tools.convert.lb_to_gguf`), unchanged."""
+    """Forward `argv` to the repository's converter (`tools/convert/lb_to_gguf.py`), unchanged.
+
+    The converter is imported from the folder where its file was found, never from whatever `tools` package happens
+    to be first on `sys.path` (a generic name that other projects use too)."""
+    root, searched = _find_converter()
+    if root is None:
+        print("error: `littlemore convert` needs the converter script tools/convert/lb_to_gguf.py of the LittleMore "
+              "source repository, which the installed package does not include. It was not found under "
+              + " or ".join(str(r) for r in searched) + ". Run the command from a source checkout "
+              "(see docs/development.md).", file=sys.stderr)
+        return 1
+    script = (root / "tools" / "convert" / "lb_to_gguf.py").resolve()
+    for name in [n for n in sys.modules if n == "tools" or n.startswith("tools.")]:
+        mod_file = getattr(sys.modules[name], "__file__", None)
+        if not mod_file or not Path(mod_file).resolve().is_relative_to(root.resolve()):
+            del sys.modules[name]  # an unrelated `tools` that was imported earlier would shadow the converter
+    # `tools` is a namespace package in the repository (no __init__.py), and Python always prefers a REGULAR package
+    # of the same name found anywhere on sys.path, so a path entry is not enough: register the repository's folder
+    # as the `tools` package explicitly, then import the converter through it.
+    pkg = types.ModuleType("tools")
+    pkg.__path__ = [str(root / "tools")]
+    sys.modules["tools"] = pkg
     try:
-        try:
-            from tools.convert import lb_to_gguf  # already importable (run from the repository root)
-        except ModuleNotFoundError as e:
-            if e.name not in ("tools", "tools.convert", "tools.convert.lb_to_gguf"):
-                raise
-            repo = _lib._REPO_ROOT  # a source checkout: python/littlemore/../../
-            if not (repo / "tools" / "convert" / "lb_to_gguf.py").is_file():
-                print("error: `littlemore convert` needs the converter script of the LittleMore source repository "
-                      "(tools/convert/lb_to_gguf.py), which the installed package does not include. Run it from a "
-                      "source checkout (see docs/development.md).", file=sys.stderr)
-                return 1
-            sys.path.insert(0, str(repo))
-            from tools.convert import lb_to_gguf
+        lb_to_gguf = importlib.import_module("tools.convert.lb_to_gguf")
     except ImportError as e:
-        print(f"error: the converter needs extra packages that are not installed ({e}); install the conversion "
-              "requirements listed in docs/development.md (PyTorch, transformers, gguf).", file=sys.stderr)
+        print(f"error: cannot import the converter {script}: {e}. Install the conversion requirements listed in "
+              "docs/development.md (PyTorch, transformers, gguf).", file=sys.stderr)
+        return 1
+    if Path(lb_to_gguf.__file__).resolve() != script:
+        print(f"error: imported {lb_to_gguf.__file__} instead of the converter {script}", file=sys.stderr)
         return 1
     return int(lb_to_gguf.main(list(argv)))
 
@@ -119,7 +144,10 @@ def _answer(model, history: list[dict[str, str]], kw: dict) -> str:
 
 
 def _cmd_run(a: argparse.Namespace) -> int:
+    from .model import _make_sampling
+
     kw = _sampling_kwargs(a)
+    _make_sampling(**kw)  # refuse a bad value (ValueError) before the model is loaded, not in the middle of a chat
     with _open_model(a) as model:
         history: list[dict[str, str]] = [{"role": "system", "content": a.system}] if a.system else []
         if a.prompt is not None:  # one question, one answer: for scripts and tests
@@ -213,6 +241,17 @@ def _cmd_bench(a: argparse.Namespace) -> int:
 # --------------------------------------------------------------------------------------------------------------
 # Entry point
 # --------------------------------------------------------------------------------------------------------------
+def _positive_int(text: str) -> int:
+    """argparse type: an integer >= 1 (a clean usage error instead of a crash or a meaningless measurement)."""
+    try:
+        value = int(text)
+    except ValueError:
+        raise argparse.ArgumentTypeError(f"{text!r} is not an integer") from None
+    if value < 1:
+        raise argparse.ArgumentTypeError(f"must be a positive integer (>= 1), not {value}")
+    return value
+
+
 def build_parser() -> argparse.ArgumentParser:
     """The argument parser (`convert` is listed here for --help but handled before parsing, see `main`)."""
     ap = argparse.ArgumentParser(prog="littlemore", description="Run LittleBit and GGUF models: convert, chat, benchmark.")
@@ -233,9 +272,10 @@ def build_parser() -> argparse.ArgumentParser:
 
     bench = sub.add_parser("bench", help="measure load time, first-piece latency and generation speed")
     _add_model_args(bench)
-    bench.add_argument("--n-prompt", type=int, default=128, help="prompt length in tokens (default 128)")
-    bench.add_argument("--n-gen", type=int, default=64, help="most tokens to generate (default 64)")
-    bench.add_argument("--reps", type=int, default=3, help="timed repetitions after one warm-up (default 3)")
+    bench.add_argument("--n-prompt", type=_positive_int, default=128, help="prompt length in tokens (default 128)")
+    bench.add_argument("--n-gen", type=_positive_int, default=64, help="most tokens to generate (default 64)")
+    bench.add_argument("--reps", type=_positive_int, default=3,
+                       help="timed repetitions after one warm-up (default 3, at least 1)")
     bench.add_argument("--json", action="store_true", help="print the result as JSON")
     return ap
 
@@ -253,9 +293,12 @@ def main(argv: Sequence[str] | None = None) -> int:
     a = build_parser().parse_args(args)
     try:
         return _cmd_run(a) if a.command == "run" else _cmd_bench(a)
+    except ValueError as e:  # a value the library refuses (bad sampling or size option): a usage error
+        print(f"error: {e}", file=sys.stderr)
+        return 2
     except LittleMoreError as e:
         print(f"error: {e}", file=sys.stderr)
-        return 1
+        return 2 if e.status_name == "USAGE" else 1
 
 
 if __name__ == "__main__":

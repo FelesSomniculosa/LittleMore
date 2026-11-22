@@ -26,12 +26,14 @@ import gc
 import importlib.util
 import json
 import os
+import pickle
 import re
 import shutil
 import subprocess
 import sys
 import threading
 import time
+import warnings
 from pathlib import Path
 
 import pytest
@@ -66,7 +68,7 @@ def tiny_gguf(lib_path: Path) -> Path:
     try:
         spec.loader.exec_module(mod)
         return mod.build(TINY_GGUF)
-    except Exception as e:  # pragma: no cover - missing torch/transformers
+    except ImportError as e:  # pragma: no cover - missing torch/transformers
         pytest.skip(f"cannot build the tiny test model: {e!r}")
 
 
@@ -100,14 +102,23 @@ def test_generate_stream_yields_tokens(model) -> None:
 
 @pytest.mark.smoke
 def test_chat_applies_template(model) -> None:
-    """The messages go through the model's chat template: the system message changes the answer, the answer
-    differs from a raw `generate` of the bare text, and the call is deterministic."""
+    """`chat` formats the messages with the model's ChatML template: its answer to a user message equals the
+    answer `generate` gives to the same conversation written out as ChatML text (greedy, and also with a seeded
+    sampler, where equal text is much stronger evidence), and differs when the message or the system prompt changes."""
+    def framed(content: str) -> str:
+        return "<|im_start|>user\n" + content + "<|im_end|>\n<|im_start|>assistant\n"
+
     user = [{"role": "user", "content": "Hello"}]
+    greedy = dict(temperature=0, max_tokens=12)
+    assert model.chat(user, **greedy) == model.generate(framed("Hello"), **greedy)
+    sampled = dict(temperature=1.5, seed=7, max_tokens=16)  # varied text: an accidental match is very unlikely
+    a = model.chat(user, **sampled)
+    assert a == model.generate(framed("Hello"), **sampled)
+    assert a == model.chat(user, **sampled), "the same seed must give the same text"
+    assert a != model.chat([{"role": "user", "content": "Goodbye"}], **sampled), "the user text must reach the model"
     with_system = [{"role": "system", "content": "Be brief."}] + user
-    a = model.chat(user, max_tokens=12)
-    assert a == model.chat(user, max_tokens=12), "default sampling must be deterministic"
-    assert a != model.chat(with_system, max_tokens=12), "the system message must reach the model"
-    assert a != model.generate("Hello", max_tokens=12), "chat must wrap the text in the template, generate must not"
+    assert a != model.chat(with_system, **sampled), "the system message must reach the model"
+    assert a != model.generate("Hello", **sampled), "generate must not apply the template"
 
 
 def test_info_lists_backends(lib_path: Path) -> None:
@@ -150,14 +161,14 @@ def test_bad_path_raises_littlemore_error(lib_path: Path, tmp_path: Path) -> Non
 
 
 @pytest.mark.smoke
-def test_cli_convert_then_run(tmp_path: Path, lib_path: Path) -> None:
+def test_cli_convert_then_run(tmp_path: Path, lib_path: Path, monkeypatch) -> None:
     """`littlemore convert` on a tiny synthetic checkpoint gives a GGUF that `littlemore run --prompt` answers."""
     for p in (ROOT / "tools" / "dev", ROOT / "tests" / "convert", ROOT):
-        sys.path.insert(0, str(p))
+        monkeypatch.syspath_prepend(str(p))  # undone when the test ends
     try:
         import _tiny
         ck = _tiny.make_tiny_checkpoint("llama", tmp_path, bpw=2.0)
-    except Exception as e:  # pragma: no cover - missing torch/transformers
+    except ImportError as e:  # pragma: no cover - missing torch/transformers
         pytest.skip(f"cannot build a tiny checkpoint: {e!r}")
     out = tmp_path / "tiny.gguf"
     r = _cli("convert", str(ck), "-o", str(out))
@@ -288,14 +299,20 @@ def test_close_is_idempotent_and_ordered(tiny_gguf: Path) -> None:
 
 
 @pytest.mark.smoke
-def test_close_during_stream_stops_it(model) -> None:
-    gen = model.generate("Hello", stream=True, max_tokens=200)
+def test_close_during_stream_stops_it(tiny_gguf: Path) -> None:
+    """Closing the model in the middle of a stream stops the generation: far fewer pieces arrive than an
+    uninterrupted run produces (at most the 64 already queued plus the one in hand)."""
+    with littlemore.Model(tiny_gguf, devices="none", n_ctx=512) as ref:
+        full = len(list(ref.generate("Hello", stream=True, max_tokens=200, temperature=0)))
+    assert full >= 150, f"the reference run is too short to show a stop ({full} pieces)"
+    m = littlemore.Model(tiny_gguf, devices="none", n_ctx=512)
+    gen = m.generate("Hello", stream=True, max_tokens=200, temperature=0)
     assert next(gen)
-    model.close()  # must stop the running generation, wait for it, and free everything
-    assert model.closed
-    rest = list(gen)  # the stream just ends (pieces already queued may still be delivered); no exception
+    m.close()  # must stop the running generation, wait for it, and free everything
+    assert m.closed
+    rest = list(gen)  # the stream just ends (queued pieces may still be delivered); no exception
     assert all(isinstance(p, str) for p in rest)
-    assert len("".join(rest)) < 1000
+    assert 1 + len(rest) <= 66 < full, f"generation was not stopped: {1 + len(rest)} of {full} pieces"
 
 
 # --------------------------------------------------------------------------------------------------------------
@@ -489,6 +506,7 @@ def test_dll_search_dirs_order_and_content(monkeypatch, tmp_path: Path) -> None:
     assert len(dirs) == len(set(dirs)), "no duplicates"
 
 
+@pytest.mark.smoke
 def test_cuda_backend_visible_from_plain_python_in_another_directory(lib_path: Path, tmp_path: Path) -> None:
     """The user-visible rule: python.exe started in an unrelated directory, with no CUDA folder on PATH and no
     helper variable, still sees CUDA0 in info() (when the machine has a CUDA device and runtime)."""
@@ -509,3 +527,280 @@ def test_cuda_backend_visible_from_plain_python_in_another_directory(lib_path: P
     r = subprocess.run([sys.executable, "-c", code], cwd=tmp_path, env=env, capture_output=True, text=True, timeout=300)
     assert r.returncode == 0, r.stderr[-2000:]
     assert "CUDA0" in r.stdout, f"CUDA0 missing from the backends: {r.stdout.strip()} / {r.stderr[-500:]}"
+
+
+# --------------------------------------------------------------------------------------------------------------
+# Open streams, locks and deadlocks (a regression must FAIL, never hang the suite: see _finishes_within)
+# --------------------------------------------------------------------------------------------------------------
+def _finishes_within(fn, seconds: float = 40):
+    """Run `fn` in a daemon thread; fail (instead of hanging the test run) when it has not finished in `seconds`.
+    Returns fn's result and re-raises its exception."""
+    box: list = []
+    err: list[BaseException] = []
+
+    def run() -> None:
+        try:
+            box.append(fn())
+        except BaseException as e:  # noqa: BLE001 - re-raised in the caller
+            err.append(e)
+
+    t = threading.Thread(target=run, daemon=True, name="deadlock-guard")
+    t.start()
+    t.join(seconds)
+    assert not t.is_alive(), f"deadlock: the call was still running after {seconds} s"
+    if err:
+        raise err[0]
+    return box[0] if box else None
+
+
+_HELLO = [{"role": "user", "content": "Hello"}]
+
+
+@pytest.mark.smoke
+def test_second_generation_while_a_stream_is_open_raises_instead_of_deadlocking(model) -> None:
+    """Case A: a stream that was abandoned but is still referenced keeps the session. A new generation call on the
+    same thread can never succeed (nobody would consume the stream), so it raises a clear error."""
+    def body() -> None:
+        s = model.chat(_HELLO, stream=True, max_tokens=200)
+        for _piece in s:
+            break  # abandoned early, but `s` is still alive
+        for call in (lambda: model.chat(_HELLO, max_tokens=2), lambda: model.generate("x", max_tokens=2),
+                     lambda: model.chat(_HELLO, stream=True), lambda: model.generate("x", stream=True)):
+            with pytest.raises(littlemore.LittleMoreError) as ei:
+                call()
+            assert ei.value.status_name == "STREAM_OPEN" and "stream" in str(ei.value)
+        s.close()  # closing the stream frees the session
+        assert model.chat(_HELLO, max_tokens=2) is not None
+        # A stream that was consumed to its end never blocks later calls either.
+        assert list(model.generate("Hello", stream=True, max_tokens=3))
+        assert model.generate("Hello", max_tokens=3)
+
+    _finishes_within(body)
+
+
+@pytest.mark.smoke
+def test_tokenizer_and_info_work_inside_a_stream_loop(model) -> None:
+    """Case B: tokenize, detokenize and info need no session, so they run while a stream is open (the C API allows
+    it during generation)."""
+    def body() -> None:
+        ids = model.tokenize("Hello world")
+        seen = 0
+        for _piece in model.generate("Hello", stream=True, max_tokens=100):
+            assert model.tokenize("Hello world") == ids
+            assert model.detokenize(ids) == "Hello world"
+            assert model.info()["model"]["n_layer"] == 2
+            seen += 1
+            if seen >= 3:
+                break
+        assert seen == 3
+
+    _finishes_within(body)
+
+
+@pytest.mark.smoke
+def test_other_thread_waits_for_an_open_stream_then_runs(model) -> None:
+    """Another thread's call queues behind an open stream (serial use) and runs once the stream is closed."""
+    s = model.generate("Hello", stream=True, max_tokens=200)
+    assert next(s)
+    result: list[str] = []
+    t = threading.Thread(target=lambda: result.append(model.chat(_HELLO, max_tokens=3)), daemon=True)
+    t.start()
+    t.join(1.0)
+    assert t.is_alive() and not result, "the second call must wait while the stream holds the session"
+    s.close()
+    t.join(40)
+    assert not t.is_alive() and result, "the waiting call must run after the stream is closed"
+
+
+@pytest.mark.smoke
+def test_half_consumed_stream_at_interpreter_exit_does_not_hang(tiny_gguf: Path) -> None:
+    """A stream left open in a module global when the interpreter exits must not hang the process."""
+    code = ("import sys, littlemore\n"
+            "m = littlemore.Model(sys.argv[1], devices='none')\n"
+            "s = m.chat([{'role': 'user', 'content': 'Hello'}], stream=True, max_tokens=500)\n"
+            "next(s)\n"
+            "print('streaming', flush=True)\n")  # m and s stay alive in module globals until the interpreter exits
+    env = dict(os.environ, PYTHONPATH=str(PYDIR))
+    r = subprocess.run([sys.executable, "-c", code, str(tiny_gguf)], capture_output=True, text=True, timeout=30,
+                       env=env)
+    assert r.returncode == 0 and "streaming" in r.stdout, r.stderr[-1500:]
+
+
+# --------------------------------------------------------------------------------------------------------------
+# Callback failures, validation, constants, pickling
+# --------------------------------------------------------------------------------------------------------------
+def test_failing_callback_surfaces_the_error_in_stream_and_collect(monkeypatch) -> None:
+    def boom(ptr, length):
+        raise RuntimeError("cannot copy the piece")
+
+    monkeypatch.setattr(_model_mod.ctypes, "string_at", boom)
+    with pytest.raises(RuntimeError, match="cannot copy"):
+        list(_stream([b"abc"] * 5))
+    delivered: list[bytes] = []
+    with pytest.raises(RuntimeError, match="cannot copy"):
+        _model_mod._collect_text(_fake_invoke([b"abc"] * 5, delivered), threading.Lock(), _model_mod._ActiveStreams(),
+                                 lambda: None)
+    assert len(delivered) == 1, "generation must stop at the first failing callback"
+
+
+def test_keyboard_interrupt_in_the_callback_is_reraised_after_the_call(monkeypatch) -> None:
+    def interrupt(ptr, length):
+        raise KeyboardInterrupt
+
+    monkeypatch.setattr(_model_mod.ctypes, "string_at", interrupt)
+    with pytest.raises(KeyboardInterrupt):
+        _model_mod._collect_text(_fake_invoke([b"abc"] * 5, []), threading.Lock(), _model_mod._ActiveStreams(),
+                                 lambda: None)
+
+
+def test_numeric_options_are_validated_not_wrapped(lib_path: Path) -> None:
+    for kw in ({"n_ctx": -1}, {"n_ctx": 2**32}, {"n_batch": -5}, {"n_threads": 2**31}, {"vram_budget": -1}):
+        with pytest.raises(ValueError):
+            littlemore.Model("does-not-matter.gguf", **kw)  # refused before any file is touched
+
+
+@pytest.mark.smoke
+def test_token_ids_are_range_checked(model) -> None:
+    for bad in ([2**31], [-2**31 - 1], [1.5], ["a"]):
+        with pytest.raises((ValueError, TypeError)):
+            model.detokenize(bad)
+    assert model.detokenize([]) == ""
+
+
+def test_status_constants_match_the_header(lib_path: Path) -> None:
+    text = HEADER.read_text(encoding="utf-8")
+    enum = dict(re.findall(r"(LM_ERR_\w+)\s*=\s*(\d+)", text))
+    assert int(enum["LM_ERR_BUFFER_TOO_SMALL"]) == _lib.LM_ERR_BUFFER_TOO_SMALL
+    assert int(enum["LM_ERR_REENTRANT"]) == 13 and int(enum["LM_ERR_BUSY"]) == 14
+
+
+def test_errors_are_picklable() -> None:
+    for err in (littlemore.LittleMoreError("lm_chat: boom", 10, "LM_ERR_DECODE"),
+                littlemore.LibraryNotFoundError("no library here")):
+        back = pickle.loads(pickle.dumps(err))
+        assert type(back) is type(err) and str(back) == str(err)
+        assert (back.status, back.status_name, back.message) == (err.status, err.status_name, err.message)
+
+
+# --------------------------------------------------------------------------------------------------------------
+# DLL directory hygiene and library precedence
+# --------------------------------------------------------------------------------------------------------------
+@pytest.mark.skipif(os.name != "nt", reason="DLL directories are a Windows concept")
+def test_dll_dirs_are_absolute_and_never_the_working_directory(monkeypatch, tmp_path: Path) -> None:
+    (tmp_path / "cudart64_12.dll").write_bytes(b"")  # a runtime DLL in the working directory must NOT be trusted
+    monkeypatch.chdir(tmp_path)
+    monkeypatch.setenv("LITTLEMORE_DLL_DIR", os.pathsep.join([".", "sub"]))
+    monkeypatch.setenv("CUDA_PATH", "relative-cuda")
+    monkeypatch.setenv("PATH", os.pathsep.join([".", os.environ.get("PATH", "")]))
+    with warnings.catch_warnings(record=True):
+        warnings.simplefilter("always")
+        dirs = _lib.dll_search_dirs()
+    assert all(os.path.isabs(d) for d in dirs), dirs
+    assert str(tmp_path) not in [os.path.normpath(d) for d in dirs], "the working directory must never be registered"
+
+
+@pytest.mark.skipif(os.name != "nt", reason="DLL directories are a Windows concept")
+def test_nvidia_wheel_dirs_come_from_site_packages_not_the_working_directory(monkeypatch, tmp_path: Path) -> None:
+    import sysconfig
+    fake = tmp_path / "nvidia" / "cublas" / "bin"
+    fake.mkdir(parents=True)
+    monkeypatch.chdir(tmp_path)
+    monkeypatch.syspath_prepend(str(tmp_path))  # an `nvidia` folder first on sys.path (like python -m from this cwd)
+    assert str(fake) not in _lib._nvidia_wheel_bin_dirs()
+    site = tmp_path / "site" / "nvidia" / "cuda_runtime" / "bin"
+    site.mkdir(parents=True)
+    paths = {"purelib": str(tmp_path / "site"), "platlib": str(tmp_path / "site")}
+    monkeypatch.setattr(sysconfig, "get_paths", lambda *a, **k: paths)
+    assert str(site) in _lib._nvidia_wheel_bin_dirs()
+
+
+@pytest.mark.skipif(os.name != "nt", reason="os.add_dll_directory exists only on Windows")
+def test_add_dll_directory_failure_is_tolerated(monkeypatch, lib_path: Path) -> None:
+    def refuse(path):
+        raise OSError("not allowed")
+
+    monkeypatch.setattr(os, "add_dll_directory", refuse)
+    monkeypatch.setattr(_lib.ctypes, "CDLL", lambda *a, **k: object())
+    monkeypatch.setattr(_lib, "_LIB", None)
+    monkeypatch.setattr(_lib, "_declare_prototypes", lambda dll: None)
+    monkeypatch.setattr(_lib, "_check_api_version", lambda dll: None)
+    assert _lib.load() is not None  # the library still loads; the folder is simply not registered
+
+
+def test_newer_library_wins_over_a_stale_one_and_a_warning_is_given_once(monkeypatch, tmp_path: Path) -> None:
+    name = _lib._library_file_names()[0]
+    stale, fresh = tmp_path / "stale", tmp_path / "fresh"
+    for d, size, age in ((stale, 10, 1_000_000_000), (fresh, 20, 1_900_000_000)):
+        d.mkdir()
+        (d / name).write_bytes(b"x" * size)
+        os.utime(d / name, (age, age))
+    monkeypatch.delenv("LITTLEMORE_LIBRARY", raising=False)
+    monkeypatch.setattr(_lib, "_candidate_library_dirs", lambda: [stale, fresh])  # the stale one has priority by order
+    monkeypatch.setattr(_lib, "_WARNED_STALE", False)
+    with pytest.warns(UserWarning, match="stale") as rec:
+        assert _lib.find_library() == (fresh / name).resolve()
+    assert str(stale) in str(rec[0].message) and str(fresh) in str(rec[0].message)
+    with warnings.catch_warnings():
+        warnings.simplefilter("error")
+        assert _lib.find_library() == (fresh / name).resolve()  # second call: no second warning
+    # Identical files (a copy of the same build) are not worth a warning.
+    (stale / name).write_bytes(b"x" * 20)
+    os.utime(stale / name, (1_900_000_000, 1_900_000_000))
+    monkeypatch.setattr(_lib, "_WARNED_STALE", False)
+    with warnings.catch_warnings():
+        warnings.simplefilter("error")
+        _lib.find_library()
+
+
+# --------------------------------------------------------------------------------------------------------------
+# Command line: usage errors, convert lookup, licence files
+# --------------------------------------------------------------------------------------------------------------
+def test_bench_zero_reps_is_a_usage_error(lib_path: Path, tmp_path: Path) -> None:
+    for bad in (["--reps", "0"], ["--n-prompt", "0"], ["--n-gen", "-1"]):
+        r = _cli("bench", str(tmp_path / "m.gguf"), *bad)
+        assert r.returncode == 2 and "Traceback" not in r.stderr and "positive" in r.stderr, r.stderr[-500:]
+
+
+@pytest.mark.smoke
+def test_run_with_invalid_sampling_value_is_a_clean_usage_error(tiny_gguf: Path) -> None:
+    r = _cli("run", str(tiny_gguf), "--prompt", "hi", "--cpu-only", "--max-tokens", "0")
+    assert r.returncode == 2 and "Traceback" not in r.stderr and "max_tokens" in r.stderr, r.stderr[-500:]
+    r = _cli("run", str(tiny_gguf), "--prompt", "hi", "--cpu-only", "--seed", "-3")
+    assert r.returncode == 2 and "Traceback" not in r.stderr and "seed" in r.stderr, r.stderr[-500:]
+
+
+def test_convert_reports_precisely_what_is_missing(monkeypatch, tmp_path: Path, capsys) -> None:
+    from littlemore import cli
+    monkeypatch.setattr(_lib, "_REPO_ROOT", tmp_path / "no-repo")
+    monkeypatch.chdir(tmp_path)
+    assert cli._cmd_convert([]) == 1
+    err = capsys.readouterr().err
+    assert "tools" in err and "lb_to_gguf.py" in err and str(tmp_path / "no-repo") in err
+    # An unrelated `tools` package in the working directory is not mistaken for the converter.
+    (tmp_path / "tools").mkdir()
+    (tmp_path / "tools" / "__init__.py").write_text("", encoding="utf-8")
+    monkeypatch.syspath_prepend(str(tmp_path))
+    assert cli._cmd_convert([]) == 1
+    assert "lb_to_gguf.py" in capsys.readouterr().err
+
+
+@pytest.mark.smoke
+def test_convert_finds_the_converter_despite_an_unrelated_tools_package(tmp_path: Path, lib_path: Path) -> None:
+    (tmp_path / "tools").mkdir()
+    (tmp_path / "tools" / "__init__.py").write_text("raise SystemExit('the wrong tools package was imported')\n",
+                                                    encoding="utf-8")
+    r = _cli("convert", "--help", cwd=tmp_path)  # `python -m` puts the working directory first on sys.path
+    assert r.returncode == 0 and "checkpoint" in r.stdout.lower(), (r.stdout + r.stderr)[-800:]
+
+
+def test_licence_files_are_in_place() -> None:
+    top = (ROOT / "LICENSE").read_text(encoding="utf-8")
+    assert top.startswith("MIT License") and "Copyright (c) 2026 LittleMore contributors" in top
+    assert (PYDIR / "LICENSE").read_text(encoding="utf-8") == top, "python/LICENSE must be a copy of the top-level LICENSE"
+    notices = (PYDIR / "THIRD_PARTY_NOTICES").read_text(encoding="utf-8")
+    engine_licence = ROOT / "engine" / "LICENSE"
+    if engine_licence.exists():  # the engine checkout is not part of this repository
+        assert engine_licence.read_text(encoding="utf-8").strip() in notices
+    assert "Copyright (c) 2023-2026 The ggml authors" in notices
+    meta = (PYDIR / "pyproject.toml").read_text(encoding="utf-8")
+    assert 'license = "MIT"' in meta and "license-files" in meta and "THIRD_PARTY_NOTICES" in meta

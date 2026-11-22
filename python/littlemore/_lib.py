@@ -23,6 +23,7 @@ import ctypes
 import glob
 import os
 import sys
+import warnings
 from pathlib import Path
 from typing import Iterable
 
@@ -32,6 +33,7 @@ EXPECTED_API_VERSION = 1
 
 # lm_status values the SDK treats specially (the full list is in the header).
 LM_OK = 0
+LM_ERR_BUFFER_TOO_SMALL = 11  # an output buffer is too small; the needed size is reported (a test checks the value against the header)
 LM_GPU_LAYERS_AUTO = -1
 LM_SEED_RANDOM = 0xFFFFFFFF
 
@@ -60,12 +62,18 @@ class LittleMoreError(Exception):
         self.status = status
         self.status_name = status_name
 
+    def __reduce__(self):  # exceptions with extra constructor arguments need this to survive pickle / multiprocessing
+        return (type(self), (self.message, self.status, self.status_name))
+
 
 class LibraryNotFoundError(LittleMoreError):
     """The LittleMore shared library could not be found or does not match this SDK."""
 
     def __init__(self, message: str) -> None:
         super().__init__(message, None, "LIBRARY")
+
+    def __reduce__(self):
+        return (type(self), (self.message,))
 
 
 # --------------------------------------------------------------------------------------------------------------
@@ -164,17 +172,23 @@ def _candidate_library_dirs() -> list[Path]:
     return [_PKG_DIR / "_bin", _REPO_ROOT / "build" / "bin"]
 
 
+_WARNED_STALE = False  # the "two different builds found" warning is given once per process
+
+
 def find_library() -> Path:
     """Return the path of the LittleMore shared library.
 
-    Order: the file named by the environment variable `LITTLEMORE_LIBRARY`; the `_bin` folder inside this
-    package (where the wheel bundles the library and the backend plugins); `<repo>/build/bin` (a source
-    checkout built with CMake). The backend plugins are loaded by the library itself from ITS folder, so the
-    chosen file's folder must hold them too.
+    Order: the file named by the environment variable `LITTLEMORE_LIBRARY` (always wins); otherwise the library
+    in the `_bin` folder inside this package (where the wheel bundles it and the backend plugins) and in
+    `<repo>/build/bin` (a source checkout built with CMake). When BOTH exist, the one with the NEWER modification
+    time is used, so a fresh CMake build is not shadowed by an old copy left in `_bin`; if the two files differ
+    (size or time), a `UserWarning` names both and the one chosen (once per process). The backend plugins are
+    loaded by the library itself from ITS folder, so the chosen file's folder must hold them too.
 
     Raises:
         LibraryNotFoundError: nothing found; the message lists what was searched.
     """
+    global _WARNED_STALE
     explicit = os.environ.get("LITTLEMORE_LIBRARY")
     if explicit:
         p = Path(explicit)
@@ -182,14 +196,26 @@ def find_library() -> Path:
             raise LibraryNotFoundError(f"LITTLEMORE_LIBRARY={explicit!r} is not a file")
         return p.resolve()
     searched = _candidate_library_dirs()
+    found: list[Path] = []
     for d in searched:
         for pattern in _library_file_names():
             hits = sorted(glob.glob(str(d / pattern)))
             if hits:
-                return Path(hits[0]).resolve()
-    raise LibraryNotFoundError(
-        "the littlemore shared library was not found; searched " + ", ".join(str(d) for d in searched)
-        + ". Install a wheel that bundles it, build it with CMake (docs/development.md), or set LITTLEMORE_LIBRARY.")
+                found.append(Path(hits[0]).resolve())
+                break
+    if not found:
+        raise LibraryNotFoundError(
+            "the littlemore shared library was not found; searched " + ", ".join(str(d) for d in searched)
+            + ". Install a wheel that bundles it, build it with CMake (docs/development.md), or set LITTLEMORE_LIBRARY.")
+    best = max(found, key=lambda f: f.stat().st_mtime)  # max() keeps the first (higher-priority) of equal times
+    stale = [f for f in found if f != best
+             and (f.stat().st_size != best.stat().st_size or f.stat().st_mtime != best.stat().st_mtime)]
+    if stale and not _WARNED_STALE:
+        _WARNED_STALE = True
+        warnings.warn(f"found two different littlemore libraries: using the newer {best}; the stale copy "
+                      f"{stale[0]} is ignored (delete it, or set LITTLEMORE_LIBRARY to choose explicitly)",
+                      UserWarning, stacklevel=2)
+    return best
 
 
 def _split_paths(value: str | None) -> list[str]:
@@ -206,16 +232,28 @@ def _has_cuda_runtime(folder: str | Path) -> bool:
 
 def _nvidia_wheel_bin_dirs() -> list[str]:
     """`bin` folders of the NVIDIA runtime wheels from PyPI (nvidia-cuda-runtime-cu12, nvidia-cublas-cu12, ...),
-    which install their DLLs under site-packages/nvidia/<component>/bin on Windows."""
-    import importlib.util
+    which install their DLLs under site-packages/nvidia/<component>/bin on Windows.
 
+    Only real site-packages folders are searched (the interpreter's purelib/platlib and its site directories):
+    an `nvidia` folder that merely happens to be first on sys.path, e.g. in the working directory, is NOT used,
+    because a folder registered for DLL loading is trusted to hold the CUDA libraries."""
+    import site
+    import sysconfig
+
+    roots: list[str] = []
+    paths = sysconfig.get_paths()
+    roots += [paths.get("purelib", ""), paths.get("platlib", "")]
     try:
-        spec = importlib.util.find_spec("nvidia")
-    except (ImportError, ValueError):
-        return []
+        roots += site.getsitepackages()
+        roots.append(site.getusersitepackages())
+    except (AttributeError, OSError):  # some embedded interpreters lack these
+        pass
     found: list[str] = []
-    for root in (spec.submodule_search_locations or []) if spec else []:
-        found.extend(sorted(glob.glob(os.path.join(root, "*", "bin"))))
+    for root in roots:
+        if root and os.path.isabs(root):
+            for d in sorted(glob.glob(os.path.join(root, "nvidia", "*", "bin"))):
+                if d not in found:
+                    found.append(d)
     return found
 
 
@@ -237,7 +275,9 @@ def dll_search_dirs(library_dir: str | Path | None = None) -> list[str]:
     Why: Python 3.8+ does not search PATH for DLL dependencies, but the CUDA backend plugin needs the CUDA
     runtime DLLs (cudart, cublas). Sources, most specific first, without duplicates and only folders that exist:
 
-    1. `LITTLEMORE_DLL_DIR` (several folders separated by `os.pathsep`): the explicit override.
+    1. `LITTLEMORE_DLL_DIR` (several folders separated by `os.pathsep`, absolute paths only): the explicit override.
+    Every folder below is registered with `os.add_dll_directory`; Windows defines no search order between
+    folders added that way, so the order here is only the order of registration, not a priority.
     2. `CUDA_PATH` and `CUDA_PATH_V*` environment variables: `<toolkit>/bin`.
     3. Folders on PATH that contain a CUDA runtime DLL (what a user who "has CUDA on PATH" expects to work).
     4. `bin` folders of the NVIDIA runtime wheels installed in this Python (`pip install nvidia-cublas-cu12 ...`).
@@ -250,16 +290,26 @@ def dll_search_dirs(library_dir: str | Path | None = None) -> list[str]:
     for name in sorted(os.environ):
         if name == "CUDA_PATH" or name.startswith("CUDA_PATH_V"):
             candidates.append(os.path.join(os.environ[name], "bin"))
-    candidates += [p for p in _split_paths(os.environ.get("PATH")) if _has_cuda_runtime(p)]
+    candidates += [p for p in _split_paths(os.environ.get("PATH")) if os.path.isabs(p) and _has_cuda_runtime(p)]
     candidates += _nvidia_wheel_bin_dirs()
     candidates += [p for p in _default_cuda_toolkit_bins() if _has_cuda_runtime(p)]
     if library_dir is not None:
         candidates.append(str(library_dir))
     result: list[str] = []
+    seen: set[str] = set()
+    explicit = _split_paths(os.environ.get("LITTLEMORE_DLL_DIR"))
     for c in candidates:
+        # Relative entries ("." or "bin") would depend on the working directory, and a DLL folder is trusted to
+        # hold code that gets loaded: skip them (with a warning when the user asked for one explicitly).
+        if not os.path.isabs(c):
+            if c in explicit:
+                warnings.warn(f"LITTLEMORE_DLL_DIR entry {c!r} is not an absolute path and is ignored", UserWarning,
+                              stacklevel=2)
+            continue
         key = os.path.normcase(os.path.abspath(c))
-        if os.path.isdir(c) and key not in {os.path.normcase(os.path.abspath(r)) for r in result}:
-            result.append(c)
+        if os.path.isdir(c) and key not in seen:
+            seen.add(key)
+            result.append(os.path.abspath(c))
     return result
 
 
@@ -322,7 +372,10 @@ def load() -> ctypes.CDLL:
     path = find_library()
     if sys.platform == "win32":
         for d in dll_search_dirs(path.parent):
-            _DLL_HANDLES.append(os.add_dll_directory(d))
+            try:
+                _DLL_HANDLES.append(os.add_dll_directory(d))
+            except OSError:  # e.g. the folder vanished or is not accessible: the others may still be enough
+                continue
     try:
         dll = ctypes.CDLL(str(path))
     except OSError as e:

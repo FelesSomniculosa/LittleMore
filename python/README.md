@@ -38,9 +38,12 @@ littlemore convert CHECKPOINT_DIR -o model.gguf # LittleBit checkpoint -> GGUF (
   still processes large prompt batches (0.7 to 1 GiB of GPU memory, much faster prompts; generation stays on the CPU).
   That is intended. For no GPU use at all pass `devices="none"` (CLI: `--cpu-only`). `devices="CUDA0"` picks a device.
   See `Model.info()["backends"]` for the device names.
-- **Streaming** runs the generation in a worker thread, so the generator can be consumed from any thread. Closing or
-  dropping the generator stops the generation and releases the model for the next call. Several threads can call
-  `chat` on one model; the calls run one after another.
+- **Streaming** runs the generation in a worker thread, so the generator can be consumed from any thread. **A stream you
+  stop reading early must be closed** (`stream.close()`, or `with contextlib.closing(stream) as s:`; dropping the last
+  reference also closes it): until then it owns the model's session. While a stream is open, `tokenize`, `detokenize` and
+  `info` keep working; a new `chat` / `generate` from the same thread raises `LittleMoreError` (status name
+  `STREAM_OPEN`) instead of deadlocking; other threads wait until the stream ends or is closed. Several threads can call
+  `chat` on one model; the calls run one after another. Closing the model, or leaving the program, stops open streams.
 - **Text decoding** never raises: pieces are decoded incrementally as UTF-8 and invalid bytes become U+FFFD.
 - **Errors** are `littlemore.LittleMoreError` with `.status`, `.status_name` (e.g. `LM_ERR_MODEL_LOAD`) and the
   library's own message.
@@ -50,7 +53,9 @@ littlemore convert CHECKPOINT_DIR -o model.gguf # LittleBit checkpoint -> GGUF (
 
 The CUDA backend needs the CUDA 12 runtime DLLs (`cudart64_12.dll`, `cublas64_12.dll`, `cublasLt64_12.dll`). The wheel does
 not bundle them (cublasLt alone is 640 MiB, above PyPI's wheel size limit); you need either a CUDA 12 toolkit or
-`pip install "littlemore[cuda]"` (NVIDIA's own runtime wheels), plus a recent NVIDIA driver. Python 3.8+ does not search
+`pip install "littlemore[cuda]"` (NVIDIA's own runtime wheels), plus a recent NVIDIA driver (the extra is not tested yet). Measured with a PE import table dump: `ggml-cuda.dll` imports
+`cudart64_12.dll`, `cublas64_12.dll`, `cublasLt64_12.dll` and the driver's `nvcuda.dll` dynamically (it does not link the CUDA
+runtime statically), and the plugins need the Microsoft Visual C++ Redistributable (`VCRUNTIME140`, `MSVCP140`, `VCOMP140`). Python 3.8+ does not search
 `PATH` for DLL dependencies, so the SDK registers the folders itself with `os.add_dll_directory()` before loading the
 library: `LITTLEMORE_DLL_DIR`, `CUDA_PATH*`, PATH folders that hold `cudart64_*.dll`, the `nvidia-*-cu12` wheels' folders
 and the default toolkit install folders. If `info()["backends"]` shows no `CUDA0`, set `LITTLEMORE_DLL_DIR` to the folder
@@ -65,7 +70,10 @@ python -m build --wheel --outdir dist python
 ```
 
 The result is `dist/littlemore-<version>-py3-none-<platform>.whl`: platform specific, independent of the Python version.
-The files come from `build/bin` (override with `LITTLEMORE_BIN_DIR`). Install it with `pip install dist/littlemore-*.whl`.
+It carries `LICENSE` (MIT) and `THIRD_PARTY_NOTICES` (the llama.cpp / ggml licence for the bundled binaries) in its
+`dist-info/licenses/` folder.
+The files come from `build/bin` (override with `LITTLEMORE_BIN_DIR`).
+In a source checkout the SDK uses the newer of `littlemore/_bin` and `build/bin` and warns once if the two differ. Install it with `pip install dist/littlemore-*.whl`.
 
 ## `littlemore convert`
 

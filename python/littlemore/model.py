@@ -15,15 +15,24 @@ Design in a nutshell
     * The library delivers raw bytes. Pieces are valid UTF-8 whenever the model produced valid UTF-8, but a model
       can produce invalid sequences, which the library passes through unchanged, so the text is decoded
       incrementally with errors="replace": streaming never raises a decoding error.
+    * Locks: generation (`chat` / `generate`) needs the session, so it queues behind a running or still-open
+      stream. `tokenize`, `detokenize` and `info` need only the model, which the C API allows during generation, so
+      they work while a stream is open. A stream that has been started and not finished or closed owns the session:
+      starting another generation on the SAME thread raises `LittleMoreError` ("STREAM_OPEN") instead of waiting for
+      something that can never happen; other threads simply wait. Close a stream you abandon early
+      (`stream.close()` or `contextlib.closing`), or let it be garbage collected.
     * Freeing: the session is always freed before the model (the model refuses while a session is alive), `close()`
       is idempotent and safe from any thread, and `__del__` / the context manager call it.
 """
 from __future__ import annotations
 
+import atexit
 import ctypes
 import queue
 import re
+import sys
 import threading
+import weakref
 from codecs import getincrementaldecoder
 from os import PathLike, fspath
 from typing import Any, Callable, Iterator, Literal, Mapping, Sequence, overload
@@ -80,6 +89,15 @@ def _parse_n_gpu_layers(value: int | str) -> int:
         raise TypeError(f'n_gpu_layers must be "auto" or an int, not {type(value).__name__}')
     if value < _lib.LM_GPU_LAYERS_AUTO:
         raise ValueError("n_gpu_layers must be -1 (auto), 0 or positive")
+    return value
+
+
+def _int_in_range(name: str, value: Any, low: int, high: int) -> int:
+    """`value` as an int in [low, high], else ValueError / TypeError (ctypes would silently wrap it around)."""
+    if isinstance(value, bool) or not isinstance(value, int):
+        raise TypeError(f"{name} must be an int, not {type(value).__name__}")
+    if not low <= value <= high:
+        raise ValueError(f"{name} must be between {low} and {high}, not {value}")
     return value
 
 
@@ -147,32 +165,39 @@ def _encode_messages(messages: Sequence[Mapping[str, str]]) -> tuple[Any, list[b
 # Running one generation call: streaming (worker thread + queue) and collecting (calling thread)
 # --------------------------------------------------------------------------------------------------------------
 class _ActiveStreams:
-    """The stop flags of the generations that are running or waiting on one model, so `Model.close()` can
-    ask all of them to stop before it waits for the session lock."""
+    """The stop flags of the generations that are running or waiting on one model, so `Model.close()` can ask all
+    of them to stop before it waits for the session lock. A streaming generation also records the thread that
+    consumes it (its `owner`), which lets the model refuse a second generation call from that same thread."""
 
     def __init__(self) -> None:
         self._lock = threading.Lock()
-        self._events: set[threading.Event] = set()
+        self._events: dict[threading.Event, int | None] = {}
 
-    def add(self, ev: threading.Event) -> None:
+    def add(self, ev: threading.Event, owner: int | None = None) -> None:
         with self._lock:
-            self._events.add(ev)
+            self._events[ev] = owner
 
     def discard(self, ev: threading.Event) -> None:
         with self._lock:
-            self._events.discard(ev)
+            self._events.pop(ev, None)
 
     def stop_all(self) -> None:
         with self._lock:
             for ev in self._events:
                 ev.set()
 
+    def owned_by(self, ident: int) -> bool:
+        """True when a stream consumed by thread `ident` is open (started, not finished or closed)."""
+        with self._lock:
+            return any(o == ident for o in self._events.values())
+
 
 _DONE = object()  # queue sentinel: the C call has returned
 
 
 def _stream_text(invoke: Callable[[Any], int], lock: threading.Lock, active: _ActiveStreams,
-                 check_open: Callable[[], None] | None = None) -> Iterator[str]:
+                 check_open: Callable[[], None] | None = None,
+                 before_start: Callable[[], None] | None = None) -> Iterator[str]:
     """Generator over the text pieces of one generation call.
 
     `invoke(cb)` makes the C call (`lm_chat` / `lm_generate`) with `cb` as the token callback and returns its
@@ -182,14 +207,21 @@ def _stream_text(invoke: Callable[[Any], int], lock: threading.Lock, active: _Ac
     next call (the C library then ends the call with LM_OK), the worker leaves the lock and is joined. The callback
     does nothing but enqueue bytes and test the flag; it never frees or calls back into the library.
     Errors: a failing C call raises `LittleMoreError` in the consumer, with the message fetched on the worker thread
-    (`lm_last_error` is thread-local, so it must be read where the call failed).
+    (`lm_last_error` is thread-local, so it must be read where the call failed). So does an exception raised by the
+    callback itself (e.g. out of memory while copying a piece): it stops the generation and is re-raised to the
+    consumer, never swallowed.
+    `before_start` runs in the consumer thread when the first piece is requested, before anything is registered
+    (the model uses it to refuse a second stream on a thread that still has one open).
     """
     if check_open:
         check_open()
+    if before_start:
+        before_start()
     pieces: queue.Queue[Any] = queue.Queue(maxsize=64)  # bounded: a slow consumer slows generation down
     stop = threading.Event()       # set by Model.close(): end the generation, but still tell the consumer it is over
     abandoned = threading.Event()  # set when the consumer closed/dropped the generator: nobody reads any more
-    active.add(stop)
+    active.add(stop, threading.get_ident())
+    failure: list[BaseException] = []  # an exception raised inside the callback (it cannot cross the C boundary)
 
     def put(item: Any, data: bool) -> bool:
         """Enqueue `item`. Data pieces are refused once the generation is being stopped; the end marker and errors
@@ -207,7 +239,8 @@ def _stream_text(invoke: Callable[[Any], int], lock: threading.Lock, active: _Ac
         # Runs on the worker thread inside the C call. Copy the bytes (valid only during the call) and return.
         try:
             return 0 if put(ctypes.string_at(ptr, length), True) else 1
-        except BaseException:  # noqa: BLE001 - an exception must not cross the C boundary; stop generating
+        except BaseException as e:  # noqa: BLE001 - an exception must not cross the C boundary; stop generating
+            failure.append(e)
             stop.set()
             return 1
 
@@ -223,6 +256,8 @@ def _stream_text(invoke: Callable[[Any], int], lock: threading.Lock, active: _Ac
                 if check_open:
                     check_open()
                 _lib.check(invoke(cb))
+                if failure:
+                    raise failure[0]
             finally:
                 lock.release()
         except BaseException as e:  # noqa: BLE001 - handed to the consumer
@@ -249,7 +284,11 @@ def _stream_text(invoke: Callable[[Any], int], lock: threading.Lock, active: _Ac
     finally:
         abandoned.set()  # stops the callback at its next call; the worker then leaves the lock
         stop.set()
-        worker.join()
+        # Wait for the worker so the session lock is free when we return. Not while the interpreter is shutting
+        # down: daemon threads are frozen then, so joining one would block forever (the exit handler has already
+        # stopped and released every stream by that point).
+        if not sys.is_finalizing():
+            worker.join()
         active.discard(stop)
 
 
@@ -258,10 +297,15 @@ def _collect_text(invoke: Callable[[Any], int], lock: threading.Lock, active: _A
     """Run one generation call in the calling thread and return the whole text (no worker thread needed)."""
     chunks: list[bytes] = []
     stop = threading.Event()
+    failure: list[BaseException] = []
 
     def on_piece(ptr: int, length: int, _user: int) -> int:
-        chunks.append(ctypes.string_at(ptr, length))
-        return 1 if stop.is_set() else 0
+        try:
+            chunks.append(ctypes.string_at(ptr, length))
+            return 1 if stop.is_set() else 0
+        except BaseException as e:  # noqa: BLE001 - cannot cross the C boundary: stop, re-raise after the call
+            failure.append(e)
+            return 1
 
     cb = _lib.TokenCallback(on_piece)
     active.add(stop)
@@ -271,6 +315,8 @@ def _collect_text(invoke: Callable[[Any], int], lock: threading.Lock, active: _A
             _lib.check(invoke(cb))
     finally:
         active.discard(stop)
+    if failure:
+        raise failure[0]  # also KeyboardInterrupt: it was caught in the callback and is re-raised here
     if stop.is_set():
         raise LittleMoreError("the model was closed while a generation was running", None, "CLOSED")
     return b"".join(chunks).decode("utf-8", "replace")
@@ -279,6 +325,25 @@ def _collect_text(invoke: Callable[[Any], int], lock: threading.Lock, active: _A
 # --------------------------------------------------------------------------------------------------------------
 # Model
 # --------------------------------------------------------------------------------------------------------------
+# Every open model, so that interpreter exit can close them first. Why: a stream that is still open at exit (for
+# example held in a module global) has a daemon worker thread inside the C call, holding the session lock. When
+# the interpreter shuts down such daemon threads are frozen where they stand, so a later `Model.__del__` would wait
+# for that lock forever. atexit handlers run BEFORE that freeze, while the worker can still react: closing the
+# model stops the generation, releases the lock and frees everything in the right order.
+_LIVE_MODELS: "weakref.WeakSet[Model]" = weakref.WeakSet()
+
+
+def _close_all_models_at_exit() -> None:
+    for m in list(_LIVE_MODELS):
+        try:
+            m.close()
+        except Exception:  # noqa: BLE001 - exit must go on; the OS reclaims what could not be freed
+            pass
+
+
+atexit.register(_close_all_models_at_exit)
+
+
 class Model:
     """A loaded GGUF model with one conversation session.
 
@@ -311,9 +376,14 @@ class Model:
         self._model: ctypes.c_void_p | None = None
         self._session: ctypes.c_void_p | None = None
         self._closed = False
-        self._lock = threading.Lock()  # one call per session at a time (also protects close())
+        self._lock = threading.Lock()  # the session: one generation at a time (also taken by close())
+        self._model_lock = threading.Lock()  # the model pointer: held briefly by tokenize / info, and by close()
         self._active = _ActiveStreams()
         layers = _parse_n_gpu_layers(n_gpu_layers)
+        n_ctx = _int_in_range("n_ctx", n_ctx, 0, 2**32 - 1)  # 0 = the library default
+        n_threads = _int_in_range("n_threads", n_threads, 0, 2**31 - 1)
+        n_batch = _int_in_range("n_batch", n_batch, 0, 2**32 - 1)
+        vram_budget = _int_in_range("vram_budget", vram_budget, 0, 2**64 - 1)
         lib = _lib.load()
         path_bytes = _lib.utf8(fspath(path), "path")
         dev_bytes = None if devices is None else _lib.utf8(devices, "devices")
@@ -339,6 +409,7 @@ class Model:
             self.close()  # do not leak the loaded model when the session cannot be created
             raise
         self.path = fspath(path)
+        _LIVE_MODELS.add(self)
 
     # -- lifetime -----------------------------------------------------------------------------------------------
     @property
@@ -355,14 +426,15 @@ class Model:
         """
         self._closed = True
         self._active.stop_all()
-        with self._lock:  # waits for a call that is still finishing
-            lib = _lib.load()
-            if self._session is not None:
-                _lib.check(lib.lm_session_free(self._session), lib)
-                self._session = None
-            if self._model is not None:
-                _lib.check(lib.lm_model_free(self._model), lib)
-                self._model = None
+        with self._lock:  # waits for a generation that is still finishing
+            with self._model_lock:  # and for a tokenize / info call
+                lib = _lib.load()
+                if self._session is not None:
+                    _lib.check(lib.lm_session_free(self._session), lib)
+                    self._session = None
+                if self._model is not None:
+                    _lib.check(lib.lm_model_free(self._model), lib)
+                    self._model = None
 
     def __enter__(self) -> "Model":
         return self
@@ -431,10 +503,20 @@ class Model:
 
         return self._run(invoke, stream)
 
+    def _refuse_if_stream_open_here(self) -> None:
+        """A stream that this thread started and neither finished nor closed owns the session, and this thread is
+        the only one that could ever release it: waiting would deadlock, so say so instead."""
+        if self._active.owned_by(threading.get_ident()):
+            raise LittleMoreError(
+                "a stream on this model is still open in this thread: consume it to the end or close it "
+                "(stream.close() or contextlib.closing(stream)) before starting another generation",
+                None, "STREAM_OPEN")
+
     def _run(self, invoke: Callable[[Any], int], stream: bool) -> str | Iterator[str]:
         self._check_open()
+        self._refuse_if_stream_open_here()
         if stream:
-            return _stream_text(invoke, self._lock, self._active, self._check_open)
+            return _stream_text(invoke, self._lock, self._active, self._check_open, self._refuse_if_stream_open_here)
         return _collect_text(invoke, self._lock, self._active, self._check_open)
 
     # -- tokens -------------------------------------------------------------------------------------------------
@@ -443,11 +525,11 @@ class Model:
         parses special-token text such as "<|im_start|>" as tokens."""
         data = _lib.utf8(text, "text")
         lib = _lib.load()
-        with self._lock:
+        with self._model_lock:  # the model only: works while a stream is open (the C API allows it)
             self._check_open()
             n = ctypes.c_size_t(0)
             st = lib.lm_tokenize(self._model, data, len(data), None, 0, int(add_special), ctypes.byref(n))
-            if st not in (_lib.LM_OK, 11):  # 11 = LM_ERR_BUFFER_TOO_SMALL: n is then the size needed
+            if st not in (_lib.LM_OK, _lib.LM_ERR_BUFFER_TOO_SMALL):  # then n is the size needed
                 _lib.check(st, lib)
             buf = (ctypes.c_int32 * max(n.value, 1))()
             _lib.check(lib.lm_tokenize(self._model, data, len(data), buf, n.value, int(add_special),
@@ -456,16 +538,17 @@ class Model:
 
     def detokenize(self, tokens: Sequence[int], special: bool = False) -> str:
         """Text of the token ids (`special=True` renders special tokens as text instead of leaving them out)."""
-        arr = (ctypes.c_int32 * max(len(tokens), 1))(*tokens)
+        ids = [_int_in_range("token id", t, -(2**31), 2**31 - 1) for t in tokens]  # no silent int32 wraparound
+        arr = (ctypes.c_int32 * max(len(ids), 1))(*ids)
         lib = _lib.load()
-        with self._lock:
+        with self._model_lock:
             self._check_open()
             n = ctypes.c_size_t(0)
-            st = lib.lm_detokenize(self._model, arr, len(tokens), None, 0, int(special), ctypes.byref(n))
-            if st not in (_lib.LM_OK, 11):
+            st = lib.lm_detokenize(self._model, arr, len(ids), None, 0, int(special), ctypes.byref(n))
+            if st not in (_lib.LM_OK, _lib.LM_ERR_BUFFER_TOO_SMALL):
                 _lib.check(st, lib)
             buf = ctypes.create_string_buffer(n.value + 1)
-            _lib.check(lib.lm_detokenize(self._model, arr, len(tokens), buf, len(buf), int(special),
+            _lib.check(lib.lm_detokenize(self._model, arr, len(ids), buf, len(buf), int(special),
                                          ctypes.byref(n)), lib)
             return buf.raw[: n.value].decode("utf-8", "replace")
 
@@ -479,7 +562,7 @@ class Model:
         auto-fit did not run), `gpu_devices` (comma-separated, "" = none) and `description`.
         """
         lib = _lib.load()
-        with self._lock:
+        with self._model_lock:
             self._check_open()
             mi = _lib.ModelInfo()
             mi.struct_size = ctypes.sizeof(_lib.ModelInfo)

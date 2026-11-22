@@ -8,7 +8,7 @@
 #     python -m build --wheel --outdir dist python
 # (the build folder is taken from LITTLEMORE_BIN_DIR, default <repo>/build/bin).
 [build-system]
-requires = ["setuptools>=68", "wheel"]
+requires = ["setuptools>=77", "wheel"]   # 77: SPDX `license` string and `license-files`
 build-backend = "setuptools.build_meta"
 
 [project]
@@ -17,7 +17,9 @@ dynamic = ["version"]          # single source: littlemore/_version.py
 description = "Run LittleBit (sub-1-bit) language models and GGUF models from Python (ctypes over the LittleMore C API)"
 readme = "README.md"
 requires-python = ">=3.10"
-license = { text = "MIT" }
+license = "MIT"                # SPDX expression of the LittleMore code
+# Shipped in the wheel (dist-info/licenses/): our licence, and the llama.cpp / ggml licence for the bundled binaries.
+license-files = ["LICENSE", "THIRD_PARTY_NOTICES"]
 keywords = ["llm", "gguf", "littlebit", "quantization", "llama.cpp"]
 classifiers = [
     "Programming Language :: Python :: 3",
@@ -29,8 +31,9 @@ dependencies = []              # nothing: the library is loaded with ctypes
 
 [project.optional-dependencies]
 # CUDA runtime libraries from NVIDIA's own PyPI wheels, for machines without a CUDA toolkit. The SDK finds them under
-# site-packages/nvidia/*/bin (Windows). The CUDA plugin of the wheel is built against CUDA 12.9.
-cuda = ["nvidia-cuda-runtime-cu12", "nvidia-cublas-cu12"]
+# site-packages/nvidia/*/bin (Windows). The CUDA plugin of the wheel is built against CUDA 12.9, hence the lower
+# bound. This extra has not been tested yet.
+cuda = ["nvidia-cuda-runtime-cu12>=12.9", "nvidia-cublas-cu12>=12.9"]
 
 [project.scripts]
 littlemore = "littlemore.cli:main"
