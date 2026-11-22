@@ -125,7 +125,9 @@ CONVERSATIONS = {
     "two-thinking-turns": [{"role": "system", "content": "Be brief."}, {"role": "user", "content": "A?"},
                            {"role": "assistant", "content": "<think>\none\n</think>\n\nB."}, {"role": "user", "content": "C?"},
                            {"role": "assistant", "content": "<think>\ntwo\n</think>\n\nD."}, {"role": "user", "content": "E?"}],
-    # the last turn is the assistant's (after the last user turn): the template keeps its reasoning, and so does lm_chat
+    # the last turn is the assistant's (after the last user turn): the template keeps its reasoning and so does lm_chat;
+    # identical here because the reasoning is written in the template's own canonical form (docs/c-api.md lists the
+    # cases after the last user turn where the template re-renders it and lm_chat does not)
     "thinking-after-last-user": [{"role": "user", "content": "Q?"},
                                  {"role": "assistant", "content": "<think>\nr\n</think>\n\nA."}],
 }
@@ -133,20 +135,25 @@ CONVERSATIONS = {
 
 @pytest.mark.parametrize("conv", sorted(CONVERSATIONS))
 def test_qwen3_chat_template_matches_hugging_face(qwen06: Path, conv: str) -> None:
-    """lm_chat's prompt must be the one Qwen3's own template renders: greedy lm_chat == greedy lm_generate of the
-    Hugging Face rendering (CPU, deterministic). Prints both texts' start on a mismatch."""
+    """lm_chat's prompt must be the one Qwen3's own template renders. The C API does not expose lm_chat's tokens, so
+    the check is on output: greedy lm_chat == greedy lm_generate of the Hugging Face rendering (CPU, deterministic,
+    24 tokens). For the histories with reasoning, a control shows that this comparison tells the two candidate prompts
+    apart: lm_generate of llama.cpp's plain ChatML rendering (reasoning kept) gives a different text."""
     if not (QWEN06_HF / "tokenizer_config.json").exists():
         pytest.skip("the Qwen3-0.6B tokenizer is not cached")
     msgs = CONVERSATIONS[conv]
     hf = _hf_prompt(msgs)
+    # llama.cpp's ChatML formatting without any stripping (engine/src/llama-chat.cpp, LLM_CHAT_TEMPLATE_CHATML)
+    plain = "".join(f"<|im_start|>{x['role']}\n{x['content']}<|im_end|>\n" for x in msgs) + "<|im_start|>assistant\n"
     o = _rb.run_child(f"""
 st, m = load({str(qwen06)!r}, {{'devices': 'none'}})
 _, s = session(m, {{'n_ctx': 512}})
 g = {{'temperature': 0.0, 'max_tokens': 24}}
 c = chat(s, {[(x['role'], x['content']) for x in msgs]!r}, g)
 r = generate(s, {hf!r}.encode(), g)
-emit(chat=c[0], gen=r[0], same=(c[1] == r[1]), chat_text=c[1].decode('utf-8', 'replace')[:120],
-     gen_text=r[1].decode('utf-8', 'replace')[:120])
+u = generate(s, {plain!r}.encode(), g)
+emit(chat=c[0], gen=r[0], same=(c[1] == r[1]), control_differs=(u[1] != r[1]), plain_is_hf=({plain!r} == {hf!r}),
+     chat_text=c[1].decode('utf-8', 'replace')[:120], gen_text=r[1].decode('utf-8', 'replace')[:120])
 """, timeout=300)
     assert o.clean, o.describe()
     r = o.result
@@ -155,6 +162,8 @@ emit(chat=c[0], gen=r[0], same=(c[1] == r[1]), chat_text=c[1].decode('utf-8', 'r
     # Before Task 20's fix the histories with <think> blocks in earlier assistant turns differed: llama.cpp's built-in
     # ChatML formatting kept them, Qwen3's template removes them. lm_chat now strips them for such templates.
     assert r["same"], r
+    if any("</think>" in x["content"] for x in msgs[:-1] if x["role"] == "assistant") and not r["plain_is_hf"]:
+        assert r["control_differs"], f"the greedy comparison cannot tell the stripped from the unstripped prompt: {r}"
 
 
 # --------------------------------------------------------------------------------------------------------------
@@ -265,24 +274,38 @@ m.close()
 def test_sdk_keyboard_interrupt_during_stream_and_during_c_call(qwen06: Path) -> None:
     """Ctrl+C (simulated with _thread.interrupt_main, which raises KeyboardInterrupt in the main thread as SIGINT
     does) while iterating a stream, and while the main thread is inside a non-streaming C call: KeyboardInterrupt
-    reaches the caller, nothing hangs, and the model is usable afterwards."""
+    reaches the caller, nothing hangs, and the model is usable afterwards.
+    No timing race: the stream is interrupted after its first piece, and the non-streaming call 0.2 s after the C call
+    has started (seen through a wrapper of lm_generate), while 3000 of its tokens (tens of seconds on the CPU) remain."""
     o = _sdk_child(qwen06, """
-g = dict(temperature=0, max_tokens=200)
+from littlemore import _lib
+m.close()
+m = littlemore.Model(MODEL_PATH, devices='none', n_ctx=4096)
+g = dict(temperature=0, max_tokens=3000)
 ref = m.generate('Hello', temperature=0, max_tokens=8)
 res = {}
 try:
-    threading.Timer(0.5, _thread.interrupt_main).start()
-    for piece in m.generate('Hello', stream=True, **g):
-        time.sleep(0.02)
+    for i, piece in enumerate(m.generate('Hello', stream=True, **g)):
+        if i == 0:
+            _thread.interrupt_main()
+        time.sleep(0.01)
     res['stream'] = 'finished without interrupt'
 except KeyboardInterrupt:
     res['stream'] = 'interrupted'
+lib = _lib.load(); real = lib.lm_generate; started = threading.Event()
+def spy(*a):
+    started.set()
+    return real(*a)
+lib.lm_generate = spy
+threading.Thread(target=lambda: (started.wait(60), time.sleep(0.2), _thread.interrupt_main())).start()
+t = time.time()
 try:
-    threading.Timer(0.3, _thread.interrupt_main).start()
     m.generate('Hello', **g)
     res['collect'] = 'finished without interrupt'
 except KeyboardInterrupt:
     res['collect'] = 'interrupted'
+res['collect_s'] = round(time.time() - t, 2)
+lib.lm_generate = real""".replace("MODEL_PATH", repr(str(qwen06))) + """
 t = time.time(); res['after_same'] = m.generate('Hello', temperature=0, max_tokens=8) == ref; res['after_s'] = round(time.time() - t, 2)
 m.close(); res['closed'] = m.closed
 emit(**res)
@@ -413,3 +436,62 @@ def test_freed_handles_are_undefined_behaviour_documented(tiny: Path, case: str)
     print(ascii((case, o.kind, o.results)))
     header = (ROOT / "include" / "littlemore.h").read_text(encoding="utf-8")
     assert "undefined behaviour" in header and "freed" in header, "the header must state the freed-handle rule"
+
+
+# A Phi-4-reasoning-like template: "<|im_start|>" and "<|im_sep|>" (llama.cpp formats it as Phi-4, not ChatML) and
+# "<think>...</think>" in its text. lm_chat must not strip reasoning for it (only Qwen3-style ChatML templates do).
+PHI4_REASONING = ("{% for message in messages %}{{'<|im_start|>' + message['role'] + '<|im_sep|>' + message['content'] + "
+                  "'<|im_end|>'}}{% endfor %}{% if add_generation_prompt %}{{'<|im_start|>assistant<|im_sep|>'}}{% endif %}"
+                  "{# You may reason first, inside <think> ... </think>. #}")
+
+
+def _with_template(src: Path, dst: Path, template: str) -> Path:
+    """Copy of a GGUF with its tokenizer.chat_template replaced (metadata rewritten, tensor data copied unchanged)."""
+    import struct
+    if dst.exists():
+        return dst
+    L = _rb.GGUFLayout.parse(src)
+    kv = L.kv[L.kv_index("tokenizer.chat_template")]
+    t = template.encode("utf-8")
+    entry = struct.pack("<Q", len(kv["key"])) + kv["key"].encode() + struct.pack("<IQ", _rb.GGUF_STRING, len(t)) + t
+    with open(src, "rb") as f:
+        meta = f.read(L.tensor_info_end)
+    meta = meta[:kv["start"]] + entry + meta[kv["end"]:]
+    tmp = dst.with_name(dst.name + ".tmp")
+    with open(src, "rb") as f, open(tmp, "wb") as out:
+        out.write(meta + bytes((-len(meta)) % 32))
+        f.seek(L.data_start)
+        while True:
+            chunk = f.read(64 << 20)
+            if not chunk:
+                break
+            out.write(chunk)
+    tmp.replace(dst)
+    return dst
+
+
+def test_phi4_style_reasoning_template_is_not_stripped(qwen06: Path) -> None:
+    """A template that llama.cpp formats as Phi-4 keeps the reasoning of earlier assistant turns: greedy lm_chat equals
+    lm_generate of the Phi-4 rendering WITH the <think> block, and differs from the rendering without it (control)."""
+    model = _with_template(qwen06, _rb.SCRATCH / "qwen06_phi4_template.gguf", PHI4_REASONING)
+    msgs = [("user", "2+2?"), ("assistant", "<think>\nadd them\n</think>\n\n4"), ("user", "and 3+3?")]
+
+    def phi4(ms):
+        return "".join(f"<|im_start|>{r}<|im_sep|>{c}<|im_end|>" for r, c in ms) + "<|im_start|>assistant<|im_sep|>"
+
+    kept = phi4(msgs)
+    stripped = phi4([(r, c.split("</think>")[-1].lstrip("\n") if r == "assistant" else c) for r, c in msgs])
+    o = _rb.run_child(f"""
+st, m = load({str(model)!r}, {{'devices': 'none'}})
+_, s = session(m, {{'n_ctx': 512}})
+g = {{'temperature': 0.0, 'max_tokens': 24}}
+c = chat(s, {msgs!r}, g)
+k = generate(s, {kept!r}.encode(), g)
+x = generate(s, {stripped!r}.encode(), g)
+emit(load=st, chat=c[0], same_as_kept=(c[1] == k[1]), kept_differs_from_stripped=(k[1] != x[1]))
+""", timeout=600)
+    assert o.clean, o.describe()
+    r = o.result
+    print(ascii(r))
+    assert r["load"] == r["chat"] == "LM_OK" and r["kept_differs_from_stripped"], r
+    assert r["same_as_kept"], r

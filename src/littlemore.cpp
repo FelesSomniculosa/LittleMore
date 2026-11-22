@@ -887,10 +887,14 @@ lm_status run(lm_session * session, const std::string & prompt, const lm_samplin
 namespace {
 
 // True for a ChatML template that handles reasoning blocks (Qwen3 style: "<|im_start|>" and "</think>" in the template
-// text). llama.cpp formats every "<|im_start|>" template as plain ChatML, which keeps <think> blocks that such a
-// template removes; lm_chat then strips them itself (strip_reasoning).
+// text). llama.cpp formats such a template as plain ChatML, which keeps <think> blocks that the template removes;
+// lm_chat then strips them itself (strip_reasoning). Mirrors llama.cpp's own template detection
+// (engine/src/llama-chat.cpp): an "<|im_start|>" template that also contains "<|im_sep|>" is formatted as Phi-4 and one
+// with "<end_of_utterance>" as SmolVLM, not as ChatML, so those are left alone (e.g. Phi-4-reasoning mentions
+// <think>...</think> in its system text but is not a Qwen3-style template).
 bool is_reasoning_chatml(const char * tmpl) {
-    return tmpl && std::strstr(tmpl, "<|im_start|>") && std::strstr(tmpl, "</think>");
+    return tmpl && std::strstr(tmpl, "<|im_start|>") && std::strstr(tmpl, "</think>") && !std::strstr(tmpl, "<|im_sep|>") &&
+           !std::strstr(tmpl, "<end_of_utterance>");
 }
 
 // Index of the last "real" user turn, as Qwen3's template computes it (last_query_index): the last user message that
