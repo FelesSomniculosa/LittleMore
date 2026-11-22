@@ -49,10 +49,19 @@ littlemore convert --repo CHECKOUT CHECKPOINT_DIR -o model.gguf  # LittleBit che
   `chat` on one model; the calls run one after another. Closing the model, or leaving the program, stops open streams.
 - **Text decoding** never raises: pieces are decoded incrementally as UTF-8 and invalid bytes become U+FFFD.
 - **Unicode normalization**: the SDK normalizes every text it passes to the library (`generate` prompts, `chat`
-  messages, `tokenize`) to NFC, as the Hugging Face tokenizers of Qwen3 and many other models do. Without it a decomposed
-  text (e.g. "e" + U+0301 instead of "é", or Korean as conjoining jamo) got different, more tokens (Qwen3: 16 instead of 8
-  for "café naïve Ångström" in NFD). So `detokenize(tokenize(text))` returns the NFC form of `text`. The C API itself
-  does **not** normalize: it passes bytes on unchanged (docs/c-api.md, "Tokenizer and Unicode normalization").
+  messages, `tokenize`) to NFC, **for every model** (a GGUF file does not record a tokenizer's normalizer, so the SDK
+  cannot tell). What that means, checked on the tokenizers available here:
+  - Qwen3 (every Qwen3 / Qwen3.5 `tokenizer.json` here declares `"normalizer": {"type": "NFC"}`): the SDK's tokens now
+    equal the Hugging Face tokens for decomposed text too; without it a decomposed text ("e" + U+0301 instead of "é",
+    Korean as conjoining jamo) got other and more tokens (16 instead of 8 for "café naïve Ångström" in NFD).
+  - SentencePiece models trained with SentencePiece's default `nmt_nfkc` normalization (the tiny test models): the
+    reference tokenizer gives the same tokens for the NFD and NFC forms, so NFC input moves the engine towards it.
+  - A tokenizer **without** a normalizer (not verified on a real one here: no such tokenizer is available locally; some
+    byte-level BPE tokenizers are of this kind): its reference tokens of a decomposed text are those of the
+    decomposed bytes, and the SDK's are those of the NFC form, so they differ on non-NFC input (measured with the Qwen3
+    vocabulary and the normalizer removed: 8 instead of 16 tokens for the NFD example; NFC input is unaffected).
+  So `detokenize(tokenize(text))` returns the NFC form of `text`. The C API itself does **not** normalize: it passes
+  bytes on unchanged (docs/c-api.md, "Tokenizer and Unicode normalization"); call it directly for byte-exact input.
 - **Chat with a reasoning model** (Qwen3): `<think>...</think>` blocks of earlier assistant turns are removed by the
   library, as Qwen3's own chat template does, so the history may contain the model's full earlier answers.
 - **Errors** are `littlemore.LittleMoreError` with `.status`, `.status_name` (e.g. `LM_ERR_MODEL_LOAD`) and the

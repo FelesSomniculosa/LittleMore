@@ -98,11 +98,22 @@ when there is no discrete one); `"none"` = CPU only; `"CUDA0"` or `"CUDA0,CUDA1"
   can change the tokens at the boundaries between template text and content, so it is not done.
   Reasoning templates: Qwen3's own template removes the `<think>...</think>` block of the assistant turns that come
   before the last user turn, while llama.cpp's built-in ChatML formatting would keep it. For a ChatML template that
-  handles reasoning (its text contains both `<|im_start|>` and `</think>`), `lm_chat` therefore drops everything up to
-  the last `</think>` (and the newlines after it) from those earlier assistant turns, as the template does; an
-  assistant turn after the last user turn is passed unchanged. Checked token for token against the Hugging Face
-  `apply_chat_template` rendering on Qwen3 (`tests/robustness/test_d_misuse.py`: one-turn, system + user, plain
-  multi-turn and four histories with reasoning blocks); templates without `</think>` are not affected.
+  handles reasoning (its text contains both `<|im_start|>` and `</think>`, and neither `<|im_sep|>` nor
+  `<end_of_utterance>`, with which llama.cpp formats it as Phi-4 or SmolVLM instead), `lm_chat` therefore drops
+  everything up to the last `</think>` (and the newlines after it) from those earlier assistant turns, as the template
+  does. Templates without `</think>` and Phi-4 / SmolVLM style templates are not affected. Checked on Qwen3-0.6B
+  (`tests/robustness/test_d_misuse.py`) by output, not by tokens (the C API does not expose `lm_chat`'s tokens):
+  greedy `lm_chat` gives the same text as greedy `lm_generate` of the Hugging Face `apply_chat_template` rendering
+  for one-turn, system + user, plain multi-turn and four histories with reasoning, and a control shows the comparison
+  tells the stripped from the unstripped prompt apart.
+  Known remaining differences from Qwen3's template, all about assistant turns AFTER the last user turn (which
+  `lm_chat` passes unchanged; rare in plain chat, they occur in prefill and tool flows): (1) reasoning written
+  without the template's newlines (`<think>r</think>B`) is re-rendered by the template as
+  `<think>\nr\n</think>\n\nB`; (2) an empty `<think>\n\n</think>\n\n` block in such a turn that is not the last
+  one (a tool flow, where the last "user" turn is a `<tool_response>`) is dropped by the template; (3) in the same flow
+  with a non-empty block the template also gives the final assistant turn an empty block; (4) a conversation that ends
+  with an assistant turn without reasoning gets an empty `<think>\n\n</think>\n\n` from the template. Write such
+  turns in the template's form yourself if they matter.
 - **Tokenizer and Unicode normalization**: the Qwen3 tokenizer (`tokenizer.json`) normalizes text to NFC before
   tokenizing; llama.cpp's tokenizer does not. Text in decomposed form (NFD, e.g. "e" + U+0301 instead of "é", or Korean
   as conjoining jamo) therefore gets more and different tokens than the Hugging Face tokenizer gives it (measured:
