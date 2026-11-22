@@ -1,0 +1,376 @@
+{
+ "runs": [
+  {
+   "file": "C:\\Vibe Coding\\LittleMore\\.cache\\gguf\\qwen3-0.6b-lb2-0.55-b1.gguf",
+   "pp512_samples": [
+    9978.17,
+    7583.15,
+    7300.2
+   ],
+   "clock_at_start_mhz": 2130.0,
+   "rep1_clock_mhz": [
+    2130.0,
+    2130.0,
+    2130.0
+   ],
+   "end": 349616.8907888,
+   "round": 0
+  },
+  {
+   "file": "C:\\Vibe Coding\\LittleMore\\.cache\\gguf\\qwen3-0.6b-base-f16.gguf",
+   "pp512_samples": [
+    12211.4,
+    11389.6,
+    11343.0
+   ],
+   "clock_at_start_mhz": 1665.0,
+   "rep1_clock_mhz": null,
+   "end": 349621.8086664,
+   "round": 0
+  },
+  {
+   "file": "C:\\Vibe Coding\\LittleMore\\.cache\\gguf\\qwen3-1.7b-lb2-0.55-b1.gguf",
+   "pp512_samples": [
+    4136.92,
+    3994.19,
+    3898.88
+   ],
+   "clock_at_start_mhz": 2235.0,
+   "rep1_clock_mhz": [
+    2235.0,
+    2235.0,
+    2235.0
+   ],
+   "end": 349627.3846855,
+   "round": 0
+  },
+  {
+   "file": "C:\\Vibe Coding\\LittleMore\\.cache\\gguf\\qwen3-1.7b-base-f16.gguf",
+   "pp512_samples": [
+    4788.27,
+    5145.95,
+    4777.49
+   ],
+   "clock_at_start_mhz": 2175.0,
+   "rep1_clock_mhz": [
+    2175.0,
+    2175.0,
+    2175.0
+   ],
+   "end": 349634.2175489,
+   "round": 0
+  },
+  {
+   "file": "C:\\Vibe Coding\\LittleMore\\.cache\\gguf\\qwen3-0.6b-lb2-0.55-b1.gguf",
+   "pp512_samples": [
+    10719.8,
+    10120.3,
+    10210.7
+   ],
+   "clock_at_start_mhz": 2340.0,
+   "rep1_clock_mhz": [
+    2340.0,
+    2340.0,
+    2340.0
+   ],
+   "end": 349639.5693796,
+   "round": 1
+  },
+  {
+   "file": "C:\\Vibe Coding\\LittleMore\\.cache\\gguf\\qwen3-0.6b-base-f16.gguf",
+   "pp512_samples": [
+    10961.0,
+    10815.1,
+    10928.0
+   ],
+   "clock_at_start_mhz": 2340.0,
+   "rep1_clock_mhz": [
+    2340.0,
+    2340.0,
+    2340.0
+   ],
+   "end": 349644.4174235,
+   "round": 1
+  },
+  {
+   "file": "C:\\Vibe Coding\\LittleMore\\.cache\\gguf\\qwen3-1.7b-lb2-0.55-b1.gguf",
+   "pp512_samples": [
+    4356.61,
+    4155.51,
+    4009.15
+   ],
+   "clock_at_start_mhz": 1650.0,
+   "rep1_clock_mhz": [
+    1650.0,
+    1995.0,
+    2340.0
+   ],
+   "end": 349649.961594,
+   "round": 1
+  },
+  {
+   "file": "C:\\Vibe Coding\\LittleMore\\.cache\\gguf\\qwen3-1.7b-base-f16.gguf",
+   "pp512_samples": [
+    5749.18,
+    4817.86,
+    4711.95
+   ],
+   "clock_at_start_mhz": 2340.0,
+   "rep1_clock_mhz": [
+    2340.0,
+    2340.0,
+    2340.0
+   ],
+   "end": 349656.7419981,
+   "round": 1
+  },
+  {
+   "file": "C:\\Vibe Coding\\LittleMore\\.cache\\gguf\\qwen3-0.6b-lb2-0.55-b1.gguf",
+   "pp512_samples": [
+    11227.2,
+    10443.2,
+    10258.0
+   ],
+   "clock_at_start_mhz": 2340.0,
+   "rep1_clock_mhz": [
+    2340.0,
+    2340.0,
+    2340.0
+   ],
+   "end": 349662.3775096,
+   "round": 2
+  },
+  {
+   "file": "C:\\Vibe Coding\\LittleMore\\.cache\\gguf\\qwen3-0.6b-base-f16.gguf",
+   "pp512_samples": [
+    12126.1,
+    11068.8,
+    11049.5
+   ],
+   "clock_at_start_mhz": 1920.0,
+   "rep1_clock_mhz": null,
+   "end": 349667.2752795,
+   "round": 2
+  },
+  {
+   "file": "C:\\Vibe Coding\\LittleMore\\.cache\\gguf\\qwen3-1.7b-lb2-0.55-b1.gguf",
+   "pp512_samples": [
+    4774.98,
+    4522.06,
+    4451.89
+   ],
+   "clock_at_start_mhz": 2340.0,
+   "rep1_clock_mhz": [
+    2340.0,
+    2340.0,
+    2340.0
+   ],
+   "end": 349672.8107813,
+   "round": 2
+  },
+  {
+   "file": "C:\\Vibe Coding\\LittleMore\\.cache\\gguf\\qwen3-1.7b-base-f16.gguf",
+   "pp512_samples": [
+    4925.68,
+    4973.43,
+    4521.27
+   ],
+   "clock_at_start_mhz": 2325.0,
+   "rep1_clock_mhz": [
+    2325.0,
+    2325.0,
+    2325.0
+   ],
+   "end": 349679.5831431,
+   "round": 2
+  },
+  {
+   "file": "C:\\Vibe Coding\\LittleMore\\.cache\\gguf\\qwen3-0.6b-lb2-0.55-b1.gguf",
+   "pp512_samples": [
+    10986.8,
+    10520.7,
+    10057.8
+   ],
+   "clock_at_start_mhz": 2325.0,
+   "rep1_clock_mhz": [
+    2325.0,
+    2325.0,
+    2325.0
+   ],
+   "end": 349684.8469783,
+   "round": 3
+  },
+  {
+   "file": "C:\\Vibe Coding\\LittleMore\\.cache\\gguf\\qwen3-0.6b-base-f16.gguf",
+   "pp512_samples": [
+    11729.0,
+    11073.5,
+    11185.3
+   ],
+   "clock_at_start_mhz": 2085.0,
+   "rep1_clock_mhz": [
+    2085.0,
+    2085.0,
+    2085.0
+   ],
+   "end": 349689.7160538,
+   "round": 3
+  },
+  {
+   "file": "C:\\Vibe Coding\\LittleMore\\.cache\\gguf\\qwen3-1.7b-lb2-0.55-b1.gguf",
+   "pp512_samples": [
+    4444.94,
+    4430.84,
+    4359.1
+   ],
+   "clock_at_start_mhz": 2325.0,
+   "rep1_clock_mhz": [
+    2325.0,
+    2325.0,
+    2325.0
+   ],
+   "end": 349695.2324176,
+   "round": 3
+  },
+  {
+   "file": "C:\\Vibe Coding\\LittleMore\\.cache\\gguf\\qwen3-1.7b-base-f16.gguf",
+   "pp512_samples": [
+    5342.26,
+    5179.7,
+    4623.57
+   ],
+   "clock_at_start_mhz": 2325.0,
+   "rep1_clock_mhz": [
+    2325.0,
+    2325.0,
+    2325.0
+   ],
+   "end": 349702.0072202,
+   "round": 3
+  },
+  {
+   "file": "C:\\Vibe Coding\\LittleMore\\.cache\\gguf\\qwen3-0.6b-lb2-0.55-b1.gguf",
+   "pp512_samples": [
+    10187.8,
+    9895.06,
+    9647.44
+   ],
+   "clock_at_start_mhz": 2325.0,
+   "rep1_clock_mhz": [
+    2325.0,
+    2325.0,
+    2325.0
+   ],
+   "end": 349707.2741949,
+   "round": 4
+  },
+  {
+   "file": "C:\\Vibe Coding\\LittleMore\\.cache\\gguf\\qwen3-0.6b-base-f16.gguf",
+   "pp512_samples": [
+    8337.7,
+    11444.9,
+    11312.2
+   ],
+   "clock_at_start_mhz": 1950.0,
+   "rep1_clock_mhz": null,
+   "end": 349712.6943533,
+   "round": 4
+  },
+  {
+   "file": "C:\\Vibe Coding\\LittleMore\\.cache\\gguf\\qwen3-1.7b-lb2-0.55-b1.gguf",
+   "pp512_samples": [
+    4603.03,
+    4434.81,
+    4281.28
+   ],
+   "clock_at_start_mhz": 2325.0,
+   "rep1_clock_mhz": [
+    2325.0,
+    2325.0,
+    2325.0
+   ],
+   "end": 349718.2537411,
+   "round": 4
+  },
+  {
+   "file": "C:\\Vibe Coding\\LittleMore\\.cache\\gguf\\qwen3-1.7b-base-f16.gguf",
+   "pp512_samples": [
+    5600.37,
+    5405.69,
+    5275.24
+   ],
+   "clock_at_start_mhz": 2325.0,
+   "rep1_clock_mhz": [
+    2325.0,
+    2325.0,
+    2325.0
+   ],
+   "end": 349725.357807,
+   "round": 4
+  },
+  {
+   "file": "C:\\Vibe Coding\\LittleMore\\.cache\\gguf\\qwen3-0.6b-lb2-0.55-b1.gguf",
+   "pp512_samples": [
+    9825.54,
+    9988.28,
+    9895.88
+   ],
+   "clock_at_start_mhz": 2325.0,
+   "rep1_clock_mhz": [
+    2325.0,
+    2325.0,
+    2325.0
+   ],
+   "end": 349730.669126,
+   "round": 5
+  },
+  {
+   "file": "C:\\Vibe Coding\\LittleMore\\.cache\\gguf\\qwen3-0.6b-base-f16.gguf",
+   "pp512_samples": [
+    11756.4,
+    12205.6,
+    11498.6
+   ],
+   "clock_at_start_mhz": 2115.0,
+   "rep1_clock_mhz": [
+    2115.0,
+    2115.0,
+    2115.0
+   ],
+   "end": 349735.5443626,
+   "round": 5
+  },
+  {
+   "file": "C:\\Vibe Coding\\LittleMore\\.cache\\gguf\\qwen3-1.7b-lb2-0.55-b1.gguf",
+   "pp512_samples": [
+    4480.14,
+    4322.7,
+    4173.35
+   ],
+   "clock_at_start_mhz": 2325.0,
+   "rep1_clock_mhz": [
+    2325.0,
+    2325.0,
+    2325.0
+   ],
+   "end": 349741.1015137,
+   "round": 5
+  },
+  {
+   "file": "C:\\Vibe Coding\\LittleMore\\.cache\\gguf\\qwen3-1.7b-base-f16.gguf",
+   "pp512_samples": [
+    5178.33,
+    4819.19,
+    4421.21
+   ],
+   "clock_at_start_mhz": 2325.0,
+   "rep1_clock_mhz": [
+    2325.0,
+    2325.0,
+    2325.0
+   ],
+   "end": 349747.9996524,
+   "round": 5
+  }
+ ]
+}

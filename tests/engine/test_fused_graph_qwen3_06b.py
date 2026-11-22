@@ -98,9 +98,17 @@ def test_fused_matches_reference_and_beats_slow_path(ggufs, prompt, ngl):
 # LittleBit-vs-reference / dense-vs-dense-reference at the same settings, 16 tokens, -ngl 99: measured 1.25 (default)
 # and 1.43 (-fa off, f32 KV) with the LittleBit op on CUDA (1.46 / 1.56 when it ran on the CPU); limit 2.0.
 GPU_OVER_DENSE_FLOOR_MAX = 2.0
-# Prefill (44 tokens) at -ngl 99, exact config: measured 1.58 x the dense floor (limit above, 2.0).  Default config:
-# LittleBit on the GPU / the same model on the pure CPU in the same config, measured 1.40 (3.09e-2 / 2.20e-2); limit
-# 2.0 (see test_gpu_error_is_within_dense_floor_factor for why the dense factor does not apply there).
+# Prefill (44 tokens) at -ngl 99, exact config: measured 1.58 x the dense floor with the float32 GEMM prefill path, 1.80
+# with the tensor-core prefill path of Task 13b (limit above, 2.0: the margin shrank from 21 % to 10 %).  That path is
+# MORE accurate at op level (worst error against the double reference 1.8e-7 vs 6.9e-7); the ratio moved because any
+# change of summation order moves this init-only model's error by tens of percent (Task 13 study: 0.019 .. 0.189
+# between correct paths and prompts).  So this guard can trip on unrelated, correct changes, and a ratio above 2.0 is
+# not by itself evidence of harm: a 24-bit-activation build, whose op error equals the float32 path's, scored 2.30
+# here while the float32 path scores 1.58.  Do not loosen it on that account; diagnose with the op-level tests
+# (test-littlebit-ref, test-backend-ops), which are the precise detectors.  Default config: LittleBit on the GPU / the
+# same model on the pure CPU in the same config, measured 1.40 (3.09e-2 / 2.20e-2) with the float32 path, 1.34 with
+# the tensor-core path; limit 2.0 (see test_gpu_error_is_within_dense_floor_factor for why the dense factor does not
+# apply there).
 GPU_OVER_CPU_DEFAULT_MAX = 2.0
 # One token, -ngl 99, -fa off, f32 KV: with the F16 head 4.8e-3 (limit 1e-2); with an F32 head 2.6e-5 with the op on
 # CUDA (1.1e-4 when it ran on the CPU), limit 2.5e-4 (about 10x; was 1e-3).

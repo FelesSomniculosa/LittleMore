@@ -625,14 +625,17 @@ prompt, default configuration 2.95e-2 (GPU / pure CPU 1.34, bound 2.0; before: 3
 2.22e-2 (dense floor ratio 1.80, bound 2.0; before: 1.94e-2, 1.58); 16-token prompt (now this path, before the chunked
 decode kernels): 3.92e-2 / 4.27e-2. These model-level values move by tens of percent with any change of summation
 order on this init-only model (the Task 13 study: 0.019 .. 0.189 between correct paths and prompts), so they are
-within the noise of correct code; the precise detectors are the op-level bounds above.
+within the noise of correct code; the precise detectors are the op-level bounds above. Plainly: the exact-config
+guard ratio rose from 1.58 to 1.80 (limit 2.0), so its margin shrank from 21 % to 10 %; it can trip on unrelated
+correct changes, and must not be loosened for that, but read against the op-level tests (the ratio does not track op
+error: see the P = 24 row below).
 
-New test teeth: `LB_BP_TOL = 1e-6` (worst error against the double reference of the tensor-core cases; measured
-1.8e-7) and a case with two token chunks and two output windows (5248 x 37, 640 + 640 latent units, 512 tokens) in
-both test programs. Mutations (each built and run, source restored and compared): top plane not negated (harness
-241/452 pass, error 1.3e4), wrong low-part sum (241/452, 2.2e-2), later output windows overwriting y (351/452, 1.24),
+New test teeth: `LB_BP_TOL = 4e-7` (worst error against the double reference of the tensor-core cases; measured
+1.8e-7; 24- and 20-bit builds give 7.1e-7 and 1.0e-5 and fail it) and a case with two token chunks and two output windows (5248 x 37, 640 + 640 latent units, 512 tokens) in
+both test programs. Mutations (each built and run, source restored and compared; the harness had 451 cases then, 452 with the case added afterwards): top plane not negated (harness
+241/451 pass, error 1.3e4), wrong low-part sum (241/451, 2.2e-2), later output windows overwriting y (351/451, 1.24),
 token-chunk offset of x ignored (caught only by the new case in test-littlebit-ref, error 1.57: the harness had no
-case with two token chunks, now added), residual path using s_mid (314/452, inf), 20-bit activations (passes TOL and
+case with two token chunks, now added), residual path using s_mid (314/451, inf), 20-bit activations (passes TOL and
 the NMSE bound, error 1.0e-5, NMSE 8.7e-11; fails `LB_BP_TOL`).
 
 **Dispatch rule.** With this path the decode kernels keep 1..8 tokens and every larger batch takes it: measured with
@@ -680,7 +683,7 @@ down: latent 62 %, output 20 %, planes 18 %. The inner loop alone (planes in sha
 about 90 % of the instruction's peak; the kernels reach 40-80 % of it (5-9 G instructions per second), limited by
 latency at block start / end, global loads of the weight bits and the plane traffic. Not pursued further in this task.
 
-**Model level** (gate harness, 3 interleaved rounds, [bench/results/phase1_13b.md](../bench/results/phase1_13b.md)): pp512 Qwen3-0.6B 9628 t/s (float32 path in the same rounds 3051, F16 11643, bf16 9256): 3.2x faster, 0.83x F16; Qwen3-1.7B 4118 (1531, F16 3872, bf16 3722): 2.7x faster, 1.06x F16. tg128 unchanged (219.6 / 143.3). VRAM 801 vs 821 MiB and 1191 vs 1223 MiB (smaller scratch).
+**Model level** (gate harness, 3 interleaved rounds, [bench/results/phase1_13b.md](../bench/results/phase1_13b.md)): pp512 Qwen3-0.6B 9628 t/s (float32 path in the same rounds 3051, F16 11643, bf16 9256): 3.2x faster, 0.83x F16; Qwen3-1.7B 4118 (1531, F16 3872, bf16 3722): 2.7x faster. The 1.06x over F16 on the mean is a power-cap artifact: the F16 model's clock falls to 705-825 MHz within its 10 repetitions (LittleBit: 1395 MHz minimum). At equal clocks (`bench/clock_matched.py`, first timed repetition, both at 2325-2340 MHz) LittleBit is about 0.8-0.9x F16 on Qwen3-1.7B (0.82 .. 0.97) and below F16 on Qwen3-0.6B (0.98 in the one round at equal clock, 0.82-0.94 against an F16 at lower clocks); see bench/results/phase1_13b.md. tg128 unchanged (219.6 / 143.3). VRAM 801 vs 821 MiB and 1191 vs 1223 MiB (smaller scratch).
 
 **Options that trade accuracy (not adopted; measured for the decision).** The number of activation bits P is a
 compile-time constant (`LB_BP_BITS`); fewer bits mean fewer instructions:
@@ -693,7 +696,9 @@ compile-time constant (`LB_BP_BITS`); fewer bits mean fewer instructions:
 | TF32 GEMMs (float32 path, Task 11) | about 1.7x the float32 path, i.e. slower than P = 28 | | 8.1e-4 (8x over the 1e-4 tolerance) | 3.7e-7 | not measured | same |
 
 (pp512 here: plain `llama-bench -p 512 -n 0 -r 5`, not the gate protocol; the model-level values are single runs of the
-coarse guard.) Split-precision bf16 / 3xTF32 GEMMs were not built: their measured instruction rates (bf16 f32-acc
+coarse guard.) "Fails the guard" is not evidence of real harm by itself: P = 24 has the float32 GEMM path's op error
+(7.1e-7 vs 6.9e-7) yet scores 2.30 where the float32 path scores 1.58, so the guard ratio does not track op error;
+the op-level columns are the measure of accuracy. P = 24 and P = 20 now also fail `LB_BP_TOL` (4e-7). Split-precision bf16 / 3xTF32 GEMMs were not built: their measured instruction rates (bf16 f32-acc
 22 TFLOPS with 3 products per exact value, TF32 11.8 TFLOPS with 2) put them below the exact 1-bit path even at their
 peak.
 

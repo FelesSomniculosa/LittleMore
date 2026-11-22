@@ -55,9 +55,19 @@ in [phase1.md](phase1.md).)
   bf16 9256 (1.04x). Not yet at F16 on this model: its 196 LittleBit linears are small (1024..3072 wide, ranks 128..256
   per path), where the fixed cost per call of the three kernels weighs most (docs/engine-changes.md, "CUDA: tensor-core
   prefill path", op-level table: e.g. k / v 100 us against 67 us for F16).
-- **pp512, Qwen3-1.7B:** 4118 against 1531 (2.69x; per round 2.60 / 2.73 / 2.74), F16 3872 (per round 1.16 / 0.89 /
-  1.20; the F16 runs spread from 3414 to 4693 between rounds, the LittleBit ones 3974 .. 4205), bf16 3722 (1.16 / 1.02 /
-  1.16): **at or above dense F16 / bf16** (1.06x F16 on the mean).
+- **pp512, Qwen3-1.7B:** 4118 against 1531 (2.69x; per round 2.60 / 2.73 / 2.74), F16 3872, bf16 3722. The mean ratio
+  1.06x F16 is a **power-cap artifact, not a speed parity**: within each 10-repetition run the F16 model falls from
+  5582 / 5156 / 5362 to about 2800-3400 t/s with the SM clock at 705-825 MHz during its timed repetitions (LittleBit's
+  minimum 1395 MHz): the dense model draws more power on its tensor cores and hits the laptop's ~45 W cap harder. The
+  per-op table (docs/engine-changes.md) has every 1.7B shape slower than F16 (about 91 vs 70 ms of linears per pass).
+- **At equal clocks** ([phase1_13b_clock.json](phase1_13b_clock.json), `bench/clock_matched.py`: 6 interleaved rounds
+  of short pp512 runs started like the harness, the FIRST timed repetition of each run, SM clock sampled during it; no
+  GPU setting changed): Qwen3-1.7B, both files at 2325-2340 MHz in rounds 2-5: LittleBit / F16 = 0.97, 0.83, 0.82,
+  0.87 (round 0, both near 2200 MHz: 0.86), i.e. **about 0.8-0.9x F16**; Qwen3-0.6B, the one round with both at
+  2340 MHz: 0.98, the other rounds 0.82-0.94 with F16 at a LOWER clock (1665-2115 MHz) than LittleBit (2130-2340), so
+  at equal clocks 0.6B is also below F16. First repetitions of the 10-repetition harness runs agree: 1.7B 0.79 /
+  0.89 / 0.98, 0.6B 0.82 / 0.82 / 0.90.
+
 - **tg128 unchanged:** decoding (1 token per call) runs the same decode kernels; LittleBit / float32-path ratio per
   round 0.993 .. 1.025 (noise).
 - **VRAM:** 801 MiB vs 821 (0.6B) and 1191 vs 1223 (1.7B): the new path's scratch (planes, at most 12 MiB per call) is

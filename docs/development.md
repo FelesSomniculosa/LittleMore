@@ -160,8 +160,9 @@ Qwen3-0.6B tokenizer (they skip without it), Llama and Gemma 3 need nothing.
 init-only checkpoint at `-ngl 0` and `-ngl 99`. The engine's own tests: from `engine/build`,
 `ctest -R "test-b1|test-gguf|test-alloc|test-littlebit"` (needs the MSVC environment on `PATH`).
 On a GPU with the tensor-core prefill path (compute capability 8.0+, the CUDA backend reports `LITTLEBIT_BP_PREFILL`),
-run `bin	est-littlebit-ref.exe` and `bin	est-backend-ops.exe test -o LITTLEBIT -b CUDA0` a second time with
-`GGML_CUDA_LITTLEBIT_F32_PREFILL=1` set: that forces the float32 GEMM prefill path and its chunk bands, which the
+run `bin\test-littlebit-ref.exe` and `bin\test-backend-ops.exe test -o LITTLEBIT -b CUDA0` a second time with
+`GGML_CUDA_LITTLEBIT_F32_PREFILL=1` set (ctest does this for test-littlebit-ref: `test-littlebit-ref-f32-prefill`):
+that forces the float32 GEMM prefill path and its chunk bands, which the
 default run no longer reaches on such a GPU.
 `test-littlebit-ref` also compares the CPU's AVX2 kernel of the fused op with its scalar reference kernel (they must be
 bit-identical when neither kernel is FP-contracted, i.e. no a*b + c fused into an FMA by the compiler; asserted for MSVC
