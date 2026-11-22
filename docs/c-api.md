@@ -159,7 +159,8 @@ Python 3.8 and later do not search `PATH` for the DLLs that a loaded DLL depends
 `python.exe`, `littlemore.dll` finds all plugins in its own directory, but the CUDA plugin cannot load its CUDA
 runtime DLLs even with the CUDA 12.9 `bin` directory first on `PATH` (measured: no CUDA0 device, only CPU and
 Vulkan). Call `os.add_dll_directory(<directory with the CUDA runtime DLLs>)` (the toolkit's `bin`, or wherever a
-package bundles them) before loading the library; then CUDA0 appears.
+package bundles them) before loading the library; then CUDA0 appears. The Python SDK ([python/README.md](../python/README.md))
+does this for you.
 
 ## Tests
 

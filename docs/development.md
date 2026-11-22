@@ -54,6 +54,16 @@ The C API (`include/littlemore.h`, the `littlemore` shared library) has its own 
 builds the engine again with `add_subdirectory` into `build/` and runs its C test with CTest
 (`test-api-cpu`, `test-api-cuda`). Commands, design and measurements: [c-api.md](c-api.md).
 
+The Python SDK and the `littlemore` command line (`python/`, a `ctypes` layer over that library) are described in
+[python/README.md](../python/README.md): usage, building a wheel, and how the CUDA runtime DLLs are found. Its tests
+are `tests/python/test_sdk.py` (the fast ones run with the default `pytest`; the ones that load the tiny model carry
+the `smoke` marker, like the other end-to-end tests):
+
+```
+.venv\Scripts\python.exe -m pytest tests/python -q            # fast part
+.venv\Scripts\python.exe -m pytest tests/python -m smoke -q     # with the tiny model (needs build/bin)
+```
+
 ## 3. Unit tests (fast, no engine needed)
 
 ```powershell

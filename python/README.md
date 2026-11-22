@@ -1,0 +1,81 @@
+# LittleMore for Python
+
+Run LittleBit (sub-1-bit) language models, and ordinary GGUF models, from Python or the terminal. The package is a
+thin `ctypes` layer over the LittleMore C library: installing it needs no compiler. Wheels bundle the library and its
+compute-backend plugins (CPU variants, CUDA, Vulkan).
+
+## Quickstart
+
+```python
+import littlemore
+
+with littlemore.Model("model.gguf") as model:                 # n_gpu_layers="auto": fit as many layers on the GPU as fit
+    print(model.chat([{"role": "user", "content": "Hello!"}]))
+
+    for piece in model.chat([{"role": "user", "content": "Tell me a story"}], stream=True):
+        print(piece, end="", flush=True)                      # a generator of text pieces
+
+    print(model.generate("Once upon a time", max_tokens=50))  # raw continuation, no chat template
+    print(model.info())                                       # library version, backends, layers on the GPU, ...
+```
+
+```
+littlemore run model.gguf                       # chat in the terminal (/exit, /clear)
+littlemore run model.gguf --prompt "Hello"      # one answer, for scripts
+littlemore run model.gguf --cpu-only            # no GPU at all
+littlemore bench model.gguf                     # load time, first-piece latency, generation speed
+littlemore convert CHECKPOINT_DIR -o model.gguf # LittleBit checkpoint -> GGUF (source checkout only, see below)
+```
+
+## What to know
+
+- **Multi-turn chat**: every `chat()` call starts from scratch. Pass the whole history, including earlier assistant
+  answers, each time (`littlemore run` does).
+- **Sampling** is deterministic by default (the same input gives the same text, even at `temperature > 0`, because the
+  default seed is 0). Keyword arguments: `temperature`, `top_k`, `top_p`, `seed`, `max_tokens`. Use
+  `seed="random"` (or `littlemore.SEED_RANDOM`) for varied answers.
+- **GPU use**: `n_gpu_layers="auto"` (default, `-1`) or a number. `n_gpu_layers=0` keeps the weights on the CPU, but the GPU
+  still processes large prompt batches (0.7 to 1 GiB of GPU memory, much faster prompts; generation stays on the CPU).
+  That is intended. For no GPU use at all pass `devices="none"` (CLI: `--cpu-only`). `devices="CUDA0"` picks a device.
+  See `Model.info()["backends"]` for the device names.
+- **Streaming** runs the generation in a worker thread, so the generator can be consumed from any thread. Closing or
+  dropping the generator stops the generation and releases the model for the next call. Several threads can call
+  `chat` on one model; the calls run one after another.
+- **Text decoding** never raises: pieces are decoded incrementally as UTF-8 and invalid bytes become U+FFFD.
+- **Errors** are `littlemore.LittleMoreError` with `.status`, `.status_name` (e.g. `LM_ERR_MODEL_LOAD`) and the
+  library's own message.
+- **Closing**: `with Model(...)`, or `model.close()` (safe to repeat). Using a closed model raises `LittleMoreError`.
+
+## CUDA on Windows
+
+The CUDA backend needs the CUDA 12 runtime DLLs (`cudart64_12.dll`, `cublas64_12.dll`, `cublasLt64_12.dll`). The wheel does
+not bundle them (cublasLt alone is 640 MiB, above PyPI's wheel size limit); you need either a CUDA 12 toolkit or
+`pip install "littlemore[cuda]"` (NVIDIA's own runtime wheels), plus a recent NVIDIA driver. Python 3.8+ does not search
+`PATH` for DLL dependencies, so the SDK registers the folders itself with `os.add_dll_directory()` before loading the
+library: `LITTLEMORE_DLL_DIR`, `CUDA_PATH*`, PATH folders that hold `cudart64_*.dll`, the `nvidia-*-cu12` wheels' folders
+and the default toolkit install folders. If `info()["backends"]` shows no `CUDA0`, set `LITTLEMORE_DLL_DIR` to the folder
+with the runtime DLLs. Without CUDA the CPU and Vulkan backends still work.
+
+## Building a wheel
+
+From a source checkout, after building the C library (`docs/development.md`):
+
+```
+python -m build --wheel --outdir dist python
+```
+
+The result is `dist/littlemore-<version>-py3-none-<platform>.whl`: platform specific, independent of the Python version.
+The files come from `build/bin` (override with `LITTLEMORE_BIN_DIR`). Install it with `pip install dist/littlemore-*.whl`.
+
+## `littlemore convert`
+
+`convert` runs the converter of the source repository (`tools/convert/lb_to_gguf.py`) and passes all options through
+(`littlemore convert --help`). It needs PyTorch, transformers and the GGUF writer, which the wheel does not carry, so
+run it from a repository checkout with the development environment.
+
+## Tests
+
+```
+python -m pytest tests/python -q              # fast checks (need the built library)
+python -m pytest tests/python -m smoke -q     # also loads a tiny model, builds a tiny checkpoint, runs the CLI
+```

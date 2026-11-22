@@ -17,3 +17,8 @@ __pycache__/
 .cache/
 # Top-level CMake build of the C API, the engine and the backend plugins (see docs/development.md).
 /build/
+# Python SDK packaging output (wheel build folders, bundled native files).
+/python/build/
+/python/dist/
+*.egg-info/
+/python/littlemore/_bin/

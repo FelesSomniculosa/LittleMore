@@ -1,0 +1,45 @@
+# Packaging of the LittleMore Python SDK and command line.
+#
+# The package is pure Python (a ctypes layer: nothing is compiled at install time) plus the prebuilt C library and
+# its backend plugins, which setup.py copies from a CMake build into littlemore/_bin/ when it builds a wheel. The
+# wheel is therefore platform specific but Python-version independent: tag py3-none-<platform>.
+#
+# Build a wheel (from the repository root, after building the C library, see docs/development.md):
+#     python -m build --wheel --outdir dist python
+# (the build folder is taken from LITTLEMORE_BIN_DIR, default <repo>/build/bin).
+[build-system]
+requires = ["setuptools>=68", "wheel"]
+build-backend = "setuptools.build_meta"
+
+[project]
+name = "littlemore"
+dynamic = ["version"]          # single source: littlemore/_version.py
+description = "Run LittleBit (sub-1-bit) language models and GGUF models from Python (ctypes over the LittleMore C API)"
+readme = "README.md"
+requires-python = ">=3.10"
+license = { text = "MIT" }
+keywords = ["llm", "gguf", "littlebit", "quantization", "llama.cpp"]
+classifiers = [
+    "Programming Language :: Python :: 3",
+    "Operating System :: Microsoft :: Windows",
+    "Operating System :: POSIX :: Linux",
+    "Typing :: Typed",
+]
+dependencies = []              # nothing: the library is loaded with ctypes
+
+[project.optional-dependencies]
+# CUDA runtime libraries from NVIDIA's own PyPI wheels, for machines without a CUDA toolkit. The SDK finds them under
+# site-packages/nvidia/*/bin (Windows). The CUDA plugin of the wheel is built against CUDA 12.9.
+cuda = ["nvidia-cuda-runtime-cu12", "nvidia-cublas-cu12"]
+
+[project.scripts]
+littlemore = "littlemore.cli:main"
+
+[tool.setuptools]
+packages = ["littlemore"]
+
+[tool.setuptools.dynamic]
+version = { attr = "littlemore._version.__version__" }
+
+[tool.setuptools.package-data]
+littlemore = ["py.typed", "_bin/*"]
