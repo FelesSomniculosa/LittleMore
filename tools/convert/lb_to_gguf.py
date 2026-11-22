@@ -129,7 +129,7 @@ from typing import Any
 
 import numpy as np
 import torch
-from safetensors import safe_open
+from safetensors import SafetensorError, safe_open
 
 # The engine's gguf-py (has GGMLQuantizationType.B1; the pip-installed gguf may not) and its
 # `conversion` package (llama.cpp's HF -> GGUF converter classes), and tools/dev/reference.py.
@@ -553,11 +553,14 @@ def convert_checkpoint(ckpt_dir: Path, out: Path, head_type: str = "f16", valida
     """
     ckpt_dir, out = Path(ckpt_dir), Path(out)
     lbcfg = _check_inputs(ckpt_dir, head_type, assume_no_littlebit_config)
-    _memory_preflight(ckpt_dir)
+    try:
+        _memory_preflight(ckpt_dir)  # the first read of the safetensors headers
+    except SafetensorError as e:
+        raise ConversionError(f"{ckpt_dir}: a safetensors file is corrupt or truncated ({e})") from e
     try:
         params = ref.LazyCheckpoint(ckpt_dir)
-    except ValueError as e:
-        raise ConversionError(str(e)) from e
+    except (ValueError, OSError, SafetensorError) as e:  # SafetensorError: e.g. a truncated or corrupt file
+        raise ConversionError(f"{ckpt_dir}: cannot read the checkpoint tensors ({type(e).__name__}: {e})") from e
     if not params:
         raise ConversionError(f"{ckpt_dir}: no LittleBit linear found (no <module>.U_packed tensors)")
     has_res = [m for m in params if params.has_residual(m)]
@@ -569,7 +572,7 @@ def convert_checkpoint(ckpt_dir: Path, out: Path, head_type: str = "f16", valida
     for mod in params:
         try:
             p = params[mod]
-        except ValueError as e:
+        except (ValueError, OSError, SafetensorError) as e:
             raise ConversionError(str(e)) from e
         if p.residual is not None and (p.residual.U.shape[0], p.residual.V.shape[1]) != (p.primary.U.shape[0], p.primary.V.shape[1]):
             raise ConversionError(f"{mod}: residual path shape differs from the primary path")
@@ -798,6 +801,32 @@ def _check_written(path: Path, params: Mapping[str, ref.LBLinearParams], report:
         raise ConversionError(msg)
 
 
+_FLOAT_TYPES = (gguf.GGMLQuantizationType.F32, gguf.GGMLQuantizationType.F16, gguf.GGMLQuantizationType.BF16)
+
+
+def _verify_finite(reader: "gguf.GGUFReader") -> str | None:
+    """Every floating-point tensor of the written file (embedding, head, norms, LittleBit scales) must be finite.
+
+    The per-linear validation compares the file with the checkpoint, so a NaN or Inf that is already in the
+    checkpoint (e.g. in the embedding or a norm weight, which are not LittleBit tensors) would pass it and produce a
+    model that outputs NaN. Checked in chunks of 16 Mi values to keep the memory small on an 8B model."""
+    for t in reader.tensors:
+        if t.tensor_type not in _FLOAT_TYPES:
+            continue
+        flat = np.asarray(t.data).reshape(-1)
+        if t.tensor_type == gguf.GGMLQuantizationType.BF16:
+            flat = flat.view(np.uint16)
+        for i in range(0, flat.size, 1 << 24):
+            chunk = flat[i:i + (1 << 24)]
+            if t.tensor_type == gguf.GGMLQuantizationType.BF16:
+                bad = int(((chunk & 0x7F80) == 0x7F80).sum())  # exponent all ones: Inf or NaN
+            else:
+                bad = int((~np.isfinite(chunk)).sum())
+            if bad:
+                return f"tensor {t.name} contains {bad}+ NaN or Inf values: the checkpoint itself is corrupt"
+    return None
+
+
 def _verify(path: Path, params: Mapping[str, ref.LBLinearParams], report: ConversionReport, validate: bool) -> str | None:
     """The checks of `_check_written`; returns None when fine, else the error message."""
     reader = gguf.GGUFReader(str(path))
@@ -814,6 +843,14 @@ def _verify(path: Path, params: Mapping[str, ref.LBLinearParams], report: Conver
         msg = _verify_head_content(by_name, report)
         if msg is not None:
             return msg
+    # Every architecture LittleMore converts needs the token embedding and the final norm; a checkpoint without them
+    # used to convert "successfully" into a file the engine cannot load.
+    for required in ("token_embd.weight", "output_norm.weight"):
+        if required not in by_name:
+            return f"tensor {required} is missing from the written file (is the checkpoint missing its embedding or final norm?)"
+    msg = _verify_finite(reader)
+    if msg is not None:
+        return msg
     n_lb_v = sum(1 for n in by_name if n.endswith(".lb_v"))
     expected = sum(len(v) for v in report.probes.values())
     if n_lb_v != expected or set(report.probes) != set(params):
@@ -952,6 +989,9 @@ def main(argv: list[str] | None = None) -> int:
                                     args.assume_no_littlebit_config)
     except ConversionError as e:
         print(f"error: {e}", file=sys.stderr)
+        return 1
+    except OSError as e:  # e.g. an output folder without write permission, a full disk
+        print(f"error: {type(e).__name__}: {e}", file=sys.stderr)
         return 1
     print(f"wrote {args.out}: {args.out.stat().st_size / 2**20:.1f} MiB, {report.n_linears} LittleBit linears "
           f"({report.lb_bytes / 2**20:.1f} MiB of B1 signs), validated {report.n_validated}, "

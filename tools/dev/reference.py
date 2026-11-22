@@ -194,6 +194,10 @@ def _build_path(mod: str, t: dict[str, Tensor], res: str) -> LBPathParams:
     signs = {}
     for m in ("U", "V"):
         packed, shape = t[f"{m}{res}_packed"], t[f"{m}{res}_shape"].tolist()
+        # dtypes first: packed signs are integer words; a float or bool tensor here is not a LittleBit checkpoint
+        # (unpacking it used to fail deep inside torch with NotImplementedError instead of naming the tensor)
+        if packed.dtype.is_floating_point or packed.dtype.is_complex or packed.dtype == torch.bool:
+            raise ValueError(f"{mod}.{m}{res}_packed: dtype {packed.dtype} is not an integer type (packed sign words)")
         rows, cols = int(shape[0]), int(shape[1])
         want = (rows, (cols + _BITS - 1) // _BITS)
         if packed.dim() != 2 or tuple(packed.shape) != want:
@@ -205,6 +209,10 @@ def _build_path(mod: str, t: dict[str, Tensor], res: str) -> LBPathParams:
     if r != r2:
         raise ValueError(f"{mod}{res}: U has {r} columns but V has {r2} rows")
     scales = {s: t[f"{s}{res}"] for s in ("u1", "u2", "v1", "v2")}
+    for s_, v_ in scales.items():
+        # scales are real numbers: an integer tensor would be converted "faithfully" into a meaningless layer
+        if not v_.dtype.is_floating_point:
+            raise ValueError(f"{mod}.{s_}{res}: dtype {v_.dtype} is not a floating-point type (a scale vector)")
     for s_, want in (("u1", out_f), ("u2", r), ("v1", r), ("v2", in_f)):
         if scales[s_].numel() != want:
             raise ValueError(f"{mod}.{s_}{res}: has {scales[s_].numel()} elements, expected {want}")
