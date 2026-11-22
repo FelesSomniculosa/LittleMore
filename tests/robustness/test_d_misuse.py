@@ -120,6 +120,14 @@ CONVERSATIONS = {
     "multi-turn-with-thinking": [{"role": "user", "content": "2+2?"},
                                  {"role": "assistant", "content": "<think>\nadd them\n</think>\n\n4"},
                                  {"role": "user", "content": "and 3+3?"}],
+    "thinking-without-newlines": [{"role": "user", "content": "Hi"}, {"role": "assistant", "content": "<think>greet</think>Hello!"},
+                                  {"role": "user", "content": "Bye"}],
+    "two-thinking-turns": [{"role": "system", "content": "Be brief."}, {"role": "user", "content": "A?"},
+                           {"role": "assistant", "content": "<think>\none\n</think>\n\nB."}, {"role": "user", "content": "C?"},
+                           {"role": "assistant", "content": "<think>\ntwo\n</think>\n\nD."}, {"role": "user", "content": "E?"}],
+    # the last turn is the assistant's (after the last user turn): the template keeps its reasoning, and so does lm_chat
+    "thinking-after-last-user": [{"role": "user", "content": "Q?"},
+                                 {"role": "assistant", "content": "<think>\nr\n</think>\n\nA."}],
 }
 
 
@@ -144,11 +152,8 @@ emit(chat=c[0], gen=r[0], same=(c[1] == r[1]), chat_text=c[1].decode('utf-8', 'r
     r = o.result
     print(ascii((conv, r)))
     assert r["chat"] == r["gen"] == "LM_OK"
-    if conv == "multi-turn-with-thinking":
-        # Known difference (documented in docs/c-api.md, "Chat templates"): llama.cpp's built-in ChatML formatting keeps
-        # the <think> block of an earlier assistant turn; Qwen3's own template removes it. Recorded, not asserted.
-        print(f"thinking-history rendering identical to Hugging Face: {r['same']}")
-        return
+    # Before Task 20's fix the histories with <think> blocks in earlier assistant turns differed: llama.cpp's built-in
+    # ChatML formatting kept them, Qwen3's template removes them. lm_chat now strips them for such templates.
     assert r["same"], r
 
 

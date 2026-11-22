@@ -886,6 +886,43 @@ lm_status run(lm_session * session, const std::string & prompt, const lm_samplin
 
 namespace {
 
+// True for a ChatML template that handles reasoning blocks (Qwen3 style: "<|im_start|>" and "</think>" in the template
+// text). llama.cpp formats every "<|im_start|>" template as plain ChatML, which keeps <think> blocks that such a
+// template removes; lm_chat then strips them itself (strip_reasoning).
+bool is_reasoning_chatml(const char * tmpl) {
+    return tmpl && std::strstr(tmpl, "<|im_start|>") && std::strstr(tmpl, "</think>");
+}
+
+// Index of the last "real" user turn, as Qwen3's template computes it (last_query_index): the last user message that
+// is not a tool response ("<tool_response>...</tool_response>"); n - 1 when there is none.
+size_t last_user_turn(const lm_message * msgs, size_t n) {
+    for (size_t i = n; i-- > 0;) {
+        if (std::strcmp(msgs[i].role, "user") != 0) {
+            continue;
+        }
+        const std::string c(msgs[i].content);
+        const std::string open = "<tool_response>", close = "</tool_response>";
+        const bool tool = c.size() >= open.size() + close.size() && c.compare(0, open.size(), open) == 0 &&
+                          c.compare(c.size() - close.size(), close.size(), close) == 0;
+        if (!tool) {
+            return i;
+        }
+    }
+    return n - 1;
+}
+
+// The content of an earlier assistant turn without its reasoning, as Qwen3's template renders it: everything after
+// the last "</think>", leading newlines removed; content without "</think>" is returned unchanged.
+std::string strip_reasoning(const char * content) {
+    const std::string c(content);
+    const size_t end = c.rfind("</think>");
+    if (end == std::string::npos) {
+        return c;
+    }
+    const size_t start = c.find_first_not_of('\n', end + 8);
+    return start == std::string::npos ? std::string() : c.substr(start);
+}
+
 // Owns a llama_model until it is handed to an lm_model (so an exception on the way cannot leak it).
 struct llama_model_deleter {
     void operator()(llama_model * m) const { llama_model_free(m); }
@@ -1276,6 +1313,21 @@ lm_status LM_CALL lm_chat(lm_session * session, const lm_message * msgs, size_t 
         }
         // The model's own template; NULL makes llama_chat_apply_template use "chatml", as llama.cpp does.
         const char * tmpl = llama_model_chat_template(session->model->model, nullptr);
+        // Reasoning templates (Qwen3 style: ChatML with <think> blocks) drop the reasoning of assistant turns that come
+        // before the last user turn; llama.cpp's built-in ChatML formatting keeps it. Strip it here so the prompt is
+        // the one the model's own template renders (checked token for token against Hugging Face's
+        // apply_chat_template in tests/robustness/test_d_misuse.py). The strings must outlive `chat`.
+        std::vector<std::string> stripped;
+        if (is_reasoning_chatml(tmpl)) {
+            stripped.reserve(n); // no reallocation: chat[] points into these strings
+            const size_t last_user = last_user_turn(msgs, n);
+            for (size_t i = 0; i < n; ++i) {
+                if (i <= last_user && std::strcmp(msgs[i].role, "assistant") == 0) {
+                    stripped.push_back(strip_reasoning(msgs[i].content));
+                    chat[i].content = stripped.back().c_str();
+                }
+            }
+        }
         std::vector<char> buf(2 * total + 256);
         int32_t len = llama_chat_apply_template(tmpl, chat.data(), n, true, buf.data(), static_cast<int32_t>(buf.size()));
         if (len > static_cast<int32_t>(buf.size())) {
