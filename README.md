@@ -53,6 +53,26 @@ Three honest notes:
   [below](#measured-speed). A head-to-head test against the standard "normally compressed" 8B model (the common 4-bit
   kind) is planned and not published yet.
 
+### Benchmarks: how much memory and electricity does it save?
+
+Running a model costs memory (the graphics card's video memory, called VRAM, and the computer's normal memory, RAM)
+and electricity. Here is our estimate for the 8B model, compared with the usual "normally compressed" 4-bit version of
+the same model, and with the full-size version.
+
+| | Full-size 8B | Usual 4-bit 8B | **LittleMore 8B** | Saving vs 4-bit | Saving vs full-size |
+|---|---|---|---|---|---|
+| File size on disk | about 16 GB | 5.0 GB | **3.0 GB** | about 39% less | about 81% less |
+| Video memory (VRAM) while chatting | does not fit | about 5.3 GB | **about 2.7 GB** | about 49% less | does not fit |
+| Computer memory (RAM) | about 16 GB | about 5 GB | **about 3 GB** | about 40% less | about 81% less |
+| Electricity per word written | not possible on this card | 100% (baseline) | **roughly 40-60% of that** | roughly 40-60% less | not possible on this card |
+
+**These are estimates, not lab measurements.** The file sizes are exact, and the video-memory figures were read from the
+graphics card while the models ran. The computer-memory figures follow from the file sizes. The electricity figure is a
+reasoning-based estimate: writing text is limited by how much data must be read from memory for every word, so a model
+that is about 40% smaller, and that wrote text about 2.5 times faster than the 4-bit one in a quick informal try,
+should need clearly less energy per word. We have not yet measured
+power draw with a meter. Treat the electricity row as "roughly half, give or take", not as a promise.
+
 ### What has been built
 
 - **A fast engine** based on the well-known llama.cpp program, with new parts that run the squeezed models quickly on the
