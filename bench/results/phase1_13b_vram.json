@@ -4,9 +4,9 @@
  "reps": 3,
  "warmup_s": 0.0,
  "provenance": {
-  "engine_commit": "3916e50ba1941b03600bfafa618a121d5d2ce4e3",
+  "engine_commit": "8d43635cc0939874c93bbbb803d01b47a4843bfa",
   "engine_dirty": false,
-  "llama_bench_version": "version: 1.0.0-dev (build 16, commit 3916e50ba)",
+  "llama_bench_version": "version: 1.0.0-dev (build 16, commit 8d43635cc)",
   "repo_commit": "b0f5b041b35a021544596b95734978e1e5e74655"
  },
  "clock_window": "timed_repetitions",
@@ -70,7 +70,7 @@
     204.166,
     210.451
    ],
-   "build_commit": "3916e50ba",
+   "build_commit": "8d43635cc",
    "gpu_info": "NVIDIA GeForce RTX 4050 Laptop GPU, NVIDIA GeForce RTX 4050 Laptop GPU, Intel(R) UHD Graphics",
    "pp512_clock_at_start_mhz": 1575.0,
    "pp512": 9272.44,
@@ -153,7 +153,7 @@
     173.22,
     186.559
    ],
-   "build_commit": "3916e50ba",
+   "build_commit": "8d43635cc",
    "gpu_info": "NVIDIA GeForce RTX 4050 Laptop GPU, NVIDIA GeForce RTX 4050 Laptop GPU, Intel(R) UHD Graphics",
    "pp512_clock_at_start_mhz": 2325.0,
    "pp512": 2820.54,
@@ -233,7 +233,7 @@
     112.962,
     117.86
    ],
-   "build_commit": "3916e50ba",
+   "build_commit": "8d43635cc",
    "gpu_info": "NVIDIA GeForce RTX 4050 Laptop GPU, NVIDIA GeForce RTX 4050 Laptop GPU, Intel(R) UHD Graphics",
    "pp512_clock_at_start_mhz": 2325.0,
    "pp512": 11379.5,
@@ -313,7 +313,7 @@
     110.309,
     110.744
    ],
-   "build_commit": "3916e50ba",
+   "build_commit": "8d43635cc",
    "gpu_info": "NVIDIA GeForce RTX 4050 Laptop GPU, NVIDIA GeForce RTX 4050 Laptop GPU, Intel(R) UHD Graphics",
    "pp512_clock_at_start_mhz": 2325.0,
    "pp512": 8668.99,
@@ -393,7 +393,7 @@
     128.522,
     129.245
    ],
-   "build_commit": "3916e50ba",
+   "build_commit": "8d43635cc",
    "gpu_info": "NVIDIA GeForce RTX 4050 Laptop GPU, NVIDIA GeForce RTX 4050 Laptop GPU, Intel(R) UHD Graphics",
    "pp512_clock_at_start_mhz": 1665.0,
    "pp512": 3749.09,
@@ -476,7 +476,7 @@
     131.079,
     136.938
    ],
-   "build_commit": "3916e50ba",
+   "build_commit": "8d43635cc",
    "gpu_info": "NVIDIA GeForce RTX 4050 Laptop GPU, NVIDIA GeForce RTX 4050 Laptop GPU, Intel(R) UHD Graphics",
    "pp512_clock_at_start_mhz": 2325.0,
    "pp512": 1330.2,
@@ -556,7 +556,7 @@
     49.255,
     50.6695
    ],
-   "build_commit": "3916e50ba",
+   "build_commit": "8d43635cc",
    "gpu_info": "NVIDIA GeForce RTX 4050 Laptop GPU, NVIDIA GeForce RTX 4050 Laptop GPU, Intel(R) UHD Graphics",
    "pp512_clock_at_start_mhz": 2325.0,
    "pp512": 4901.55,
@@ -636,7 +636,7 @@
     50.6272,
     50.9997
    ],
-   "build_commit": "3916e50ba",
+   "build_commit": "8d43635cc",
    "gpu_info": "NVIDIA GeForce RTX 4050 Laptop GPU, NVIDIA GeForce RTX 4050 Laptop GPU, Intel(R) UHD Graphics",
    "pp512_clock_at_start_mhz": 2325.0,
    "pp512": 3711.66,

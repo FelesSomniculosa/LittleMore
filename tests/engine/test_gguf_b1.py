@@ -1,6 +1,6 @@
 """GGML_TYPE_B1 support in the engine's gguf-py (pure 1-bit signs, bit 1 = +1, LSB first).
 
-Skipped when engine/gguf-py is missing (engine is a separate, git-ignored clone).
+Skipped when engine/gguf-py is missing (a checkout without the engine submodule: `git submodule update --init`).
 """
 import sys
 import tempfile

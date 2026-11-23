@@ -16,7 +16,7 @@
    ],
    "end": 356229.9690183,
    "round": 0,
-   "engine": "eaf9b01e6 (tensor-core build)"
+   "engine": "55474a330 (tensor-core build)"
   },
   {
    "file": ".cache\\gguf\\qwen3-0.6b-base-f16.gguf",
@@ -33,7 +33,7 @@
    ],
    "end": 356235.1841494,
    "round": 0,
-   "engine": "eaf9b01e6 (tensor-core build)"
+   "engine": "55474a330 (tensor-core build)"
   },
   {
    "file": ".cache\\gguf\\qwen3-1.7b-lb2-0.55-b1.gguf",
@@ -50,7 +50,7 @@
    ],
    "end": 356240.9013094,
    "round": 0,
-   "engine": "eaf9b01e6 (tensor-core build)"
+   "engine": "55474a330 (tensor-core build)"
   },
   {
    "file": ".cache\\gguf\\qwen3-1.7b-base-f16.gguf",
@@ -67,7 +67,7 @@
    ],
    "end": 356248.4327314,
    "round": 0,
-   "engine": "eaf9b01e6 (tensor-core build)"
+   "engine": "55474a330 (tensor-core build)"
   },
   {
    "file": ".cache\\gguf\\qwen3-0.6b-lb2-0.55-b1.gguf",
@@ -80,7 +80,7 @@
    "rep1_clock_mhz": null,
    "end": 356255.5939078,
    "round": 0,
-   "engine": "2d9b9e98b (speed-lever build)"
+   "engine": "12338df9a (speed-lever build)"
   },
   {
    "file": ".cache\\gguf\\qwen3-0.6b-base-f16.gguf",
@@ -97,7 +97,7 @@
    ],
    "end": 356260.9232157,
    "round": 0,
-   "engine": "2d9b9e98b (speed-lever build)"
+   "engine": "12338df9a (speed-lever build)"
   },
   {
    "file": ".cache\\gguf\\qwen3-1.7b-lb2-0.55-b1.gguf",
@@ -114,7 +114,7 @@
    ],
    "end": 356266.5619258,
    "round": 0,
-   "engine": "2d9b9e98b (speed-lever build)"
+   "engine": "12338df9a (speed-lever build)"
   },
   {
    "file": ".cache\\gguf\\qwen3-1.7b-base-f16.gguf",
@@ -131,7 +131,7 @@
    ],
    "end": 356274.1278091,
    "round": 0,
-   "engine": "2d9b9e98b (speed-lever build)"
+   "engine": "12338df9a (speed-lever build)"
   },
   {
    "file": ".cache\\gguf\\qwen3-0.6b-lb2-0.55-b1.gguf",
@@ -148,7 +148,7 @@
    ],
    "end": 356280.9113152,
    "round": 1,
-   "engine": "eaf9b01e6 (tensor-core build)"
+   "engine": "55474a330 (tensor-core build)"
   },
   {
    "file": ".cache\\gguf\\qwen3-0.6b-base-f16.gguf",
@@ -165,7 +165,7 @@
    ],
    "end": 356285.9463311,
    "round": 1,
-   "engine": "eaf9b01e6 (tensor-core build)"
+   "engine": "55474a330 (tensor-core build)"
   },
   {
    "file": ".cache\\gguf\\qwen3-1.7b-lb2-0.55-b1.gguf",
@@ -182,7 +182,7 @@
    ],
    "end": 356291.7697926,
    "round": 1,
-   "engine": "eaf9b01e6 (tensor-core build)"
+   "engine": "55474a330 (tensor-core build)"
   },
   {
    "file": ".cache\\gguf\\qwen3-1.7b-base-f16.gguf",
@@ -199,7 +199,7 @@
    ],
    "end": 356299.8911685,
    "round": 1,
-   "engine": "eaf9b01e6 (tensor-core build)"
+   "engine": "55474a330 (tensor-core build)"
   },
   {
    "file": ".cache\\gguf\\qwen3-0.6b-lb2-0.55-b1.gguf",
@@ -216,7 +216,7 @@
    ],
    "end": 356305.8685812,
    "round": 1,
-   "engine": "2d9b9e98b (speed-lever build)"
+   "engine": "12338df9a (speed-lever build)"
   },
   {
    "file": ".cache\\gguf\\qwen3-0.6b-base-f16.gguf",
@@ -233,7 +233,7 @@
    ],
    "end": 356310.8540245,
    "round": 1,
-   "engine": "2d9b9e98b (speed-lever build)"
+   "engine": "12338df9a (speed-lever build)"
   },
   {
    "file": ".cache\\gguf\\qwen3-1.7b-lb2-0.55-b1.gguf",
@@ -250,7 +250,7 @@
    ],
    "end": 356316.494736,
    "round": 1,
-   "engine": "2d9b9e98b (speed-lever build)"
+   "engine": "12338df9a (speed-lever build)"
   },
   {
    "file": ".cache\\gguf\\qwen3-1.7b-base-f16.gguf",
@@ -267,7 +267,7 @@
    ],
    "end": 356324.0793172,
    "round": 1,
-   "engine": "2d9b9e98b (speed-lever build)"
+   "engine": "12338df9a (speed-lever build)"
   },
   {
    "file": ".cache\\gguf\\qwen3-0.6b-lb2-0.55-b1.gguf",
@@ -280,7 +280,7 @@
    "rep1_clock_mhz": null,
    "end": 356330.4314091,
    "round": 2,
-   "engine": "eaf9b01e6 (tensor-core build)"
+   "engine": "55474a330 (tensor-core build)"
   },
   {
    "file": ".cache\\gguf\\qwen3-0.6b-base-f16.gguf",
@@ -297,7 +297,7 @@
    ],
    "end": 356335.4974846,
    "round": 2,
-   "engine": "eaf9b01e6 (tensor-core build)"
+   "engine": "55474a330 (tensor-core build)"
   },
   {
    "file": ".cache\\gguf\\qwen3-1.7b-lb2-0.55-b1.gguf",
@@ -314,7 +314,7 @@
    ],
    "end": 356342.279549,
    "round": 2,
-   "engine": "eaf9b01e6 (tensor-core build)"
+   "engine": "55474a330 (tensor-core build)"
   },
   {
    "file": ".cache\\gguf\\qwen3-1.7b-base-f16.gguf",
@@ -331,7 +331,7 @@
    ],
    "end": 356349.0270828,
    "round": 2,
-   "engine": "eaf9b01e6 (tensor-core build)"
+   "engine": "55474a330 (tensor-core build)"
   },
   {
    "file": ".cache\\gguf\\qwen3-0.6b-lb2-0.55-b1.gguf",
@@ -348,7 +348,7 @@
    ],
    "end": 356355.2724796,
    "round": 2,
-   "engine": "2d9b9e98b (speed-lever build)"
+   "engine": "12338df9a (speed-lever build)"
   },
   {
    "file": ".cache\\gguf\\qwen3-0.6b-base-f16.gguf",
@@ -365,7 +365,7 @@
    ],
    "end": 356360.6268373,
    "round": 2,
-   "engine": "2d9b9e98b (speed-lever build)"
+   "engine": "12338df9a (speed-lever build)"
   },
   {
    "file": ".cache\\gguf\\qwen3-1.7b-lb2-0.55-b1.gguf",
@@ -382,7 +382,7 @@
    ],
    "end": 356366.3419231,
    "round": 2,
-   "engine": "2d9b9e98b (speed-lever build)"
+   "engine": "12338df9a (speed-lever build)"
   },
   {
    "file": ".cache\\gguf\\qwen3-1.7b-base-f16.gguf",
@@ -399,7 +399,7 @@
    ],
    "end": 356373.8376452,
    "round": 2,
-   "engine": "2d9b9e98b (speed-lever build)"
+   "engine": "12338df9a (speed-lever build)"
   }
  ]
 }

@@ -53,8 +53,9 @@ Other terms in this project are explained in the glossary of
 | Upstream | https://github.com/ggml-org/llama.cpp |
 | Upstream tag | `b12606` |
 | Upstream commit | `e412c6f468b7b9e0f16f2540244236f8ad68e9ae` |
-| Engine branch | `littlemore` (upstream tag + the single commit below) |
-| Engine HEAD | see `git -C engine log` (cherry-pick `0f918ca03`, then B1, LITTLEBIT op, graph hook) |
+| Engine fork | https://github.com/FelesSomniculosa/llama.cpp (a git submodule at `engine/`, branch `littlemore`) |
+| Engine branch | `littlemore` (upstream tag + the commits listed in this document) |
+| Engine HEAD | see `git -C engine log` (cherry-pick `db3a54034`, then B1, LITTLEBIT op, graph hook) |
 
 Reproduce:
 
@@ -612,7 +613,7 @@ planes; with sgn = 2 w - 1, sum sgn q = 2 sum w q - sum q, and sum w q = sum ove
 exact int32 (Horner's rule in the accumulator, two groups of 14 planes). Each chunk then costs two float roundings
 (the exact chunk sum to float, the add to the accumulator), against one rounding per column in the float32 paths. The
 latent kernel's 256 rows are exactly one chunk of t, so it quantizes t into planes in its epilogue; t never goes to
-memory. Kernels (as first built, engine commit `eaf9b01e6`; since the speed levers the planes of x are built inside the latent kernel, see "CUDA: prefill speed levers"): planes of x (one warp per token and chunk, a warp-wide 32 x 32 bit transpose), latent stage (3-stage
+memory. Kernels (as first built, engine commit `55474a330`; since the speed levers the planes of x are built inside the latent kernel, see "CUDA: prefill speed levers"): planes of x (one warp per token and chunk, a warp-wide 32 x 32 bit transpose), latent stage (3-stage
 cp.async ring, weight bits read straight from global memory one chunk ahead), output stage (t planes of 8-16 tokens
 resident in shared memory, warps loop over 32-row tiles; ranks above 512 in windows that add to y). Planes are
 bounded to 12 MiB per token chunk (they stay in L2; scratch is bounded). Deterministic (integer sums; float adds in
@@ -721,7 +722,7 @@ per 512-token pass, i.e. launches are not a cost. Diagnostic builds of the laten
 without the per-chunk plane build 6-25 % fewer cycles; without the weight loads or the per-chunk barrier as well,
 little more. So the build of the planes, not the loads or the barrier, was the latent stage's overhead.
 
-Adopted (engine commits `20e96284a`, `9f531c3f5`; test case `2d9b9e98b`):
+Adopted (engine commits `8ce534c6a`, `c36111d0a`; test case `12338df9a`):
 
 1. **Planes of x built inside the latent kernel.** The block's 8 warps each build one token's planes of the next
    chunk into a 2-slot shared-memory ring; the separate planes kernel, its launch and its global scratch (2 paths x 3.5
@@ -736,7 +737,7 @@ Adopted (engine commits `20e96284a`, `9f531c3f5`; test case `2d9b9e98b`):
 
 Cycles per op relative to the previous step (prefill_bench, 512 tokens):
 
-| layer (padded ranks) | 1. build in latent (vs `eaf9b01e6`) | 2. one basic block | 3. row split |
+| layer (padded ranks) | 1. build in latent (vs `55474a330`) | 2. one basic block | 3. row split |
 |---|---|---|---|
 | 0.6B q 1024 x 2048 (256 + 256) | 0.94 | 0.98 | 0.91 |
 | 0.6B k, v 1024 x 1024 (128 + 128) | 0.94 (time) | 0.98 | 0.92 |
@@ -748,7 +749,7 @@ Cycles per op relative to the previous step (prefill_bench, 512 tokens):
 | 1.7B down 6144 x 2048 (512 + 512) | 0.96 | 0.94 | 0.97 |
 
 (blank: not measured in that round; "time": first round, before the cycle metric, us per op.) End to end against
-the tensor-core build `eaf9b01e6`: see the table "Speed-lever result" below.
+the tensor-core build `55474a330`: see the table "Speed-lever result" below.
 
 Tried and **not adopted** (gain below 5 % or a loss; sources restored):
 
@@ -765,10 +766,10 @@ path 1 using s_v2 instead of s_v2r: fails, 314/452, error 2.2; the build written
 376/453, error 1.93; the token-chunk offset of x ignored: first **passed every test** (with only the planes of t in
 the 12 MiB budget the 5248 x 37 case no longer splits into two token chunks), so a case with two token chunks was
 added (256 x 37, 1024 + 1024 latent units, 2048 tokens, both test programs): now fails, 452/453, error 1.56. A ragged case followed (review fix: 640 x 37, 1152 + 1152 latent units, 2050 tokens: token chunks of 1040 +
-1010 with a partial token tile, 2.5 chunks of x, 4.5 chunks of t per path, three output windows; engine `b564b699b`):
+1010 with a partial token tile, 2.5 chunks of x, 4.5 chunks of t per path, three output windows; engine `0c58356bc`):
 it passes, and the same mutation fails both new cases (452/454, errors 1.56 and 1.27).
 
-**Speed-lever result** (bench/results/phase1_13c.md, "13c" = the build after the speed levers, see bench/README.md; build `2d9b9e98b`). Op level, cycles against the tensor-core build `eaf9b01e6` (3 interleaved rounds,
+**Speed-lever result** (bench/results/phase1_13c.md, "13c" = the build after the speed levers, see bench/README.md; build `12338df9a`). Op level, cycles against the tensor-core build `55474a330` (3 interleaved rounds,
 512 tokens): Qwen3-0.6B layers 0.81-0.85 (one whole layer 0.82), Qwen3-1.7B q / o 0.92, k / v 0.85, gate / up 0.99,
 down 0.87 (one layer 0.93). Model level (`bench/clock_matched.py`, pp512 first repetition; one rule for all runs: only runs whose first
 repetition is entirely at 2340 MHz, 5 of 24 runs excluded and listed in the results file): Qwen3-0.6B LittleBit
@@ -827,7 +828,7 @@ latent rows) and the output stage of gate / up, both at roughly 60-75 % of the i
     preferred buffer type Vulkan0, using CPU instead" (196 x 8 tensors), every `LITTLEBIT` node and its weights on `CPU`,
     only the activation is copied (`CPU#attn_norm-0#0`); 226 splits per graph. Logits against the fp32 reference
     (`-fa off`, f32 KV): 8.9e-5 (1 token), 2.3e-2 (16), 2.9e-2 (42 tokens), top-1 equal; the same order as CUDA;
-  - `-ngl 0`: before (engine `1f1f0e663`, CPU pin) vs after, same file and prompt, `llama-debug` logits: bit-identical
+  - `-ngl 0`: before (engine `912ffd5bd`, CPU pin) vs after, same file and prompt, `llama-debug` logits: bit-identical
     for 1 and 16 tokens (default and `-fa off` f32 KV); with 42 tokens they differ (2e-2 .. 2.9e-2) because llama.cpp's
     op offload now also moves the prompt's `LITTLEBIT` nodes to CUDA0 (CUDA's `offload_op` takes batches of 32 tokens or
     more, which CUDA now supports; their weights are copied per call, as for dense weights in CPU layers; decode nodes

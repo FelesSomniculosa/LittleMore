@@ -1,4 +1,4 @@
-# Prompt processing after the tensor-core prefill path (first build, `eaf9b01e6`)
+# Prompt processing after the tensor-core prefill path (first build, `55474a330`)
 
 What: the gate harness (`bench/run_bench.py`, the protocol of the Phase 1 gate run: 3 interleaved rounds, each value the median of 10
 llama-bench repetitions, tg128 before pp512, 3 s warm-up load kept running until llama-bench's warm-up pass) on the

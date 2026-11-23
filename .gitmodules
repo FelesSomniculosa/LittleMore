@@ -1,0 +1,4 @@
+[submodule "engine"]
+	path = engine
+	url = https://github.com/FelesSomniculosa/llama.cpp.git
+	branch = littlemore

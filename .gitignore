@@ -1,8 +1,5 @@
 # Python virtual environment (created per docs/setup-windows.md).
 .venv/
-# The patched llama.cpp. During development it is a separate local git clone, ignored here; in the public
-# repository it becomes a git submodule (see docs/engine-changes.md).
-/engine/
 # Python bytecode caches.
 __pycache__/
 # Model weights and converted model files: large, never commit them.

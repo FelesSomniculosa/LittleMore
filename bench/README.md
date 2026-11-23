@@ -11,7 +11,7 @@ This folder holds the speed measurements of LittleMore and the code that makes t
 | `results/phase1.json` | raw results of the Phase 1 run: every repetition of every round, GPU memory, SM clock |
 | `results/phase1.md` | the Phase 1 results, the gate decision and how they were made |
 | `clock_matched.py` | prompt-processing speed of GGUF files compared at matched GPU clocks (see its docstring) |
-| `plans/phase1_13b.json`, `results/phase1_13b*`, `results/phase1_13c*` | follow-up runs after the CUDA prefill work. The "13b" / "13c" in these file names are historical labels: 13b = the first tensor-core prefill build (engine commit `eaf9b01e6`), 13c = the same path after the speed levers (plane fusion, one basic block, row split; engine commit `2d9b9e98b`) |
+| `plans/phase1_13b.json`, `results/phase1_13b*`, `results/phase1_13c*` | follow-up runs after the CUDA prefill work. The "13b" / "13c" in these file names are historical labels: 13b = the first tensor-core prefill build (engine commit `55474a330`), 13c = the same path after the speed levers (plane fusion, one basic block, row split; engine commit `12338df9a`) |
 | `../tests/bench/test_check_gate.py` | tests of the gate rule (pure logic, mocked numbers) |
 
 ## The gate

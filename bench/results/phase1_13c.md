@@ -1,6 +1,6 @@
 # Phase 1: CUDA prefill levers of GGML_OP_LITTLEBIT (lossless)
 
-Engine: the first tensor-core prefill build `eaf9b01e6` (called "TC build" below) against the speed-lever build `2d9b9e98b` (called "lever build" below; "13b" / "13c" in file names are the same two builds). RTX 4050 Laptop GPU (20 SMs,
+Engine: the first tensor-core prefill build `55474a330` (called "TC build" below) against the speed-lever build `12338df9a` (called "lever build" below; "13b" / "13c" in file names are the same two builds). RTX 4050 Laptop GPU (20 SMs,
 power cap about 45 W), CUDA 12.9, no GPU setting changed.
 
 ## Op level (prefill_bench, 512 tokens, 3 interleaved rounds)

@@ -15,8 +15,8 @@ this run, interleaved): LittleBit 0.55 142.9 vs 143.1 tokens/s (-0.17 %), bf16 5
 - GPU: NVIDIA GeForce RTX 4050 Laptop GPU (6 GB, sm_89), driver 610.78, CUDA 12.9; CPU i7-13620H; Windows 11; laptop
   plugged in. During this run the GPU sat at about 70 °C at its 45 W power cap (nvidia-smi throttle reason "SW power
   cap").
-- Build provenance (stored in [phase1.json](phase1.json), `provenance`): engine commit 94d74731d, working tree clean,
-  and llama-bench reports the same commit (`version: 1.0.0-dev (build 15, commit 94d74731d)`: the engine was rebuilt
+- Build provenance (stored in [phase1.json](phase1.json), `provenance`): engine commit d3a5fd344, working tree clean,
+  and llama-bench reports the same commit (`version: 1.0.0-dev (build 15, commit d3a5fd344)`: the engine was rebuilt
   in full after the commit, so its build info is current); LittleMore commit 46b06e3 for the harness.
 - Harness: `bench/run_bench.py` (see [../README.md](../README.md)): before each llama-bench call a GPU load
   (`bench/gpu_load.py`, memory-bound copies) runs 3 s and keeps running while llama-bench loads the model, until

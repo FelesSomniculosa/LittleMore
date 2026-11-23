@@ -4,9 +4,9 @@
  "reps": 3,
  "warmup_s": 0.0,
  "provenance": {
-  "engine_commit": "3da27de1b14eb9d97a84d58abcfda2d56121cec9",
+  "engine_commit": "b21e6762dc341daa3eb8e72d726105e392282a55",
   "engine_dirty": false,
-  "llama_bench_version": "version: 1.0.0-dev (build 20, commit 2d9b9e98b)",
+  "llama_bench_version": "version: 1.0.0-dev (build 20, commit 12338df9a)",
   "repo_commit": "1866985874e8a58ce7b5a6fbf6df5da1bab28897"
  },
  "clock_window": "timed_repetitions",
@@ -70,7 +70,7 @@
     13.2143,
     13.317
    ],
-   "build_commit": "2d9b9e98b",
+   "build_commit": "12338df9a",
    "gpu_info": "NVIDIA GeForce RTX 4050 Laptop GPU, NVIDIA GeForce RTX 4050 Laptop GPU, Intel(R) UHD Graphics",
    "pp512_clock_at_start_mhz": 1455.0,
    "pp512": 734.467,
