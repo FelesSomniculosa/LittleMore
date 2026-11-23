@@ -214,12 +214,18 @@ def test_ram_limit(qwen06: Path, limit_mib: int, use_mmap: int, n_ctx: int) -> N
 
     The child reports a marker after every step ("started": the library is loaded, no limit yet; "job-assigned": the
     limit is in force; then "loaded", "session", "generated", "freed"; the final result has step "end"), and every
-    assertion message carries the whole diagnosis (`_ram_limit_diagnosis`). Why: the 300 MiB cases failed once in a
-    combined run and once in an isolated loop with exit 0xC0000142 (STATUS_DLL_INIT_FAILED) and no output at all, and
-    did not fail again in 25 isolated pytest runs, 20 runs of the E subset and 418 direct child runs (256 at
-    300 MiB; limits 150 to 420 MiB) (Task 20 fix round
-    2); the cause is not determined, so a recurrence must show where the child died and how much commit memory the
-    system had left."""
+    assertion message carries the whole diagnosis (`_ram_limit_diagnosis`).
+
+    KNOWN FAILURE (diagnosed in Task 20 fix round 2, decision pending): at limits of 420 MiB and less the CUDA plugin
+    normally cannot be loaded inside the limit, is skipped, and the child passes. When ANOTHER process already has the
+    CUDA plugin's DLLs loaded (in a pytest session the `has_cuda` fixture's `backends_info()` call does that in the
+    pytest process itself), the limited child can load and initialise it, and then often ends with a fail-fast
+    (0xC0000409) during `lm_model_load`, after "loaded CUDA backend" and before the GGUF is read, with no message.
+    Measured: 7 of 16 runs of the 300 MiB cases failed after a `has_cuda` test in the same session, 0 of 50 without;
+    with a helper process holding ggml-cuda.dll 11 of 32 failed (9 fail-fast; 2 access violations at exit in a shorter
+    snippet that did not free the model), and 16 of 16 with the Vulkan plugin removed, while
+    0 of 16 failed with the CUDA plugin removed. So run alone (`-k ram_limit`) the test passes; in a full robustness
+    run it can fail. See the Task 20 report, "Fix round 2"."""
     o = _rb.run_child("emit(step='started')\n" + JOB.replace("LIMIT_MIB", str(limit_mib)) + f"""
 emit(step='job-assigned')
 st, m = load({str(qwen06)!r}, {{'devices': 'none', 'use_mmap': {use_mmap}}})
