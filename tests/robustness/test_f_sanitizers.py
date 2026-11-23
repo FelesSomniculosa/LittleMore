@@ -9,8 +9,8 @@ uninitialised device memory). They run over:
   * `llama-debug` on the tiny model (whole graph on CUDA) at prompt lengths at the C dispatch boundaries.
 A run passes when the tool reports "ERROR SUMMARY: 0 errors" and the program itself succeeded.
 
-AddressSanitizer: a separate CPU-only build with /fsanitize=address (.cache/robust/build-asan, see the Task 20
-report for the configure line) of liblittlemore, the engine, tests/c/test_api.c and the generated NULL harness.
+AddressSanitizer: a separate CPU-only build with /fsanitize=address (.cache/robust/build-asan, configure line in
+docs/development.md, section 9) of liblittlemore, the engine, tests/c/test_api.c and the generated NULL harness.
 ASan's quarantine holds freed memory back on purpose, which test_api's own leak check (private bytes) would read as a
 leak, so that run sets quarantine_size_mb=0; a second run of the NULL harness keeps the default quarantine.
 
@@ -106,7 +106,7 @@ def _asan_runtime_dir() -> Path | None:
 
 def _asan(cmd: list[str], options: str) -> subprocess.CompletedProcess:
     if not (ASAN_BIN / ("test_api" + EXE)).exists():
-        pytest.skip(f"AddressSanitizer build not found in {ASAN_BIN} (configure line in the Task 20 report)")
+        pytest.skip(f"AddressSanitizer build not found in {ASAN_BIN} (configure line in docs/development.md, section 9)")
     rt = _asan_runtime_dir()
     if rt is None:
         pytest.skip("MSVC AddressSanitizer runtime not found")

@@ -82,7 +82,8 @@ TEXTS = {
 }
 # Texts whose Hugging Face tokenization differs from the engine's ONLY because the Qwen3 tokenizer.json normalizes to
 # NFC first and llama.cpp does not (checked below: the engine's tokens of the NFC form equal the Hugging Face tokens).
-# Reported as an open decision in the Task 20 report (normalizing would change lm_tokenize's byte-exact round trip).
+# The C library does not normalize (normalizing would change lm_tokenize's byte-exact round trip); the Python SDK does,
+# see docs/c-api.md.
 NFC_SENSITIVE = {"combining", "nfd-latin", "nfd-hangul"}
 RAW = {  # byte strings that are not valid UTF-8 (only the C API takes them)
     "invalid-utf8-ff": b"abc\xff\xfedef",

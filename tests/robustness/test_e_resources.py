@@ -209,14 +209,14 @@ def _ram_limit_diagnosis(o: _rb.Outcome) -> str:
 def test_ram_limit(qwen06: Path, limit_mib: int, use_mmap: int, n_ctx: int) -> None:
     """Private memory of the child is capped (the 0.6B file is 642 MiB; its KV cache at 40960 tokens is 4.4 GiB): the
     load or the session must fail cleanly with a status, or work; never a crash. CPU only (devices="none").
-    Before the engine fixes of Task 20, limits of 260 to 420 MiB (mmap) aborted the process (ggml_init's GGML_ASSERT on
+    Before the engine's out-of-memory fixes (docs/engine-changes.md, "Robustness fixes"), limits of 260 to 420 MiB (mmap) aborted the process (ggml_init's GGML_ASSERT on
     its buffer, then GGML_ABORT in ggml_backend_sched_split_graph after unchecked mallocs in ggml_backend_sched_new).
 
     The child reports a marker after every step ("started": the library is loaded, no limit yet; "job-assigned": the
     limit is in force; then "loaded", "session", "generated", "freed"; the final result has step "end"), and every
     assertion message carries the whole diagnosis (`_ram_limit_diagnosis`).
 
-    KNOWN FAILURE (diagnosed in Task 20 fix round 2, decision pending): at limits of 420 MiB and less the CUDA plugin
+    KNOWN ISSUE (diagnosed, not fixed yet; see docs/development.md, section 9): at limits of 420 MiB and less the CUDA plugin
     normally cannot be loaded inside the limit, is skipped, and the child passes. When ANOTHER process already has the
     CUDA plugin's DLLs loaded (in a pytest session the `has_cuda` fixture's `backends_info()` call does that in the
     pytest process itself), the limited child can load and initialise it, and then often ends with a fail-fast
@@ -225,7 +225,7 @@ def test_ram_limit(qwen06: Path, limit_mib: int, use_mmap: int, n_ctx: int) -> N
     with a helper process holding ggml-cuda.dll 11 of 32 failed (9 fail-fast; 2 access violations at exit in a shorter
     snippet that did not free the model), and 16 of 16 with the Vulkan plugin removed, while
     0 of 16 failed with the CUDA plugin removed. So run alone (`-k ram_limit`) the test passes; in a full robustness
-    run it can fail. See the Task 20 report, "Fix round 2"."""
+    run it can fail."""
     o = _rb.run_child("emit(step='started')\n" + JOB.replace("LIMIT_MIB", str(limit_mib)) + f"""
 emit(step='job-assigned')
 st, m = load({str(qwen06)!r}, {{'devices': 'none', 'use_mmap': {use_mmap}}})

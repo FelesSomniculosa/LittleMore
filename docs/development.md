@@ -357,6 +357,13 @@ cmake --build .cache/robust/build-asan -j 3
 
 Scratch files go to `.cache/robust/` (ignored by git).
 
+**Known issue (diagnosed, not fixed yet).** In `test_ram_limit` with a process memory limit of 420 MiB or less, the CUDA
+plugin normally cannot load inside the limit and is skipped. If another process already has the CUDA plugin's DLLs
+loaded (in a full pytest run the `has_cuda` fixture does this), the limited process can load it and then often ends with
+a fail-fast crash (`0xC0000409`) inside `lm_model_load`, before the model file is read. Run alone (`-k ram_limit`) the
+test passes; in a full robustness run it can fail. Measured: 7 of 16 failed after a CUDA-loading test in the same
+session and 0 of 50 without.
+
 ## Glossary
 
 - **LittleBit / LittleBit-2**: methods that store a weight matrix as low-rank

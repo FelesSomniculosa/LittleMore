@@ -159,7 +159,7 @@ emit(chat=c[0], gen=r[0], same=(c[1] == r[1]), control_differs=(u[1] != r[1]), p
     r = o.result
     print(ascii((conv, r)))
     assert r["chat"] == r["gen"] == "LM_OK"
-    # Before Task 20's fix the histories with <think> blocks in earlier assistant turns differed: llama.cpp's built-in
+    # Before the fix (docs/c-api.md, chat templates) the histories with <think> blocks in earlier assistant turns differed: llama.cpp's built-in
     # ChatML formatting kept them, Qwen3's template removes them. lm_chat now strips them for such templates.
     assert r["same"], r
     if any("</think>" in x["content"] for x in msgs[:-1] if x["role"] == "assistant") and not r["plain_is_hf"]:

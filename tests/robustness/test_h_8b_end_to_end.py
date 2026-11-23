@@ -1,6 +1,6 @@
 """H. Full end to end on the community Qwen3-8B LittleBit model (LITTLEMORE_RUN_8B=1; never downloads or converts).
 
-The GGUF was converted in Task 17 (docs/quickstart.md, section 3). Checked here, after the Task 20 fixes:
+The GGUF was converted as in docs/quickstart.md, section 3. Checked here, after the robustness fixes:
   * the Python SDK loads it with auto-fit: every layer and the head on the GPU, below 6 GiB of GPU memory, and greedy
     generation gives the text documented in docs/quickstart.md, section 4;
   * a multi-turn chat (full history passed on each call, as documented), streaming equal to non-streaming, the Qwen3
@@ -10,7 +10,7 @@ The GGUF was converted in Task 17 (docs/quickstart.md, section 3). Checked here,
   * a C program (tests/robustness/c/example_chat.c, the header's minimal example) chats with it;
   * the WikiText-2 perplexity with the card-comparable settings (2048-token windows, every token scored, the test split
     joined with blank lines: `-c 1025 --ppl-stride 2047 -b 1024`, docs/quickstart.md section 7) is unchanged:
-    24.4937 was measured in Task 17 over all 146 windows; LITTLEMORE_8B_PPL_WINDOWS=N (at least 8) spot-checks the first
+    24.4937 was measured over all 146 windows (docs/quickstart.md, section 7); LITTLEMORE_8B_PPL_WINDOWS=N (at least 8) spot-checks the first
     N windows instead and then compares their running perplexity with the value recorded here.
 """
 from __future__ import annotations
@@ -29,7 +29,7 @@ from conftest import CKPT_8B, ENGINE_BIN, ROOT
 
 EXE = ".exe" if os.name == "nt" else ""
 QUICKSTART_TEXT = " Paris, and the city is the capital of the French Republic. The capital is located in the French Riviera"
-PPL_ALL_WINDOWS = 24.4937          # Task 17, all 146 windows (docs/quickstart.md, section 7)
+PPL_ALL_WINDOWS = 24.4937          # all 146 windows (docs/quickstart.md, section 7)
 NN_RAW = ROOT / ".cache" / "data" / "wiki.test.nn.raw"
 
 

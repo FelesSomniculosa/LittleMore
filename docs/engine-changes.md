@@ -20,7 +20,7 @@ The engine is upstream llama.cpp plus these additions (details in the sections b
 | Pre-packed residual scales `lb_s_pkr` in the GGUF (no per-call CONCAT nodes) | "Loader" under LittleBit in the graph |
 | Model-level speed on the GPU (informal) | [Qwen3-0.6B on the GPU](#qwen3-06b-on-the-gpu-informal-speed-read) |
 | Test coverage and measured accuracy, including the GPU noise floor | the end of "LittleBit in the graph", then "GPU offload error" |
-| Robustness fixes outside LittleBit: bad model hyperparameters, host out-of-memory, tiny sampling temperatures fail cleanly instead of aborting or sampling NaN | [Robustness fixes](#robustness-fixes-task-20) |
+| Robustness fixes outside LittleBit: bad model hyperparameters, host out-of-memory, tiny sampling temperatures fail cleanly instead of aborting or sampling NaN | [Robustness fixes](#robustness-fixes) |
 
 The rest of this file records how the fork was made (pin, cherry-pick) and what was measured.
 
@@ -1078,7 +1078,7 @@ is `tests/smoke/_assets.copy_gguf(b1, dst, B1 -> Q1_0)` on the B1 file (the cach
 to F32 and is not comparable for speed); the profile: `nsys profile -t cuda --cuda-graph-trace=node llama-bench.exe ...`
 then `nsys stats -r cuda_gpu_kern_sum`.
 
-## Robustness fixes (Task 20)
+## Robustness fixes
 
 Found by the opt-in robustness campaign (`tests/robustness`, see docs/development.md section 9). Each made a case of
 that suite abort the host process or sample garbage before the fix; none changes a result of a well-formed model.
