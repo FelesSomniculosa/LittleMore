@@ -50,6 +50,21 @@ SEED_RANDOM: int = _lib.LM_SEED_RANDOM
 
 _SAMPLING_KEYS = ("temperature", "top_k", "top_p", "seed", "max_tokens")
 
+#: The accepted values of the `normalize` option (see `Model`): "nfc" (the default) or None (bytes as given).
+_NORMALIZE_VALUES = ("nfc", None)
+
+
+class _ModelDefault:
+    """Type of `_MODEL_DEFAULT`: the default of the per-call `normalize` argument, meaning "use the Model's"."""
+
+    def __repr__(self) -> str:
+        return "<the Model's normalize setting>"
+
+
+#: Sentinel default of the per-call `normalize` argument of `generate` / `chat` / `tokenize`. A sentinel (and not
+#: None) because None is itself a valid choice there ("do not normalize this call").
+_MODEL_DEFAULT: Any = _ModelDefault()
+
 
 def version() -> str:
     """The version of the loaded C library (e.g. "0.1.0")."""
@@ -155,19 +170,32 @@ def _sampling_int(name: str, value: Any, low: int, high: int) -> int:
     return v
 
 
-def _nfc(text: Any) -> Any:
-    """`text` in Unicode normalization form C (composed), for every text the SDK passes to the library.
-
-    Why: the Hugging Face tokenizers of Qwen3 (and many other models) normalize to NFC before tokenizing, llama.cpp's
-    tokenizer does not, and the C API passes bytes on unchanged. A decomposed text (e.g. "e" + U+0301 instead of "é",
-    Korean as conjoining jamo, common on macOS) would otherwise get tokens the model was not trained with (measured on
-    Qwen3: 16 instead of 8 tokens for "café naïve Ångström" in NFD). Non-str values are returned unchanged so that
-    `_lib.utf8` reports the type error."""
-    return unicodedata.normalize("NFC", text) if isinstance(text, str) else text
+def _check_normalize(value: Any) -> str | None:
+    """Validate a `normalize` option: "nfc" or None; anything else (e.g. "NFD", "NFKC", True) is a ValueError, so a
+    misspelt or unsupported form is never silently ignored."""
+    if isinstance(value, str) and value == "nfc" or value is None:
+        return value
+    raise ValueError(f'normalize must be "nfc" or None, not {value!r}')
 
 
-def _encode_messages(messages: Sequence[Mapping[str, str]]) -> tuple[Any, list[bytes]]:
-    """Convert chat messages to a C array of `lm_message`.
+def _normalized(text: Any, normalize: str | None) -> Any:
+    """`text` prepared for the library according to `normalize`: "nfc" = Unicode normalization form C (composed),
+    None = unchanged.
+
+    Why NFC is the default: the Hugging Face tokenizers of Qwen3 (and many other models) normalize to NFC before
+    tokenizing, llama.cpp's tokenizer does not, and the C API passes bytes on unchanged. A decomposed text (e.g. "e" +
+    U+0301 instead of "é", Korean as conjoining jamo, common on macOS) would otherwise get tokens the model was not
+    trained with (measured on Qwen3: 16 instead of 8 tokens for "café naïve Ångström" in NFD). A tokenizer WITHOUT a
+    normalizer (Llama-3 style byte-level BPE) tokenizes the decomposed bytes as they are, so for such a model pass
+    `normalize=None` (see python/README.md). Non-str values are returned unchanged so that `_lib.utf8` reports the
+    type error."""
+    if normalize == "nfc" and isinstance(text, str):
+        return unicodedata.normalize("NFC", text)
+    return text
+
+
+def _encode_messages(messages: Sequence[Mapping[str, str]], normalize: str | None) -> tuple[Any, list[bytes]]:
+    """Convert chat messages to a C array of `lm_message`, each role and content prepared by `_normalized`.
 
     Returns the array and the list of encoded byte strings; the caller must keep that list alive while the C
     call runs (the C structs only point into those bytes).
@@ -185,8 +213,8 @@ def _encode_messages(messages: Sequence[Mapping[str, str]]) -> tuple[Any, list[b
     for i, m in enumerate(messages):
         if not isinstance(m, Mapping) or "role" not in m or "content" not in m:
             raise TypeError(f"message {i} must be a dict with 'role' and 'content'")
-        role = _lib.utf8(_nfc(m["role"]), f"message {i} role")
-        content = _lib.utf8(_nfc(m["content"]), f"message {i} content")
+        role = _lib.utf8(_normalized(m["role"], normalize), f"message {i} role")
+        content = _lib.utf8(_normalized(m["content"], normalize), f"message {i} content")
         keep += [role, content]
         arr[i].role, arr[i].content = role, content
     return arr, keep
@@ -439,6 +467,11 @@ class Model:
         n_batch: prompt batch size; 0 = the library default (512).
         vram_budget: auto-fit only: GPU memory budget in bytes (0 = the free memory the devices report).
         use_mmap: memory-map the model file where possible.
+        normalize: how the SDK prepares every text it passes to the library (`generate` prompts, `chat` roles and
+            contents, `tokenize`): `"nfc"` (default) = Unicode normalization form C, as the Qwen3 tokenizer does;
+            `None` = the text's UTF-8 bytes exactly as given, for a tokenizer without a normalizer (Llama-3 style;
+            see python/README.md, "Unicode normalization"). `generate`, `chat` and `tokenize` take the same
+            keyword argument to override it for one call. The setting is the read-only `normalize` property.
 
     Raises:
         LittleMoreError: the file is missing or not a model, or no backend/device is available, etc. The error
@@ -450,7 +483,7 @@ class Model:
 
     def __init__(self, path: str | PathLike[str], n_gpu_layers: int | str = "auto", *, devices: str | None = None,
                  n_ctx: int = 0, n_threads: int = 0, n_batch: int = 0, vram_budget: int = 0,
-                 use_mmap: bool = True) -> None:
+                 use_mmap: bool = True, normalize: Literal["nfc"] | None = "nfc") -> None:
         # Fields first: __del__ must work even when validation below raises.
         self._model: ctypes.c_void_p | None = None
         self._session: ctypes.c_void_p | None = None
@@ -459,6 +492,7 @@ class Model:
         self._model_lock = threading.Lock()  # the model pointer: held briefly by tokenize / info, and by close()
         self._active = _ActiveStreams()
         layers = _parse_n_gpu_layers(n_gpu_layers)
+        self._normalize: str | None = _check_normalize(normalize)  # refused before any file is touched
         n_ctx = _int_in_range("n_ctx", n_ctx, 0, 2**31 - 1)  # 0 = the library default; positions are 32-bit
         n_threads = _int_in_range("n_threads", n_threads, 0, _lib.LM_MAX_THREADS)
         n_batch = _int_in_range("n_batch", n_batch, 0, 2**32 - 1)
@@ -491,6 +525,11 @@ class Model:
         _LIVE_MODELS.add(self)
 
     # -- lifetime -----------------------------------------------------------------------------------------------
+    @property
+    def normalize(self) -> str | None:
+        """The Model's normalization setting, `"nfc"` or `None` (fixed at construction; override it per call)."""
+        return self._normalize
+
     @property
     def closed(self) -> bool:
         """True once `close()` has been called."""
@@ -537,11 +576,14 @@ class Model:
 
     # -- generation ---------------------------------------------------------------------------------------------
     @overload
-    def chat(self, messages: Sequence[Mapping[str, str]], stream: Literal[False] = False, **sampling: Any) -> str: ...
+    def chat(self, messages: Sequence[Mapping[str, str]], stream: Literal[False] = False, *,
+             normalize: Literal["nfc"] | None = ..., **sampling: Any) -> str: ...
     @overload
-    def chat(self, messages: Sequence[Mapping[str, str]], stream: Literal[True], **sampling: Any) -> Iterator[str]: ...
+    def chat(self, messages: Sequence[Mapping[str, str]], stream: Literal[True], *,
+             normalize: Literal["nfc"] | None = ..., **sampling: Any) -> Iterator[str]: ...
 
-    def chat(self, messages: Sequence[Mapping[str, str]], stream: bool = False, **sampling: Any) -> str | Iterator[str]:
+    def chat(self, messages: Sequence[Mapping[str, str]], stream: bool = False, *,
+             normalize: Literal["nfc"] | None = _MODEL_DEFAULT, **sampling: Any) -> str | Iterator[str]:
         """Answer a conversation, formatted with the model's own chat template.
 
         Every call starts from scratch: pass the **full history** (earlier user and assistant messages too) each
@@ -551,13 +593,14 @@ class Model:
             messages: list of `{"role": "system" | "user" | "assistant", "content": str}`.
             stream: False (default) returns the whole answer as a `str`; True returns a generator of `str`
                 pieces. A stream may be consumed from any thread; stop early by closing or dropping it.
+            normalize: `"nfc"` or `None` for this call only; by default the Model's `normalize` setting.
             **sampling: `temperature`, `top_k`, `top_p`, `seed`, `max_tokens` (see `_make_sampling`). The default
                 is deterministic: the same input gives the same text. Pass `seed="random"` for varied answers.
 
         Special-token text inside messages (e.g. "<|im_end|>") is turned into the real control token by the
         library; remove it from untrusted input.
         """
-        arr, keep = _encode_messages(messages)
+        arr, keep = _encode_messages(messages, self._normalize_for_call(normalize))
         smp = _make_sampling(**sampling)
         lib = _lib.load()
 
@@ -568,13 +611,16 @@ class Model:
         return self._run(invoke, stream)
 
     @overload
-    def generate(self, prompt: str, stream: Literal[False] = False, **sampling: Any) -> str: ...
+    def generate(self, prompt: str, stream: Literal[False] = False, *, normalize: Literal["nfc"] | None = ...,
+                 **sampling: Any) -> str: ...
     @overload
-    def generate(self, prompt: str, stream: Literal[True], **sampling: Any) -> Iterator[str]: ...
+    def generate(self, prompt: str, stream: Literal[True], *, normalize: Literal["nfc"] | None = ...,
+                 **sampling: Any) -> Iterator[str]: ...
 
-    def generate(self, prompt: str, stream: bool = False, **sampling: Any) -> str | Iterator[str]:
-        """Continue a raw prompt (no chat template). Same `stream` and sampling rules as `chat`."""
-        text = _lib.utf8(_nfc(prompt), "prompt")
+    def generate(self, prompt: str, stream: bool = False, *, normalize: Literal["nfc"] | None = _MODEL_DEFAULT,
+                 **sampling: Any) -> str | Iterator[str]:
+        """Continue a raw prompt (no chat template). Same `stream`, `normalize` and sampling rules as `chat`."""
+        text = _lib.utf8(_normalized(prompt, self._normalize_for_call(normalize)), "prompt")
         smp = _make_sampling(**sampling)
         lib = _lib.load()
 
@@ -582,6 +628,10 @@ class Model:
             return lib.lm_generate(self._session, text, ctypes.byref(smp), cb, None)
 
         return self._run(invoke, stream)
+
+    def _normalize_for_call(self, normalize: Any) -> str | None:
+        """The `normalize` value of one call: the Model's setting unless the call passed its own (validated)."""
+        return self._normalize if normalize is _MODEL_DEFAULT else _check_normalize(normalize)
 
     def _refuse_if_stream_open_here(self) -> None:
         """A stream that this thread started and neither finished nor closed owns the session, and this thread is
@@ -601,10 +651,12 @@ class Model:
         return _collect_text(invoke, self._lock, self._active, self._check_open)
 
     # -- tokens -------------------------------------------------------------------------------------------------
-    def tokenize(self, text: str, add_special: bool = False) -> list[int]:
+    def tokenize(self, text: str, add_special: bool = False, *,
+                 normalize: Literal["nfc"] | None = _MODEL_DEFAULT) -> list[int]:
         """Token ids of `text`. `add_special=True` adds the model's beginning-of-text token (if it uses one) and
-        parses special-token text such as "<|im_start|>" as tokens."""
-        data = _lib.utf8(_nfc(text), "text")
+        parses special-token text such as "<|im_start|>" as tokens. `normalize`: as in `chat` (by default the
+        Model's setting), so the ids are those `generate` / `chat` would feed the model."""
+        data = _lib.utf8(_normalized(text, self._normalize_for_call(normalize)), "text")
         lib = _lib.load()
         with self._model_lock:  # the model only: works while a stream is open (the C API allows it)
             self._check_open()

@@ -457,9 +457,12 @@ def test_n_gpu_layers_and_sampling_arguments_are_validated(lib_path: Path) -> No
 
 
 def test_chat_message_validation(lib_path: Path) -> None:
-    for bad in ([], [{"role": "user"}], [{"role": "user", "content": 3}], ["hi"], [{"role": "u\0", "content": "x"}]):
-        with pytest.raises((ValueError, TypeError)):
-            _model_mod._encode_messages(bad)
+    for normalize in ("nfc", None):  # the checks do not depend on the normalization setting
+        for bad in ([], [{"role": "user"}], [{"role": "user", "content": 3}], ["hi"],
+                    [{"role": "u\0", "content": "x"}]):
+            with pytest.raises((ValueError, TypeError)):
+                _model_mod._encode_messages(bad, normalize)
+    _model_mod._encode_messages([{"role": "user", "content": "x"}], None)  # control: a good message is accepted
 
 
 # --------------------------------------------------------------------------------------------------------------
@@ -670,28 +673,31 @@ def test_numeric_options_are_validated_not_wrapped(lib_path: Path) -> None:
             littlemore.Model("does-not-matter.gguf", **kw)  # refused before any file is touched
 
 
-@pytest.mark.smoke
-def test_sdk_normalizes_text_to_nfc(model) -> None:
-    """The SDK normalizes text to NFC before tokenize / generate / chat (the Hugging Face tokenizers of Qwen and others
-    do; llama.cpp does not, and the C API passes bytes unchanged). Negative control: the raw C call gives different
-    tokens for the decomposed (NFD) and the composed (NFC) form of the same text, so the check can fail."""
-    import unicodedata
-    nfc = "café naïve Ångström 한국어"
-    nfd = unicodedata.normalize("NFD", nfc)
-    assert nfd != nfc
+# Text whose NFC and NFD forms differ (Latin with diacritics, Korean as precomposed syllables vs conjoining jamo), and
+# a chat role with a diacritic so that the role path is checked too (roles are normally ASCII: an ASCII role is the
+# same in every form and could not show whether the role is normalized).
+_NFC_TEXT = "café naïve Ångström 한국어"
+_NFC_ROLE = "système"
+
+
+def _raw_tokens(model, text: str) -> list[int]:
+    """Token ids of the UTF-8 bytes of `text` exactly as given, straight from the C API (which never normalizes)."""
     lib = _lib.load()
+    b = text.encode("utf-8")
+    buf = (ctypes.c_int32 * 256)()
+    n = ctypes.c_size_t(0)
+    _lib.check(lib.lm_tokenize(model._model, b, len(b), buf, 256, 0, ctypes.byref(n)), lib)
+    return list(buf[: n.value])
 
-    def raw(text: str) -> list[int]:
-        b = text.encode("utf-8")
-        buf = (ctypes.c_int32 * 256)()
-        n = ctypes.c_size_t(0)
-        _lib.check(lib.lm_tokenize(model._model, b, len(b), buf, 256, 0, ctypes.byref(n)), lib)
-        return list(buf[: n.value])
 
-    assert raw(nfd) != raw(nfc)                       # the C API does not normalize
-    assert model.tokenize(nfd) == model.tokenize(nfc) == raw(nfc)
-    # generate and chat: the tiny model's greedy text does not depend on these tokens, so check the BYTES the SDK hands
-    # to lm_generate / lm_chat (each entry point separately: removing the normalization from one of them fails here)
+def _bytes_handed_to_c(model, text: str, role: str, **call: object) -> dict[str, list[bytes]]:
+    """Run generate, chat (a "user" message and a `role` message) and a streamed generate on `text`, with the extra
+    keyword arguments `call` (e.g. normalize=None), and return the BYTES the SDK passed to lm_generate / lm_chat.
+
+    The tiny model's greedy text does not depend on these tokens, so the bytes are what is checked: each entry point
+    separately, so removing the normalization from any one of them (prompt, message content, message role) is seen.
+    "chat" lists the contents of the messages first, then their roles."""
+    lib = _lib.load()
     seen: dict[str, list[bytes]] = {"generate": [], "chat": []}
     real_generate, real_chat = lib.lm_generate, lib.lm_chat
 
@@ -706,13 +712,78 @@ def test_sdk_normalizes_text_to_nfc(model) -> None:
     try:
         lib.lm_generate, lib.lm_chat = spy_generate, spy_chat
         g = dict(temperature=0, max_tokens=4)
-        model.generate(nfd, **g)
-        model.chat([{"role": "user", "content": nfd}], **g)
-        "".join(model.generate(nfd, stream=True, **g))
+        model.generate(text, **call, **g)
+        model.chat([{"role": "user", "content": text}, {"role": role, "content": text}], **call, **g)
+        "".join(model.generate(text, stream=True, **call, **g))
     finally:
         lib.lm_generate, lib.lm_chat = real_generate, real_chat
-    assert seen["generate"] == [nfc.encode("utf-8")] * 2, seen["generate"]
-    assert seen["chat"] == [nfc.encode("utf-8"), b"user"], seen["chat"]
+    return seen
+
+
+@pytest.mark.smoke
+def test_sdk_normalizes_text_to_nfc(model) -> None:
+    """The SDK normalizes text to NFC (the default `normalize="nfc"`) before tokenize / generate / chat (the Hugging
+    Face tokenizers of Qwen and others do; llama.cpp does not, and the C API passes bytes unchanged). Negative control:
+    the raw C call gives different tokens for the decomposed (NFD) and the composed (NFC) form of the same text, so
+    the check can fail."""
+    import unicodedata
+    nfc, role_nfc = _NFC_TEXT, _NFC_ROLE
+    nfd, role_nfd = unicodedata.normalize("NFD", nfc), unicodedata.normalize("NFD", role_nfc)
+    assert nfd != nfc and role_nfd != role_nfc
+    assert model.normalize == "nfc"                    # the default
+    assert _raw_tokens(model, nfd) != _raw_tokens(model, nfc)  # the C API does not normalize
+    assert model.tokenize(nfd) == model.tokenize(nfc) == _raw_tokens(model, nfc)
+    seen = _bytes_handed_to_c(model, nfd, role_nfd)
+    e, r = nfc.encode("utf-8"), role_nfc.encode("utf-8")
+    assert seen["generate"] == [e] * 2, seen["generate"]
+    assert seen["chat"] == [e, e, b"user", r], seen["chat"]
+
+
+@pytest.mark.smoke
+def test_sdk_normalize_none_passes_bytes_unchanged(tiny_gguf: Path, model) -> None:
+    """`normalize=None` (for tokenizers without a normalizer, Llama-3 style): the SDK hands the text's UTF-8 bytes to
+    the library exactly as given, on the Model and per call; a per-call value overrides the Model's setting both ways.
+    The NFD text makes every case distinguishable (its NFC bytes differ), so each assertion can fail."""
+    import unicodedata
+    nfd, role_nfd = unicodedata.normalize("NFD", _NFC_TEXT), unicodedata.normalize("NFD", _NFC_ROLE)
+    d, rd = nfd.encode("utf-8"), role_nfd.encode("utf-8")
+    c, rc = _NFC_TEXT.encode("utf-8"), _NFC_ROLE.encode("utf-8")
+    unchanged = {"generate": [d] * 2, "chat": [d, d, b"user", rd]}
+    composed = {"generate": [c] * 2, "chat": [c, c, b"user", rc]}
+
+    # the default Model with normalize=None for one call: unchanged bytes, and the next call is normalized again
+    assert _bytes_handed_to_c(model, nfd, role_nfd, normalize=None) == unchanged
+    assert model.tokenize(nfd, normalize=None) == _raw_tokens(model, nfd) != model.tokenize(nfd)
+    assert _bytes_handed_to_c(model, nfd, role_nfd) == composed
+
+    with littlemore.Model(tiny_gguf, devices="none", n_ctx=512, normalize=None) as raw_model:
+        assert raw_model.normalize is None
+        assert _bytes_handed_to_c(raw_model, nfd, role_nfd) == unchanged
+        assert raw_model.tokenize(nfd) == _raw_tokens(raw_model, nfd)
+        # and the reverse override: normalize="nfc" for one call on a normalize=None Model
+        assert _bytes_handed_to_c(raw_model, nfd, role_nfd, normalize="nfc") == composed
+        assert raw_model.tokenize(nfd, normalize="nfc") == _raw_tokens(raw_model, _NFC_TEXT)
+
+
+def test_normalize_option_is_validated(lib_path: Path) -> None:
+    """Only "nfc" and None are accepted (a misspelt or unsupported form must not be silently ignored); a bad value is
+    refused before any file is touched. Control: the valid values pass the same check."""
+    for bad in ("NFC", "nfd", "nfkc", "", True, False, 0, 1):
+        with pytest.raises(ValueError, match="normalize"):
+            littlemore.Model("does-not-matter.gguf", normalize=bad)
+        with pytest.raises(ValueError, match="normalize"):
+            _model_mod._check_normalize(bad)
+    assert _model_mod._check_normalize("nfc") == "nfc" and _model_mod._check_normalize(None) is None
+
+
+@pytest.mark.smoke
+def test_normalize_per_call_is_validated(model) -> None:
+    """A bad per-call `normalize` raises ValueError on every entry point (nothing is sent to the library)."""
+    for call in (lambda: model.generate("x", normalize="NFD"), lambda: model.generate("x", stream=True, normalize=1),
+                 lambda: model.chat([{"role": "user", "content": "x"}], normalize="nfkc"),
+                 lambda: model.tokenize("x", normalize=True)):
+        with pytest.raises(ValueError, match="normalize"):
+            call()
 
 
 @pytest.mark.smoke
