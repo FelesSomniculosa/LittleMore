@@ -72,6 +72,13 @@ when there is no discrete one); `"none"` = CPU only; `"CUDA0"` or `"CUDA0,CUDA1"
 - **Errors**: every fallible call returns an `lm_status` (0 = `LM_OK`). After a failure `lm_last_error()`
   (thread-local) holds a message that starts with the failing function's name and, where the engine logged
   why, ends with the engine's own error lines.
+- **Model files from another LittleMore version**: files made by LittleMore's converter carry two metadata keys,
+  `littlemore.format_version` and `littlemore.b1_type_id` (the number of the 1-bit sign type B1 the file was written
+  with). `lm_model_load` returns `LM_ERR_MODEL_LOAD` when the file's B1 number differs from this library's (the
+  message says "written for B1 = X ... this build uses GGML_TYPE_B1 = Y ... reconvert the model") or when its format
+  version is newer than the library understands ("... newer than this library understands ..."). Files without the
+  keys (made before they existed) load as before. Why and what is not covered: "Rebase hazard" in
+  [engine-changes.md](engine-changes.md).
 - **Threads**: a model can be shared by many sessions and threads; calls on one session are serialised by a
   lock inside it; different sessions run in parallel. `lm_model_free` refuses (`LM_ERR_BUSY`) while a session of
   the model is alive. `lm_session_options.n_threads` is at most `LM_MAX_THREADS` (512, the engine's limit: the CPU

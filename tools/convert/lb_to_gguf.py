@@ -105,6 +105,14 @@ changes.  Correctness of the LittleBit linears is measured with the default F16 
 (small, measured: bench/results/phase1.md) error.  A head whose row length the type cannot take (Q8_0: multiples of
 32, Q6_K: multiples of 256) is refused with a ConversionError instead of being written as F16.
 
+Format marker: every file gets two UINT32 metadata keys, `littlemore.format_version` (1: this layout of LittleBit
+tensors and names) and `littlemore.b1_type_id` (the number of the ggml type B1 the sign tensors were written with,
+taken from the engine's gguf-py, 44 today).  B1 is a type only the LittleMore engine has; if upstream llama.cpp ever
+claims its number, B1 must be renumbered, and without the marker an older file would be silently misread.  The engine
+refuses a file whose `b1_type_id` differs from its own B1 (the model must be reconverted) or whose `format_version` is
+newer than it understands; files without the keys (made before the marker existed) load as before, assuming 44, so for
+them a renumbering cannot be detected.  See "Rebase hazard" in docs/engine-changes.md.
+
 Terms (LittleBit, GGUF, rank, RoPE, GQA) are defined in docs/development.md (glossary).
 
 Note on history: Cybertiron's file was briefly vendored under engine/ and removed there once
@@ -176,6 +184,14 @@ _LB_KEY_R = ref._KEY_R
 # are dropped ONLY on LittleBit linears, after `_split_dim_final` is checked against the rank of the sign matrices
 # (see `_drop_bookkeeping`); on any other module they are left to the converter, which then refuses them.
 _LB_BOOKKEEPING = re.compile(r"^(?P<mod>.+)\.(?P<name>_eff_bit_target|_eff_bit_actual|_split_dim_final)$")
+# The LittleMore format marker (see "Format marker" in the module docstring): two UINT32 metadata keys the engine's
+# loader checks before it reads any tensor.  FORMAT_VERSION is the layout of the LittleBit tensors and names this
+# converter writes; raise it only when that layout changes in a way older engines would misread.  The B1 type id is
+# NOT a constant here: it is taken from gguf-py's GGMLQuantizationType.B1 when the file is written, i.e. the number
+# the B1 tensors of that very file carry.
+KEY_FORMAT_VERSION = "littlemore.format_version"
+KEY_B1_TYPE_ID = "littlemore.b1_type_id"
+FORMAT_VERSION = 1
 
 
 class ConversionError(Exception):
@@ -685,6 +701,7 @@ def _build(ckpt: Path, params: Mapping[str, ref.LBLinearParams], tmp: Path, vali
         raise ConversionError(f"llama.cpp's converter failed on metadata/vocabulary ({type(e).__name__}: {e}); "
                               "does the checkpoint directory contain the tokenizer files?") from e
     _write_gemma3_swa_pattern(conv)
+    _write_format_marker(writer)
     report.written_names = sorted(n for shard in writer.tensors for n in shard)
     writer.write_header_to_file(path=tmp)
     writer.write_kv_data_to_file()
@@ -752,6 +769,19 @@ def _rank_of(params: Mapping[str, ref.LBLinearParams], mod: str) -> int:
     """Rank of module `mod`'s primary path: from the shape tensor alone for a LazyCheckpoint, else from U."""
     rank = getattr(params, "rank", None)
     return int(rank(mod)) if callable(rank) else int(params[mod].primary.U.shape[1])
+
+
+def _write_format_marker(writer: "gguf.GGUFWriter") -> None:
+    """Write the LittleMore format marker: `littlemore.format_version` and `littlemore.b1_type_id` (both UINT32).
+
+    Why: a GGUF file stores each tensor's ggml type as a bare number.  B1 is a type only this fork has, numbered right
+    after upstream's last type; if upstream ever takes that number, B1 must be renumbered, and a file written with the
+    old number would then be read as the other type without any error.  With the marker the engine compares the
+    recorded B1 number with its own and refuses a mismatch ("reconvert the model") instead of misreading it.
+    The B1 number comes from gguf-py's GGMLQuantizationType.B1, the same value the writer stores in the B1 tensors.
+    """
+    writer.add_uint32(KEY_FORMAT_VERSION, FORMAT_VERSION)
+    writer.add_uint32(KEY_B1_TYPE_ID, int(gguf.GGMLQuantizationType.B1))
 
 
 def _write_gemma3_swa_pattern(conv: ModelBase) -> None:

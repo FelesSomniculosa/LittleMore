@@ -167,6 +167,13 @@ explanation; pass `--assume-no-littlebit-config` to skip only the residual
 cross-check against that file. Gemma 3 is tested on the generic path only
 (identity permutations); Llama and Qwen3.5 exercise real permutations.
 
+Every converted file carries the LittleMore format marker, two UINT32 metadata keys: `littlemore.format_version` (1)
+and `littlemore.b1_type_id` (the number of the B1 type its sign tensors use, from the engine's gguf-py; 44 today). The
+engine refuses a file whose B1 number differs from its own or whose format version is newer, so a future renumbering of
+B1 (see "Rebase hazard" in [engine-changes.md](engine-changes.md)) cannot make it misread a file; files converted before
+the marker existed have no keys and load as before, unprotected (`tests/convert/test_convert.py::test_format_marker_written`,
+`tests/python/test_format_marker.py`).
+
 These GGUFs run in the engine (fused `ggml_littlebit` op: CPU kernel, and CUDA kernels for
 any batch size; with `-ngl 99` on CUDA the LittleBit weights live on the GPU, on a Vulkan
 device they stay in host memory and the op runs on the CPU). Linears with a residual path

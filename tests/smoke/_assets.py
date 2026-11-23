@@ -117,13 +117,13 @@ def _commit(tmp: Path, target: Path, key: str) -> None:
     target.with_name(target.name + ".key").write_text(key)
 
 
-def copy_gguf(src: Path, dst: Path, replace=None, extra=(), extra_kv=(), drop=None) -> None:
+def copy_gguf(src: Path, dst: Path, replace=None, extra=(), extra_kv=(), drop=None, drop_kv=()) -> None:
     """Write `dst` = a copy of GGUF `src` with metadata and tensors unchanged, except:
 
     `replace(tensor)` may return `(array, raw_dtype)` to swap one tensor's data (None keeps it);
     `extra` is a list of `(name, array, raw_dtype)` tensors appended; `extra_kv` a list of
     `(key, value, value_type[, sub_type])` metadata entries added (replacing a copied entry of the same key); `drop(name)` returning True leaves that tensor
-    out.  Used to derive test variants.
+    out; `drop_kv` is a collection of metadata keys left out of the copy.  Used to derive test variants.
     """
     _add_path(ENGINE / "gguf-py")
     import gguf
@@ -132,7 +132,7 @@ def copy_gguf(src: Path, dst: Path, replace=None, extra=(), extra_kv=(), drop=No
     skip = ("GGUF.", "general.architecture", "general.alignment")
     overridden = {kv[0] for kv in extra_kv}  # a metadata key given in `extra_kv` replaces the copied one
     for key, field in reader.fields.items():
-        if not key.startswith(skip) and key not in overridden:
+        if not key.startswith(skip) and key not in overridden and key not in drop_kv:
             writer.add_key_value(key, field.contents(), field.types[0],
                                  field.types[-1] if field.types[0] == gguf.GGUFValueType.ARRAY else None)
     for kv in extra_kv:

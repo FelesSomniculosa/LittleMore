@@ -18,6 +18,7 @@ The engine is upstream llama.cpp plus these additions (details in the sections b
 | Loader and graph hook: a linear whose `weight` is missing but whose `lb_v` factors exist is loaded as a LittleBit linear, and `build_lora_mm` builds the fused op for it | [LittleBit in the graph](#littlebit-in-the-graph) |
 | Per-backend rules: no backend may claim a B1 tensor except for the fused op; the LittleBit tensors of a layer live on the layer's device when that device can run the op (CUDA), else on the CPU (Vulkan) | the "Rule" bullet and the `supports_op` audit under GGML_TYPE_B1; "Loader" under LittleBit in the graph |
 | Pre-packed residual scales `lb_s_pkr` in the GGUF (no per-call CONCAT nodes) | "Loader" under LittleBit in the graph |
+| Format marker check: the loader refuses a GGUF whose `littlemore.b1_type_id` is not this build's B1 number, or whose `littlemore.format_version` is newer than it understands | the "Rebase hazard" bullet under GGML_TYPE_B1 |
 | Model-level speed on the GPU (informal) | [Qwen3-0.6B on the GPU](#qwen3-06b-on-the-gpu-informal-speed-read) |
 | Test coverage and measured accuracy, including the GPU noise floor | the end of "LittleBit in the graph", then "GPU offload error" |
 | Robustness fixes outside LittleBit: bad model hyperparameters, host out-of-memory, tiny sampling temperatures fail cleanly instead of aborting or sampling NaN | [Robustness fixes](#robustness-fixes) |
@@ -134,7 +135,35 @@ because of its fp16 scale; LittleBit keeps all scales in separate F32 vectors).
   (`GGMLQuantizationType.B1`, `GGML_QUANT_SIZES`, `quants.B1`).
 - **Rebase hazard:** upstream's last type is `F8_E4M3 = 43`. If a future upstream
   claims 44, renumber `GGML_TYPE_B1` in `ggml.h` and `gguf-py/gguf/constants.py`
-  and record the new number here (files written with the old number would be misread).
+  and record the new number here. A GGUF file stores each tensor's type as a bare number, so a file written with
+  the old number would be read as the other type. **Format marker** against that: LittleMore's converter
+  (`tools/convert/lb_to_gguf.py`) writes two UINT32 metadata keys, `littlemore.format_version` (1: the current layout
+  of LittleBit tensors and names) and `littlemore.b1_type_id` (the B1 number the file's tensors were written with,
+  taken from gguf-py's `GGMLQuantizationType.B1`, never hard-coded). The loader checks them in the
+  `llama_model_loader` constructor (`src/llama-model-loader.cpp`), right after the metadata is read and before any
+  tensor data is loaded, for every way a model is opened (file, split files, file pointer, metadata passed in).
+  The GGUF parser itself runs first and already rejects tensor types this build does not know or whose row length
+  does not fit the type's block size (128 for B1). After a renumbering such a file can therefore be refused earlier
+  with a generic GGUF error instead of the marker message; it is still never loaded.
+  - `format_version` 0 is accepted (treated like the current version); only values above 1 are refused.
+  - `b1_type_id` present and different from this build's `GGML_TYPE_B1`: `std::runtime_error` "this model file was
+    written for B1 = X (littlemore.b1_type_id), but this build uses GGML_TYPE_B1 = Y ...; reconvert the model". The
+    file is never loaded.
+  - `format_version` present and above 1 (the highest this build understands): `std::runtime_error` "... newer than
+    this library understands ...".
+  - a marker key with another value type (e.g. a string): the loader's typed key reader refuses it ("key ... has
+    wrong type").
+  - keys absent: loads as before, assuming the historical value 44. This covers every file made before the marker
+    (for example older GGUFs under `.cache/gguf` and conversions of the community 8B model made before it).
+    **For such legacy files a renumbering cannot be detected**: after a renumbering they would still be misread, so
+    reconvert them before moving to an engine with another B1 number.
+  Through the C API every refusal is `LM_ERR_MODEL_LOAD`, with the loader's message at the end of `lm_last_error()`
+  (the library appends the engine's error lines). Tests: `tests/convert/test_convert.py::test_format_marker_written`
+  (both keys, their type and values; the B1 number checked against gguf-py and against `ggml.h`),
+  `tests/python/test_format_marker.py` (B1 = 45 and 43, format version 2, string-typed keys: `LM_ERR_MODEL_LOAD`
+  with the message, with `devices="none"` and with the default auto-fit; the same file without the keys generates
+  the same text as with them). Mutation: with the B1 check removed from the loader, the mismatch tests fail (the
+  file loads).
 - CPU: `to_float` only. There is **no `vec_dot`** and no `from_float`.
 - **Rule: no backend may claim B1 for MUL_MAT / MUL_MAT_ID / GET_ROWS / CPY / SET_ROWS
   (or any other op) until a kernel exists; the fused LITTLEBIT op (CPU kernel, CUDA kernels)

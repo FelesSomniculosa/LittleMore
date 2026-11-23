@@ -477,6 +477,41 @@ def test_family_converts_and_validates(family, arch, tmp_path):
     assert emb.tensor_type == gguf.GGMLQuantizationType.F16
 
 
+# --------------------------------------------------------------------------- format marker
+
+def _ggml_h_b1() -> int:
+    """GGML_TYPE_B1 as the engine's C header defines it (read from ggml.h, independent of gguf-py)."""
+    import re
+    text = (lb._REPO / "engine" / "ggml" / "include" / "ggml.h").read_text(encoding="utf-8")
+    m = re.search(r"\bGGML_TYPE_B1\s*=\s*(\d+)", text)
+    assert m, "GGML_TYPE_B1 not found in engine/ggml/include/ggml.h"
+    return int(m.group(1))
+
+
+def test_format_marker_written(tmp_path):
+    """The converted GGUF carries the LittleMore format marker: two UINT32 keys the engine's loader checks.
+
+    `littlemore.format_version` must be the converter's FORMAT_VERSION (1), and `littlemore.b1_type_id` the number
+    the B1 tensors of this file were written with. That number is compared with gguf-py's B1 (what the writer used)
+    AND with GGML_TYPE_B1 read from the engine's ggml.h, so a renumbering done in only one of the two places fails
+    here too. The tiny Llama needs no downloads.
+    """
+    ck = _tiny.make_tiny_checkpoint("llama", tmp_path)
+    out = tmp_path / "llama.gguf"
+    lb.convert_checkpoint(ck, out)
+    reader = gguf.GGUFReader(str(out))
+    for key in (lb.KEY_FORMAT_VERSION, lb.KEY_B1_TYPE_ID):
+        assert key in reader.fields, f"{key} missing from the written GGUF"
+        assert reader.fields[key].types == [gguf.GGUFValueType.UINT32], (key, reader.fields[key].types)
+    assert lb.KEY_FORMAT_VERSION == "littlemore.format_version" and lb.KEY_B1_TYPE_ID == "littlemore.b1_type_id"
+    assert reader.fields[lb.KEY_FORMAT_VERSION].contents() == lb.FORMAT_VERSION == 1
+    b1_id = reader.fields[lb.KEY_B1_TYPE_ID].contents()
+    assert b1_id == int(gguf.GGMLQuantizationType.B1) == _ggml_h_b1()
+    # the file's B1 tensors really use that number (the marker describes the tensors next to it)
+    lb_v = next(t for t in reader.tensors if t.name.endswith(".lb_v"))
+    assert int(lb_v.tensor_type) == b1_id
+
+
 def test_head_type_unknown_is_refused():
     """An unknown head type fails with a ConversionError naming the option (q8_0 / q6_k: tests/convert/test_head_type.py)."""
     with pytest.raises(lb.ConversionError, match="head_type"):
