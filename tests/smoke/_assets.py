@@ -353,26 +353,30 @@ def _reference_model_built():
 def reference_model():
     """The reference model (fp32 compute, CPU), PLAIN: any Q8_0 emulation or mutation an earlier caller applied with
     `emulate_q8_slow_path.emulate` (which patches the shared object and the RoPE function of transformers in place) is
-    switched off first. Without this reset a test that runs after one using `drop_residual=True` or the default
-    emulation got a mutated "reference" (measured: test_perplexity_parity failed by 111 % after
-    test_fused_graph_qwen3_06b's residual control, by 14 % in a full `pytest` run; it passed when run alone)."""
+    undone first (`unemulate`: every LBLinear runs its own `LBLinear.forward` again, as on a freshly built model), and
+    `assert_plain` then refuses a model that still has any patched module `forward` or RoPE function, so a mutation
+    applied some other way fails loudly instead of being used as the reference. Without the reset a test that runs
+    after one using `drop_residual=True` or the default emulation got a mutated "reference" (measured:
+    test_perplexity_parity failed by 111 % after test_fused_graph_qwen3_06b's residual control, by 14 % in a full
+    `pytest` run; it passed when run alone)."""
     _add_path(ROOT / "tools" / "dev")
     import emulate_q8_slow_path as E
-    model = _reference_model_built()
-    E.emulate(model, quantize=False, kv_f16=False)
+    model = E.unemulate(_reference_model_built())
+    E.assert_plain(model)
     return model
 
 
 def reference_logits(token_ids: list[int], **emulate_kwargs) -> np.ndarray:
     """Last-position logits of the reference, optionally with the Q8_0 emulation/mutations.
 
-    No kwargs -> plain fp32 `reference.py`; `emulate_kwargs` are forwarded to
+    No kwargs -> plain fp32 `reference.py` (its own `LBLinear.forward`); `emulate_kwargs` are forwarded to
     `emulate_q8_slow_path.emulate` (quantize, kv_f16, drop_residual, permute_qk).
     """
     _add_path(ROOT / "tools" / "dev")
     import emulate_q8_slow_path as E
     model = reference_model()
-    E.emulate(model, **(emulate_kwargs or dict(quantize=False, kv_f16=False)))
+    if emulate_kwargs:
+        E.emulate(model, **emulate_kwargs)
     return E.last_logits(model, token_ids)
 
 

@@ -140,6 +140,37 @@ def emulate(model: nn.Module, quantize: bool = True, drop_residual: bool = False
     return model
 
 
+_EMU_ATTRS = ("forward", "_emu_quant", "_emu_drop_residual", "_emu_perm", "_emu_f16_out")
+
+
+def unemulate(model: nn.Module) -> nn.Module:
+    """Undo `emulate` exactly (in place; returns `model`): every LBLinear loses the instance attributes `emulate` set,
+    so `forward` is the class's own `LBLinear.forward` (the plain fp32 reference path) again, and transformers' Qwen3
+    RoPE function is the original one again (if `emulate` ever replaced it). Safe on a model never emulated.
+
+    Not the same as `emulate(model, quantize=False, kv_f16=False)`: that computes the same maths but through
+    `_forward` (and `getattr(...).float()` instead of `LBLinear._f32`, which would be wrong for packed signs)."""
+    if _ORIG_ROPE is not None:
+        _patch_rope(False)
+    for mod in model.modules():
+        if isinstance(mod, R.LBLinear):
+            for attr in _EMU_ATTRS:
+                mod.__dict__.pop(attr, None)
+    return model
+
+
+def assert_plain(model: nn.Module) -> None:
+    """Raise AssertionError if any module of `model` still has an instance-level `forward` (the way `emulate`, and
+    any other monkey patch of a module's forward, changes the computation) or if transformers' Qwen3 RoPE function is
+    not the original. Catches a mutation applied by other means than `emulate` too; it cannot see changed weights
+    or buffers (tests that change those restore them themselves)."""
+    patched = [name or "<root>" for name, mod in model.named_modules() if "forward" in mod.__dict__]
+    assert not patched, f"modules with a patched forward: {patched[:5]} ({len(patched)} in all)"
+    if _ORIG_ROPE is not None:
+        from transformers.models.qwen3 import modeling_qwen3 as mq
+        assert mq.apply_rotary_pos_emb is _ORIG_ROPE, "transformers' Qwen3 apply_rotary_pos_emb is still patched"
+
+
 @torch.no_grad()
 def last_logits(model: nn.Module, token_ids: list[int]) -> np.ndarray:
     """Last-position logits (fp32 numpy) for `token_ids` on CPU."""
