@@ -343,11 +343,24 @@ def engine_layer_sums(gguf: Path, prompt: str, ngl: int = 0) -> dict[int, float]
 
 
 @functools.lru_cache(maxsize=1)
-def reference_model():
-    """The reference model (fp32 compute, CPU); built once per session (it is slow)."""
+def _reference_model_built():
+    """The reference model object, built once per session (it is slow). Use `reference_model()`."""
     _add_path(ROOT / "tools" / "dev")
     from reference import build_model
     return build_model(str(MODEL_DIR), CKPT_DIR).float().eval()
+
+
+def reference_model():
+    """The reference model (fp32 compute, CPU), PLAIN: any Q8_0 emulation or mutation an earlier caller applied with
+    `emulate_q8_slow_path.emulate` (which patches the shared object and the RoPE function of transformers in place) is
+    switched off first. Without this reset a test that runs after one using `drop_residual=True` or the default
+    emulation got a mutated "reference" (measured: test_perplexity_parity failed by 111 % after
+    test_fused_graph_qwen3_06b's residual control, by 14 % in a full `pytest` run; it passed when run alone)."""
+    _add_path(ROOT / "tools" / "dev")
+    import emulate_q8_slow_path as E
+    model = _reference_model_built()
+    E.emulate(model, quantize=False, kv_f16=False)
+    return model
 
 
 def reference_logits(token_ids: list[int], **emulate_kwargs) -> np.ndarray:
