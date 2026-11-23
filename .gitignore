@@ -17,3 +17,9 @@ __pycache__/
 /python/dist/
 *.egg-info/
 /python/littlemore/_bin/
+# Local developer tooling state and scratch notes: never part of the project.
+.superpowers/
+.claude-flow/
+.swarm/
+.claude/
+.pytest_cache/
