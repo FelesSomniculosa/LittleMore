@@ -176,32 +176,72 @@ assert k32.AssignProcessToJobObject(job, k32.GetCurrentProcess()), ctypes.get_la
 """
 
 
+def _system_commit() -> str:
+    """The machine's commit charge right now (GlobalMemoryStatusEx: "page file" = commit limit), for failure messages:
+    a child that dies when the WHOLE system is short of commit memory is a different case from one that dies under
+    its own job limit."""
+    import ctypes
+    from ctypes import wintypes
+
+    class MEMSTAT(ctypes.Structure):
+        _fields_ = [("dwLength", wintypes.DWORD), ("dwMemoryLoad", wintypes.DWORD)] + [
+            (n, ctypes.c_uint64) for n in ("total_phys", "avail_phys", "total_commit", "avail_commit", "total_virtual",
+                                           "avail_virtual", "avail_ext")]
+    m = MEMSTAT()
+    m.dwLength = ctypes.sizeof(m)
+    if not ctypes.windll.kernel32.GlobalMemoryStatusEx(ctypes.byref(m)):
+        return "system commit: unknown"
+    return (f"system commit available {m.avail_commit >> 20} of {m.total_commit >> 20} MiB, physical available "
+            f"{m.avail_phys >> 20} of {m.total_phys >> 20} MiB")
+
+
+def _ram_limit_diagnosis(o: _rb.Outcome) -> str:
+    """Everything known about one test_ram_limit child, for the assertion messages: how it ended (classification and
+    exit code), the last step it reported (see the markers in the snippet), every RESULT line, the full stdout and the
+    stderr tail, and the system's commit state just after it ended."""
+    last = o.results[-1].get("step", "?") if o.results else "none (died before the first marker)"
+    return (f"child ended with {o.kind} (exit {o.returncode}); last step reached: {last}; results: {o.results}; "
+            f"stdout: {o.stdout[-3000:]!r}; stderr tail: {o.stderr[-3000:]!r}; {_system_commit()}")
+
+
 @pytest.mark.parametrize("limit_mib,use_mmap,n_ctx", [(lim, mm, 512) for lim in (200, 300, 420, 600, 900, 1500, 2500)
                                                      for mm in (0, 1)] + [(1500, 1, 40960)])
 def test_ram_limit(qwen06: Path, limit_mib: int, use_mmap: int, n_ctx: int) -> None:
     """Private memory of the child is capped (the 0.6B file is 642 MiB; its KV cache at 40960 tokens is 4.4 GiB): the
     load or the session must fail cleanly with a status, or work; never a crash. CPU only (devices="none").
     Before the engine fixes of Task 20, limits of 260 to 420 MiB (mmap) aborted the process (ggml_init's GGML_ASSERT on
-    its buffer, then GGML_ABORT in ggml_backend_sched_split_graph after unchecked mallocs in ggml_backend_sched_new)."""
-    o = _rb.run_child(JOB.replace("LIMIT_MIB", str(limit_mib)) + f"""
+    its buffer, then GGML_ABORT in ggml_backend_sched_split_graph after unchecked mallocs in ggml_backend_sched_new).
+
+    The child reports a marker after every step ("started": the library is loaded, no limit yet; "job-assigned": the
+    limit is in force; then "loaded", "session", "generated", "freed"; the final result has step "end"), and every
+    assertion message carries the whole diagnosis (`_ram_limit_diagnosis`). Why: the 300 MiB cases failed once in a
+    combined run and once in an isolated loop with exit 0xC0000142 (STATUS_DLL_INIT_FAILED) and no output at all, and
+    did not fail again in 25 isolated pytest runs, 20 runs of the E subset and 418 direct child runs (256 at
+    300 MiB; limits 150 to 420 MiB) (Task 20 fix round
+    2); the cause is not determined, so a recurrence must show where the child died and how much commit memory the
+    system had left."""
+    o = _rb.run_child("emit(step='started')\n" + JOB.replace("LIMIT_MIB", str(limit_mib)) + f"""
+emit(step='job-assigned')
 st, m = load({str(qwen06)!r}, {{'devices': 'none', 'use_mmap': {use_mmap}}})
-r = dict(load=st, error=err()[:300])
+r = dict(load=st, error=err()[:300]); emit(step='loaded', **r)
 if m:
-    st2, s = session(m, {{'n_ctx': {n_ctx}}}); r['session'] = st2; r['session_error'] = err()[:300]
+    st2, s = session(m, {{'n_ctx': {n_ctx}}}); r['session'] = st2; r['session_error'] = err()[:300]; emit(step='session', **r)
     if s:
         r['gen'] = generate(s, b'Hello', {{'temperature': 0.0, 'max_tokens': 8}})[0]; r['gen_error'] = err()[:300]
+        emit(step='generated', **r)
         free_session(s)
-    free_model(m)
-emit(**r)
+    free_model(m); emit(step='freed')
+emit(step='end', **r)
 """, timeout=600)
+    why = _ram_limit_diagnosis(o)
     print(ascii(f"limit {limit_mib} MiB, mmap {use_mmap}, n_ctx {n_ctx}: {o.kind} {o.result} {o.stderr[-300:]}"))
-    assert o.clean, o.describe()
+    assert o.clean and o.result.get("step") == "end", why
     r = o.result
-    assert r["load"] in ("LM_OK", "LM_ERR_MODEL_LOAD", "LM_ERR_OUT_OF_MEMORY"), r
+    assert r["load"] in ("LM_OK", "LM_ERR_MODEL_LOAD", "LM_ERR_OUT_OF_MEMORY"), why
     if r["load"] != "LM_OK":
-        assert r["error"].startswith("lm_model_load"), r
+        assert r["error"].startswith("lm_model_load"), why
     elif r.get("session") not in (None, "LM_OK"):
-        assert r["session"] in ("LM_ERR_OUT_OF_MEMORY", "LM_ERR_SESSION") and r["session_error"].startswith("lm_session_new"), r
+        assert r["session"] in ("LM_ERR_OUT_OF_MEMORY", "LM_ERR_SESSION") and r["session_error"].startswith("lm_session_new"), why
 
 
 # --------------------------------------------------------------------------------------------------------------
