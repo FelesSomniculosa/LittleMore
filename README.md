@@ -10,6 +10,98 @@ Python, on a patched [llama.cpp](https://github.com/ggml-org/llama.cpp).
 > licence of the base model). LittleMore is MIT, but it does not change the licence of a model you run, and it hosts no
 > models. Read [docs/licensing.md](docs/licensing.md) before using a model in a product.
 
+## The short version (no jargon)
+
+This section is for everyone. The sections after it are for developers.
+
+### Why this project is useful
+
+AI chat models are big. A good one can take 16 GB or more of memory, which is more than most laptop graphics cards
+have, so people either rent a server or settle for a much smaller model.
+
+A new compression method called **LittleBit** squeezes a model to a fraction of its normal size. The Qwen3 8B model, for
+example, fits in about 3 GB. But until now, the tools that could open these squeezed models were slow: some even ran
+slower than the full-size model, so you saved space and lost speed.
+
+LittleMore is the tool that makes the small size **actually usable**:
+
+- **It fits.** A model that normally needs a big graphics card can run on an ordinary laptop.
+- **It stays on your machine.** Nothing is sent to a cloud service, so your text stays private and it works offline.
+- **It is fast.** On the small models we tested, it is *faster* than running the full-size model (numbers below).
+- **It is easy to try.** One command converts a downloaded model, and a few lines of Python or C code run it.
+
+### Benchmarks: how fast is it?
+
+We measured it on one everyday gaming laptop (NVIDIA RTX 4050 with 6 GB of video memory). "Speed" here means how many
+word pieces (tokens) the model writes per second while answering. More is better.
+
+| Model | Full-size version | With LittleMore | Result |
+|---|---|---|---|
+| Qwen3 0.6B (small) | 127 per second | **213 per second** | about 1.7 times faster |
+| Qwen3 1.7B (medium) | 51 per second | **143 per second** | about 2.8 times faster |
+| Qwen3 8B (large) | does not fit on this laptop's graphics card (needs about 16 GB) | **63 per second**, using about 2.7 GB of video memory | runs, where the full-size version cannot |
+
+Three honest notes:
+
+- **Reading a long question is not faster.** On the medium model, the "reading your prompt" step is about 15% slower
+  than the full-size model. The speed-up is for the answering part.
+- **Quality is not the same as the original.** The only large LittleBit model available today (the 8B) is an early
+  community version. It runs well but its answers are clearly worse than the original Qwen3 8B, so use it to try the
+  technology, not for real work. The 0.6B and 1.7B rows use models made only to measure speed, so their text is
+  meaningless. What we *did* verify is that LittleMore computes exactly what the reference program computes.
+- **One laptop only.** Other computers will give different numbers. The full table and how we measured are
+  [below](#measured-speed). A head-to-head test against the standard "normally compressed" 8B model (the common 4-bit
+  kind) is planned and not published yet.
+
+### What has been built
+
+- **A fast engine** based on the well-known llama.cpp program, with new parts that run the squeezed models quickly on the
+  graphics card and on the normal processor.
+- **A converter** that turns a downloaded LittleBit model into a file LittleMore can open, and checks every layer on the
+  way so a broken conversion cannot go unnoticed.
+- **A library for programmers** (in C, so almost any language can use it) for loading a model, chatting, streaming the
+  answer word by word, and more.
+- **A Python package and a command line**, for people who just want to type a command and chat.
+- **A large set of automated tests**, including "try to break it" tests with damaged model files, extreme settings, and
+  memory running out. They found and fixed real bugs; see [docs/development.md](docs/development.md).
+
+### What is supported today
+
+| | Status |
+|---|---|
+| NVIDIA graphics cards | Works and tested (on one laptop) |
+| Normal processors (Intel/AMD, 64-bit) | Works and tested |
+| Windows 11 | Works and tested |
+| Model families: Qwen3 | Tested with real model weights |
+| Model families: Llama, Gemma 3, Qwen3.5 | Built and tested on tiny practice models, not yet on real weights |
+| Linux | Builds; **not yet tested** on a real machine |
+| AMD and Intel graphics cards (Vulkan) | Detected, but they do not speed anything up yet |
+| Apple Macs, iPhones, Android phones, ARM chips | **Not yet** |
+
+### What is left to build
+
+- **More kinds of hardware:** speed-ups for AMD and Intel graphics cards, for phones and ARM chips (Android), and for
+  Apple devices (Mac, iPhone, iPad).
+- **Real-world testing:** run it on Linux, on Macs, on other graphics cards, and on GitHub's automatic build system,
+  none of which we could do yet.
+- **Better models:** LittleBit models need training, which we do not do. As better ones are published, they should work.
+- **Real weights for more families:** confirm Llama, Gemma 3 and Qwen3.5 on real models, not only tiny practice ones.
+- **A fair head-to-head** with the standard 4-bit version of the same model.
+- **Publishing:** an easy `pip install`, once the packaging and test runs are done.
+
+### How you can help take it further
+
+If you are a developer and want to push this forward, the most useful things are:
+
+1. **Try it on your hardware and report numbers.** A different graphics card, a Linux box or a Mac gives us data we
+   cannot get alone. Even "it did not work, here is the error" helps.
+2. **Add support for another kind of chip.** The biggest gaps are AMD/Intel graphics cards (Vulkan), phones (ARM and
+   Android) and Apple devices (Metal). The existing NVIDIA and CPU code is a worked example to follow.
+3. **Train or publish better models.** Quality is the weakest point, and it depends on better LittleBit models.
+4. **Test more model families with real weights** (Llama, Gemma 3, Qwen3.5) and tell us what breaks.
+5. **Improve the guides.** Clearer instructions, other languages, and example apps all lower the barrier for newcomers.
+6. **Break it.** Try odd inputs and odd settings. Every bug found makes it safer for everyone.
+
 ## What it is and why
 
 LittleBit ([paper](https://arxiv.org/abs/2506.13771); LittleBit-2: [paper](https://arxiv.org/abs/2603.00042)) stores
