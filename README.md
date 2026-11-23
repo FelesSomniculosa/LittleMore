@@ -3,124 +3,147 @@
 Run **LittleBit** language models (weights compressed to well below 1 bit each) locally, from a C library or from
 Python, on a patched [llama.cpp](https://github.com/ggml-org/llama.cpp).
 
-> **Status: early (phase 1).** CUDA and x86 CPU work and are tested on one machine (Windows 11, RTX 4050 Laptop 6 GB).
-> Nothing is published on PyPI yet. See [Limitations](#limitations-read-before-you-rely-on-it).
+> **Status: early (phase 1).** NVIDIA graphics cards (CUDA) and normal 64-bit processors (x86 CPU) work. Everything has
+> been tested on **one** computer only (Windows 11, one NVIDIA laptop GPU). Nothing is published on PyPI yet. See
+> [Limitations](#limitations-read-before-you-rely-on-it).
 
 > **Model licence warning.** The LittleBit checkpoints that exist today are **non-commercial** (CC BY-NC 4.0, plus the
 > licence of the base model). LittleMore is MIT, but it does not change the licence of a model you run, and it hosts no
 > models. Read [docs/licensing.md](docs/licensing.md) before using a model in a product.
 
-## The short version (no jargon)
+---
 
-This section is for everyone. The sections after it are for developers.
+# Part 1: The short version (no jargon)
 
-### Why this project is useful
+This part is for everyone. [Part 2](#part-2-for-developers) is for developers.
 
-AI chat models are big. A good one can take 16 GB or more of memory, which is more than most laptop graphics cards
-have, so people either rent a server or settle for a much smaller model.
+## Why this project is useful
 
-A new compression method called **LittleBit** squeezes a model to a fraction of its normal size. The Qwen3 8B model, for
-example, fits in about 3 GB. But until now, the tools that could open these squeezed models were slow: some even ran
-slower than the full-size model, so you saved space and lost speed.
+AI chat models are big. A good one can need 16 GB or more of memory just to be loaded, which is more than many
+computers have to spare. People end up renting a server, sending their text to a cloud service, or settling for a much
+smaller and weaker model.
+
+A compression method called **LittleBit** squeezes a model to a fraction of its normal size. The Qwen3 8B model, for
+example, shrinks from about 16 GB to about 3 GB. Until now, though, the programs that could open these squeezed models
+were slow. Some were even slower than the full-size model, so you saved space and lost speed.
 
 LittleMore is the tool that makes the small size **actually usable**:
 
-- **It fits.** A model that normally needs a big graphics card can run on an ordinary laptop.
+- **It needs far less memory.** A model that normally needs a very large amount of memory needs a fraction of it.
+  The smaller the machine, the more that matters.
 - **It stays on your machine.** Nothing is sent to a cloud service, so your text stays private and it works offline.
-- **It is fast.** On the small models we tested, it is *faster* than running the full-size model (numbers below).
+- **It is fast.** In our tests, the small models answered faster than the full-size versions (numbers below).
 - **It is easy to try.** One command converts a downloaded model, and a few lines of Python or C code run it.
 
-### Benchmarks: how fast is it?
+## How does it compare?
 
-We measured it on one everyday gaming laptop (NVIDIA RTX 4050 with 6 GB of video memory). "Speed" here means how many
-word pieces (tokens) the model writes per second while answering. More is better.
+### Memory: how much space does the model need?
+
+Memory needs follow the size of the model, so this part does not depend on which computer you have. The same percentages
+apply whether the memory is on a graphics card or in the main memory of the computer.
+
+For the Qwen3 8B model, three versions:
+
+| | Full-size version | Usual "4-bit" version | **LittleMore (LittleBit)** |
+|---|---|---|---|
+| Size of the model | about 16 GB | about 5.0 GB | **about 3.0 GB** |
+| Compared with the usual 4-bit version | - | baseline | **about 39% less** |
+| Compared with the full-size version | baseline | - | **about 81% less** |
+| Memory used while chatting (our test) | not measured | about 5.3 GB | **about 2.7 GB (about 49% less)** |
+
+In plain terms: **whatever amount of memory your computer has, LittleMore's 8B model needs roughly 40% to 50% less than
+the usual 4-bit version, and about 80% less than the full-size one.**
+
+### Speed: how fast does it write?
+
+"Speed" means how many word pieces (called tokens) the model writes per second while answering. More is better. These
+numbers are from **one test laptop** (an NVIDIA RTX 4050 laptop graphics card, an Intel i7-13620H processor,
+Windows 11). A different computer will give different numbers; what carries over is the *comparison*, not the exact
+figure.
 
 | Model | Full-size version | With LittleMore | Result |
 |---|---|---|---|
 | Qwen3 0.6B (small) | 127 per second | **213 per second** | about 1.7 times faster |
 | Qwen3 1.7B (medium) | 51 per second | **143 per second** | about 2.8 times faster |
-| Qwen3 8B (large) | does not fit on this laptop's graphics card (needs about 16 GB) | **63 per second**, using about 2.7 GB of video memory | runs, where the full-size version cannot |
+| Qwen3 8B (large) | not measured (too large for our test laptop's graphics card) | **63 per second** | - |
 
-Three honest notes:
+For the 8B model, a quick informal try on the same laptop showed the usual 4-bit version writing at a little over a
+third of LittleMore's speed (about 23 against 63 per second, roughly 2.7 times slower). That was a casual run, not a proper benchmark; a careful head-to-head is
+planned.
+
+### Electricity: how much power does it use?
+
+This is an **estimate**, not a measurement. Writing text is limited by how much data has to be read from memory for
+every word. A model that is about 40% smaller, and that writes words noticeably faster, should need clearly less energy
+per word. Our estimate is **roughly 40% to 60% less energy per word** than the usual 4-bit version. We have not yet
+measured power with a meter, so treat it as "roughly half, give or take", not as a promise. The size of the saving on
+your computer will depend on your hardware.
+
+### Things to know before you rely on these numbers
 
 - **Reading a long question is not faster.** On the medium model, the "reading your prompt" step is about 15% slower
   than the full-size model. The speed-up is for the answering part.
 - **Quality is not the same as the original.** The only large LittleBit model available today (the 8B) is an early
-  community version. It runs well but its answers are clearly worse than the original Qwen3 8B, so use it to try the
-  technology, not for real work. The 0.6B and 1.7B rows use models made only to measure speed, so their text is
-  meaningless. What we *did* verify is that LittleMore computes exactly what the reference program computes.
-- **One laptop only.** Other computers will give different numbers. The full table and how we measured are
-  [below](#measured-speed). A head-to-head test against the standard "normally compressed" 8B model (the common 4-bit
-  kind) is planned and not published yet.
+  community version. It runs well, but its answers are clearly worse than the original Qwen3 8B, so use it to try the
+  technology, not for real work. The 0.6B and 1.7B models in the table were made only to measure speed, so their text is
+  meaningless. What we *did* verify is that LittleMore computes the same thing as the reference program.
+- **Only one test computer.** Speed and power on other computers will differ. The detailed table and the method are in
+  [Measured speed](#measured-speed).
 
-### Benchmarks: how much memory and electricity does it save?
+## What has been built
 
-Running a model costs memory (the graphics card's video memory, called VRAM, and the computer's normal memory, RAM)
-and electricity. Here is our estimate for the 8B model, compared with the usual "normally compressed" 4-bit version of
-the same model, and with the full-size version.
-
-| | Full-size 8B | Usual 4-bit 8B | **LittleMore 8B** | Saving vs 4-bit | Saving vs full-size |
-|---|---|---|---|---|---|
-| File size on disk | about 16 GB | 5.0 GB | **3.0 GB** | about 39% less | about 81% less |
-| Video memory (VRAM) while chatting | does not fit | about 5.3 GB | **about 2.7 GB** | about 49% less | does not fit |
-| Computer memory (RAM) | about 16 GB | about 5 GB | **about 3 GB** | about 40% less | about 81% less |
-| Electricity per word written | not possible on this card | 100% (baseline) | **roughly 40-60% of that** | roughly 40-60% less | not possible on this card |
-
-**These are estimates, not lab measurements.** The file sizes are exact, and the video-memory figures were read from the
-graphics card while the models ran. The computer-memory figures follow from the file sizes. The electricity figure is a
-reasoning-based estimate: writing text is limited by how much data must be read from memory for every word, so a model
-that is about 40% smaller, and that wrote text about 2.5 times faster than the 4-bit one in a quick informal try,
-should need clearly less energy per word. We have not yet measured
-power draw with a meter. Treat the electricity row as "roughly half, give or take", not as a promise.
-
-### What has been built
-
-- **A fast engine** based on the well-known llama.cpp program, with new parts that run the squeezed models quickly on the
+- **A fast engine** based on the well-known llama.cpp program, with new parts that run the squeezed models quickly on a
   graphics card and on the normal processor.
 - **A converter** that turns a downloaded LittleBit model into a file LittleMore can open, and checks every layer on the
   way so a broken conversion cannot go unnoticed.
-- **A library for programmers** (in C, so almost any language can use it) for loading a model, chatting, streaming the
-  answer word by word, and more.
+- **A library for programmers** (written in C, so almost any language can use it) for loading a model, chatting,
+  streaming the answer word by word, and more.
 - **A Python package and a command line**, for people who just want to type a command and chat.
 - **A large set of automated tests**, including "try to break it" tests with damaged model files, extreme settings, and
   memory running out. They found and fixed real bugs; see [docs/development.md](docs/development.md).
 
-### What is supported today
+## What is supported today
 
 | | Status |
 |---|---|
-| NVIDIA graphics cards | Works and tested (on one laptop) |
-| Normal processors (Intel/AMD, 64-bit) | Works and tested |
+| NVIDIA graphics cards | Works; tested on one laptop GPU |
+| Normal processors (Intel/AMD, 64-bit) | Works; tested on one processor |
 | Windows 11 | Works and tested |
-| Model families: Qwen3 | Tested with real model weights |
-| Model families: Llama, Gemma 3, Qwen3.5 | Built and tested on tiny practice models, not yet on real weights |
-| Linux | Builds; **not yet tested** on a real machine |
-| AMD and Intel graphics cards (Vulkan) | Detected, but they do not speed anything up yet |
-| Apple Macs, iPhones, Android phones, ARM chips | **Not yet** |
+| Model family Qwen3 | Tested with real model weights |
+| Model families Llama, Gemma 3, Qwen3.5 | Built and tested on tiny practice models, not yet on real weights |
+| Linux | Builds, but **not yet tested** on a real machine |
+| AMD and Intel graphics cards (Vulkan) | Detected, but they do not make anything faster yet |
+| Apple Macs, iPhones, Android phones, other ARM chips | **Not yet** |
 
-### What is left to build
+## What is left to build
 
-- **More kinds of hardware:** speed-ups for AMD and Intel graphics cards, for phones and ARM chips (Android), and for
-  Apple devices (Mac, iPhone, iPad).
-- **Real-world testing:** run it on Linux, on Macs, on other graphics cards, and on GitHub's automatic build system,
-  none of which we could do yet.
-- **Better models:** LittleBit models need training, which we do not do. As better ones are published, they should work.
+- **More kinds of hardware:** speed-ups for AMD and Intel graphics cards, for phones and other ARM chips (Android), and
+  for Apple devices (Mac, iPhone, iPad).
+- **Real-world testing:** run it on Linux, on Macs, on other graphics cards and processors, and on GitHub's automatic
+  build system. None of this has been possible yet.
+- **Better models:** LittleBit models need training, which this project does not do. As better ones are published, they
+  should work with LittleMore.
 - **Real weights for more families:** confirm Llama, Gemma 3 and Qwen3.5 on real models, not only tiny practice ones.
-- **A fair head-to-head** with the standard 4-bit version of the same model.
+- **A fair head-to-head** with the usual 4-bit version of the same model, including a proper power measurement.
 - **Publishing:** an easy `pip install`, once the packaging and test runs are done.
 
-### How you can help take it further
+## How you can help take it further
 
 If you are a developer and want to push this forward, the most useful things are:
 
-1. **Try it on your hardware and report numbers.** A different graphics card, a Linux box or a Mac gives us data we
+1. **Try it on your hardware and report numbers.** A different graphics card, a Linux machine or a Mac gives us data we
    cannot get alone. Even "it did not work, here is the error" helps.
-2. **Add support for another kind of chip.** The biggest gaps are AMD/Intel graphics cards (Vulkan), phones (ARM and
-   Android) and Apple devices (Metal). The existing NVIDIA and CPU code is a worked example to follow.
+2. **Add support for another kind of chip.** The biggest gaps are AMD and Intel graphics cards (Vulkan), phones (ARM and
+   Android) and Apple devices (Metal). The existing NVIDIA and processor code is a worked example to follow.
 3. **Train or publish better models.** Quality is the weakest point, and it depends on better LittleBit models.
 4. **Test more model families with real weights** (Llama, Gemma 3, Qwen3.5) and tell us what breaks.
-5. **Improve the guides.** Clearer instructions, other languages, and example apps all lower the barrier for newcomers.
-6. **Break it.** Try odd inputs and odd settings. Every bug found makes it safer for everyone.
+5. **Measure power.** A proper electricity comparison on real hardware would turn our estimate into a fact.
+6. **Improve the guides.** Clearer instructions, other languages and example apps lower the barrier for newcomers.
+7. **Break it.** Try odd inputs and odd settings. Every bug found makes it safer for everyone.
+
+---
+
+# Part 2: For developers
 
 ## What it is and why
 
@@ -219,8 +242,8 @@ The exact download command, a pinned revision and the expected output are in the
 
 ## Measured speed
 
-All numbers are from files committed in this repository, measured with `llama-bench` on one laptop (RTX 4050 Laptop
-GPU 6 GB, i7-13620H, Windows 11, CUDA 12.9); they are not guarantees for other hardware.
+All numbers are from files committed in this repository, measured with `llama-bench` on **one test laptop** (RTX 4050
+Laptop GPU 6 GB, i7-13620H, Windows 11, CUDA 12.9); they are not guarantees for other hardware.
 
 | Result | Number | Source |
 |---|---|---|
@@ -233,6 +256,11 @@ The speed gate ("LittleBit 0.55 bpw generates faster than bf16 on CUDA for Qwen3
 weights of both models; the setup, repetitions and caveats are in [bench/results/phase1.md](bench/results/phase1.md)
 and [bench/README.md](bench/README.md). The 0.6B and 1.7B rows use init-only checkpoints (made without training, so
 they produce meaningless text): they measure speed, not quality.
+
+Memory and energy: the model-file sizes (about 3.0 GB for the community 8B GGUF, 5.0 GB for the Q4_K_M GGUF of the same
+model) are exact. The GPU memory seen with `nvidia-smi` while generating (about 2.7 GB vs about 5.3 GB) was measured
+once and is not a repeated benchmark. The electricity figure in Part 1 is an estimate; no power measurement has been
+made yet.
 
 ### Quality, honestly
 
@@ -287,7 +315,7 @@ compile-only job, and builds the wheel.
 - **Not yet:** ARM CPU kernels (NEON), Metal, Android and iOS packages. They are planned, not done.
 - **CUDA runtime** libraries are not bundled in the wheel; the `littlemore[cuda]` route is not tested yet.
 - **Checkpoints** are non-commercial today and early in quality (see above).
-- Measured numbers come from one laptop GPU; other GPUs, drivers and CPUs will differ.
+- Measured numbers come from one laptop; other GPUs, drivers and CPUs will differ.
 - Phase 1 has not yet had a public CI run; the CUDA compile-only jobs were written without being able to run GitHub
   Actions locally.
 
